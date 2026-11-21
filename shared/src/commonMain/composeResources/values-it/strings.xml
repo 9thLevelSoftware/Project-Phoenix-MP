@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Italian (italiano) — Beta AI-generated translation -->
+<!-- Italian (italiano) — Phoenix Project localization -->
 <!-- Fitness terminology context:
      "set" = serie (un gruppo di ripetizioni)
      "rep" = ripetizione (un singolo movimento)
@@ -7,11 +7,12 @@
      "AMRAP" = AMRAP (as many reps as possible, universale)
      "TUT" = TUT (time under tension, universale)
      "PR" = PR (record personale)
-     Technical terms like "Echo", "TUT", "AMRAP", "1RM" stay in English.
+     Brand and technical terms (Phoenix, Just Lift, Echo, Old School, Pump, TUT, AMRAP, 1RM, VBT, BLE, CSV, ECG, EMG, HRR-60) stay intact.
 -->
 <resources>
     <string name="app_name">Phoenix</string>
 
+    <!-- ==================== Common actions ==================== -->
     <string name="action_cancel">Annulla</string>
     <string name="action_ok">OK</string>
     <string name="action_save">Salva</string>
@@ -19,10 +20,276 @@
     <string name="action_history">Cronologia</string>
     <string name="delete_personal_record_title">Eliminare il record personale?</string>
     <string name="delete_personal_record_message">Eliminare questo record personale da questo dispositivo e dai dispositivi sincronizzati? Questa azione non può essere annullata in questa versione.</string>
+    <string name="delete_personal_record_failed">Impossibile eliminare il record personale</string>
+    <string name="action_edit">Modifica</string>
+    <string name="action_copy">Copia</string>
+    <string name="action_close">Chiudi</string>
+    <string name="action_dismiss">Chiudi</string>
+    <string name="action_apply">Applica</string>
+    <string name="action_confirm">Conferma</string>
+    <string name="action_retry">Riprova</string>
+    <string name="action_back">Indietro</string>
+    <string name="action_exit">Esci</string>
+    <string name="action_skip">Salta</string>
+    <string name="action_stop">Stop</string>
+    <string name="action_share">Condividi</string>
+    <string name="action_add">Aggiungi</string>
+    <string name="action_clear">Cancella</string>
+    <string name="action_preview">Anteprima</string>
+    <string name="action_login">Accedi</string>
+    <string name="action_continue">Continua</string>
+    <string name="action_continue_set">Continua serie</string>
+    <string name="action_discard">Scarta</string>
+    <string name="action_rename">Rinomina</string>
+
+    <!-- ==================== Common labels ==================== -->
+    <string name="label_please_wait">Attendere…</string>
+    <string name="label_name">Nome</string>
+    <string name="label_email">Email</string>
+    <string name="label_password">Password</string>
+    <string name="label_error">Errore</string>
+    <string name="label_premium">Premium</string>
+    <string name="label_favorites">Preferiti</string>
+    <string name="label_custom">Personalizzati</string>
+    <string name="label_essentials">Essenziali</string>
+    <string name="label_recent">Recenti</string>
+    <string name="label_all">Tutti</string>
+    <string name="label_done">FATTO</string>
+    <string name="label_reps">Ripetizioni</string>
+    <string name="label_duration">Durata</string>
+    <string name="label_kg">kg</string>
+    <string name="label_lb">lb</string>
+    <string name="label_lbs">lbs</string>
+    <string name="label_per_cable">Per cavo</string>
+    <string name="label_live">LIVE</string>
+    <string name="label_charts">Grafici</string>
+    <string name="label_table">Tabella</string>
+    <string name="label_description_optional">Descrizione (facoltativa)</string>
+
+    <!-- ==================== Workout controls ==================== -->
+    <string name="start_workout">Avvia allenamento</string>
+    <string name="start_exercise">AVVIA ESERCIZIO</string>
+    <string name="stop_set">Ferma serie</string>
+    <string name="end_workout">Termina allenamento</string>
+    <string name="skip_exercise">Salta esercizio</string>
+    <string name="just_lift">Just Lift</string>
+    <string name="target_reps">Ripetizioni obiettivo</string>
+    <string name="stop_label">STOP</string>
+    <string name="waiting_for_data">In attesa di dati…</string>
+    <string name="reconnect">Riconnetti</string>
+    <string name="workout_teardown_finishing">Completamento dell’allenamento precedente…</string>
+    <string name="workout_teardown_failed">Il ripristino dell’attrezzo non è stato completato</string>
+    <string name="workout_teardown_retry">Riprova</string>
+    <string name="workout_save_failed">Impossibile salvare i dati dell’allenamento.</string>
+    <string name="workout_save_retry_failed">Non è più possibile riprovare questa serie.</string>
+    <string name="save_set">Salva serie</string>
+    <string name="bodyweight_reps_title">Inserisci ripetizioni a corpo libero</string>
+    <string name="bodyweight_set_progress">%1$s • Serie %2$d di %3$d</string>
+    <string name="bodyweight_reps_completed">Ripetizioni completate</string>
+    <string name="bodyweight_variant">Variante</string>
+    <string name="bodyweight_variant_percent">%1$s (%2$d%%)</string>
+    <string name="bodyweight_effective_load">Carico effettivo: %1$s</string>
+    <string name="bodyweight_effective_load_includes">Incluso: %1$s</string>
+    <string name="bodyweight_effective_load_more">+%1$d in più</string>
+    <string name="bodyweight_volume">Volume: %1$s</string>
+    <string name="bodyweight_no_weight_volume">Il peso corporeo non è impostato, quindi il volume verrà salvato come 0.</string>
+    <string name="weight_recommendation_increase">Aumenta la prossima serie</string>
+    <string name="weight_recommendation_decrease">Riduci la prossima serie</string>
+    <string name="weight_recommendation_maintain">Mantieni la prossima serie</string>
+    <string name="weight_recommendation_weight_change">Da %1$s a %2$s per cavo</string>
+    <!-- Stop set dialog -->
+    <string name="stop_current_set_title">Fermare la serie attuale?</string>
+    <string name="stop_current_set_message">Ferma questa serie, salta questo esercizio o termina l’intero allenamento.</string>
+    <!-- Exit workout dialog -->
+    <string name="exit_workout_title">Uscire dall’allenamento?</string>
+    <string name="exit_workout_message">L’allenamento è attualmente attivo. Vuoi davvero uscire?</string>
+    <!-- Exit routine dialog -->
+    <string name="exit_routine_title">Uscire dalla routine?</string>
+    <string name="exit_routine_message">I progressi verranno salvati.</string>
+
+    <!-- ==================== Connection ==================== -->
+    <string name="connecting">Connessione…</string>
+    <string name="connection_failed">Connessione non riuscita</string>
+    <string name="disconnect">Disconnetti</string>
+    <string name="disconnect_integration_title">Disconnettere l’integrazione?</string>
+    <string name="disconnect_integration_message">Vuoi davvero disconnettere %1$s? L’integrazione verrà rimossa e un’eventuale sincronizzazione programmata potrebbe interrompersi.</string>
+
+    <!-- ==================== Settings screen ==================== -->
+    <string name="settings_title">Impostazioni</string>
+    <string name="settings_cloud_sync">Sincronizzazione cloud</string>
+    <string name="settings_sync_error_tap_to_dismiss">Errore di sincronizzazione — tocca per chiudere</string>
+    <string name="settings_weight_unit">Unità di peso</string>
+    <string name="settings_appearance">Aspetto</string>
+    <string name="settings_theme_mode">Tema</string>
+    <string name="settings_theme_mode_description">Segui il tema di sistema o mantieni l’app in modalità chiara o scura</string>
+    <string name="settings_theme_system">Sistema</string>
+    <string name="settings_theme_light">Chiaro</string>
+    <string name="settings_theme_dark">Scuro</string>
+    <string name="settings_dynamic_color">Colori Material You</string>
+    <string name="settings_dynamic_color_description">Usa i colori dello sfondo Android quando disponibili</string>
+    <string name="settings_version">Versione: %1$s</string>
+    <string name="settings_language">Lingua</string>
+    <string name="settings_language_help">Aiutaci a migliorare le traduzioni</string>
+    <string name="settings_machine_diagnostics_description">Visualizza un’istantanea anonimizzata della diagnostica dell’attrezzo: tempo di attività, codici di errore, temperature, dati di crash e avvisi. Non è un backup completo.</string>
+    <string name="settings_weight_suggestions_title">Suggerimenti di peso</string>
+    <string name="settings_ble_compat_title">Modalità di compatibilità BLE</string>
+    <string name="settings_ble_compat_description">Percorso di scrittura con MTU ridotto che risolve le disconnessioni all’avvio dell’allenamento su Pixel 6/7, Fold e Tablet. Auto la attiva solo su quei dispositivi.</string>
+    <string name="settings_ble_compat_description_affected">Percorso di scrittura con MTU ridotto che risolve le disconnessioni all’avvio dell’allenamento su Pixel 6/7, Fold e Tablet. Auto la attiva solo su quei dispositivi (questo dispositivo è interessato).</string>
+    <string name="settings_ble_compat_auto">Auto</string>
+    <string name="settings_ble_compat_on">Attivo</string>
+    <string name="settings_ble_compat_off">Disattivo</string>
+    <string name="settings_ble_compat_reconnect_hint">Ha effetto alla prossima connessione. Riconnettiti al trainer dopo la modifica.</string>
+    <!-- Machine diagnostics -->
+    <string name="diagnostics_title">Diagnostica macchina</string>
+    <string name="diagnostics_copied_to_clipboard">Diagnostica copiata negli appunti</string>
+    <string name="diagnostics_status_no_snapshot">Nessuna istantanea</string>
+    <string name="diagnostics_status_faults_detected">Guasti rilevati</string>
+    <string name="diagnostics_status_no_active_faults">Nessun guasto attivo</string>
+    <string name="diagnostics_copy_action">Copia diagnostica</string>
+    <string name="diagnostics_empty_title">Connettiti a una macchina per leggere la diagnostica.</string>
+    <string name="diagnostics_empty_description">Qui appariranno guasti, temperature, tempo di attività, dati di crash e avvisi.</string>
+    <string name="diagnostics_waiting_title">In attesa della diagnostica</string>
+    <string name="diagnostics_waiting_description">Connesso. In attesa che la caratteristica diagnostica restituisca un’istantanea.</string>
+    <string name="diagnostics_uptime">Tempo di attività</string>
+    <string name="diagnostics_faults">Guasti</string>
+    <string name="diagnostics_temperatures">Temperature</string>
+    <string name="diagnostics_crash">Crash</string>
+    <string name="diagnostics_warnings">Avvisi</string>
+    <string name="diagnostics_seconds">Secondi</string>
+    <string name="diagnostics_stack_base64">Stack Base64</string>
+    <string name="diagnostics_raw">Grezzo</string>
+    <string name="diagnostics_none_reported">Nessuno segnalato</string>
+    <!-- Language names -->
+    <string name="language_system_default">Predefinito di sistema</string>
+    <string name="language_english">English</string>
+    <string name="language_dutch">Nederlands (Beta)</string>
+    <string name="language_german">Deutsch (Beta)</string>
+    <string name="language_spanish">Español (Beta)</string>
+    <string name="language_french">Français (Beta)</string>
+    <string name="language_italian">Italiano (Beta)</string>
+    <string name="settings_language_ios_restart_hint">Riavvia l’app per applicare completamente le modifiche alla lingua</string>
+
+    <!-- ==================== Backup / Restore ==================== -->
+    <string name="backup_all_data">Esegui backup completo</string>
+    <string name="backup_description">Esportazione completa dei dati personali: cronologia allenamenti, routine, cicli di allenamento, obiettivi, profili, note e impostazioni.\n\nNon include token di autenticazione/sessione, configurazione Supabase o dati del keystore. Le esportazioni di Diagnostica macchina sono istantanee anonimizzate separate per la risoluzione dei problemi e non possono ripristinare i tuoi allenamenti.</string>
+    <string name="restore_from_backup">Ripristina da backup</string>
+    <string name="restore_description">Seleziona un file di backup per ripristinare i tuoi dati.\n\nI dati esistenti NON verranno sovrascritti: saranno importati solo i nuovi record.</string>
+    <string name="select_file">Seleziona file</string>
+    <string name="backup_success">Backup salvato in:\n%1$s</string>
+    <string name="import_completed">Importazione completata!</string>
+
+    <!-- ==================== Account ==================== -->
+
+    <!-- ==================== Auth ==================== -->
+    <string name="auth_google">Google</string>
+    <string name="auth_apple">Apple</string>
+    <string name="auth_or_continue_with">Oppure continua con</string>
+    <string name="auth_google_failed">Accesso con Google non riuscito</string>
+    <string name="auth_apple_failed">Accesso con Apple non riuscito</string>
+
+    <!-- ==================== Link Account / Sync ==================== -->
+    <string name="phoenix_portal">Phoenix Portal</string>
+    <string name="syncing">Sincronizzazione…</string>
+    <string name="last_synced">Ultima sincronizzazione: %1$s</string>
+    <string name="never_synced">Mai sincronizzato</string>
+    <string name="sync_paused_subscription_required">Sincronizzazione in pausa — abbonamento richiesto</string>
+    <string name="delete_portal_account">Elimina account del portale</string>
+    <string name="delete_portal_account_caption">Apre il portale. Gli allenamenti salvati su questo telefono restano su questo telefono.</string>
+    <string name="unlink_account">Scollega account</string>
+    <string name="sync_now">Sincronizza ora</string>
+
+    <!-- ==================== Paywall ==================== -->
+
+    <!-- ==================== Training Cycles ==================== -->
+    <string name="create_cycle">Crea ciclo</string>
+    <string name="edit_cycle">Modifica ciclo</string>
+    <string name="delete_cycle_title">Eliminare il ciclo?</string>
+    <string name="delete_cycle_message">Vuoi davvero eliminare “%1$s”? Questa azione non può essere annullata.</string>
+    <string name="exercises_not_found">Esercizi non trovati</string>
+    <string name="skip_rest_day">Salta giorno di riposo</string>
+    <string name="jump_to_day">Vai al giorno %1$d</string>
+    <string name="assign_routine">Assegna routine</string>
+    <string name="cycle_name">Nome del ciclo</string>
+    <string name="add_workout">+ Aggiungi allenamento</string>
+    <string name="add_rest">+ Aggiungi riposo</string>
+
+    <!-- ==================== Routines ==================== -->
+    <string name="routine_name">Nome routine</string>
+    <string name="create_new_routine">Crea nuova routine</string>
+    <string name="add_exercise">Aggiungi esercizio</string>
+    <!-- Issue #1018: commit label for the session-only add flow on the terminal set summary (not the editor's template-writing "Add to Routine"). -->
+    <string name="add_to_workout">Aggiungi all’allenamento</string>
+    <string name="delete_routine">Elimina routine</string>
+    <string name="delete_routine_message">Vuoi davvero eliminare '%1$s'?</string>
+    <!-- #772: routine CSV import and export -->
+    <string name="routine_csv_import">Importa routine da CSV</string>
+    <string name="routine_csv_export">Esporta CSV</string>
+    <string name="routine_csv_import_title">Importa routine</string>
+    <string name="routine_csv_unreadable_title">Impossibile importare questo file</string>
+    <string name="routine_csv_issues_title">Correggi questi problemi nel file, poi selezionalo di nuovo:</string>
+    <string name="routine_csv_more_issues">…e altri %1$d</string>
+    <string name="routine_csv_action_create">Nuova</string>
+    <string name="routine_csv_action_overwrite">Sostituisce la routine esistente</string>
+    <string name="routine_csv_action_copy">Nuova copia</string>
+    <string name="routine_csv_summary">%1$d esercizi · %2$d serie · %3$s</string>
+    <string name="routine_csv_group">Gruppo: %1$s</string>
+    <string name="routine_csv_matches_found">Alcune routine in questo file corrispondono a routine che hai già.</string>
+    <string name="routine_csv_mode_copies">Importale come copie</string>
+    <string name="routine_csv_mode_overwrite">Sostituisci le routine esistenti</string>
+    <string name="routine_csv_refreshed">Le tue routine sono cambiate dopo questa anteprima. Controlla di nuovo prima di importare.</string>
+    <string name="routine_csv_commit_failed">Importazione non riuscita. Non è stato salvato nulla.</string>
+    <string name="routine_csv_confirm">Importa</string>
+    <string name="routine_csv_imported">%1$d routine importate.</string>
+    <string name="routine_csv_export_blocked_title">Impossibile esportare %1$s</string>
+    <string name="routine_csv_export_blocked_message">I file CSV non supportano ancora queste impostazioni, quindi l’esportazione le perderebbe:</string>
+    <string name="delete_selected_routines">Eliminare %1$d routine?</string>
+    <string name="delete_group_title">Elimina gruppo</string>
+    <string name="delete_group_message">Eliminare il gruppo “%1$s”? Le routine di questo gruppo non avranno più un gruppo.</string>
+    <string name="duplicate_selected_routines">Duplicare %1$d routine?</string>
+    <string name="duplicate_routines_message">Verranno create nuove copie con il suffisso '(Copia)'.</string>
+    <string name="move_to_profile">Sposta nel profilo</string>
+    <string name="copy_to_profile">Copia nel profilo</string>
+    <string name="move_routines_confirm">Spostare %1$d routine in %2$s?</string>
+    <string name="copy_routines_confirm">Copiare %1$d routine in %2$s?</string>
+    <string name="no_other_profiles">Nessun altro profilo disponibile. Crea prima un nuovo profilo.</string>
+    <string name="cannot_be_undone">Questa azione non può essere annullata.</string>
+    <string name="delete_all">Elimina tutto</string>
+
+    <!-- ==================== Supersets ==================== -->
+    <string name="add_to_superset">Aggiungi alla superserie</string>
+    <string name="rename_superset">Rinomina superserie</string>
+    <string name="choose_color">Scegli colore</string>
+    <string name="change_color">Cambia colore</string>
+    <string name="copy_superset">Copia superserie</string>
+    <string name="delete_superset">Elimina superserie</string>
+    <string name="delete_superset_title">Eliminare la superserie?</string>
+    <string name="delete_superset_message">Verranno eliminati la superserie “%1$s” e tutti i %2$d esercizi contenuti. Questa azione non può essere annullata.</string>
+    <string name="delete_selected_exercises">Eliminare %1$d esercizi?</string>
+
+    <!-- ==================== Exercise Picker ==================== -->
+    <string name="select_exercise">Seleziona esercizio</string>
+    <string name="search_exercises">Cerca esercizi…</string>
+    <string name="create_exercise">Crea esercizio</string>
+    <string name="clear_filters">Cancella filtri</string>
+
+    <!-- ==================== Exercise Create/Edit ==================== -->
+    <string name="exercise_name_label">Nome esercizio *</string>
+    <string name="label_cables">Cavi</string>
+    <string name="label_bodyweight">Corpo libero</string>
+    <string name="label_equipment">Attrezzatura</string>
+    <string name="delete_exercise_title">Eliminare l’esercizio?</string>
+    <string name="delete_exercise_message">Vuoi davvero eliminare “%1$s”? Questa azione non può essere annullata.</string>
+
+    <!-- ==================== Exercise Detail ==================== -->
 
     <!-- ==================== Workout Modes ==================== -->
+    <string name="mode_old_school">Old School</string>
+    <string name="mode_pump">Pump</string>
+    <string name="mode_tut">TUT</string>
     <string name="just_lift_tut_standard">Standard</string>
     <string name="just_lift_tut_beast">Beast</string>
+    <string name="mode_eccentric_only">Solo eccentrica</string>
+    <string name="mode_echo">Echo</string>
     <string name="echo_level">Livello Echo</string>
     <string name="echo_level_hard">Difficile</string>
     <string name="echo_level_harder">Più difficile</string>
@@ -34,11 +301,51 @@
     <string name="rep_count_timing_top">Conta in cima (picco concentrico)</string>
     <string name="rep_count_timing_bottom">Conta in basso (fase eccentrica)</string>
 
+    <!-- ==================== Workout Setup ==================== -->
+
+    <!-- ==================== Profiles ==================== -->
+    <string name="add_profile">Aggiungi profilo</string>
+    <string name="edit_profile">Modifica profilo</string>
+    <string name="delete_profile">Elimina profilo</string>
+
+    <!-- ==================== Progression Suggestion ==================== -->
+
+    <!-- ==================== Resume Routine ==================== -->
+    <string name="resume_workout_title">Riprendere l’allenamento?</string>
+    <string name="resume_workout_saved">Hai dei progressi salvati:</string>
+    <string name="restart_from_set_1">Ricomincia dalla serie 1</string>
+
     <!-- ==================== Rest Timer ==================== -->
-    <string name="rest_eccentric_load">CARICO ECCENTRICO</string>
+    <string name="rest_between_exercises">Riposo tra gli esercizi</string>
+    <string name="rest_quick_rest">RIPOSO RAPIDO</string>
+    <string name="rest_time">TEMPO DI RIPOSO</string>
+    <string name="rest_paused">IN PAUSA</string>
+    <string name="rest_up_next">PROSSIMO</string>
+    <string name="rest_next_set_config">CONFIGURAZIONE PROSSIMA SERIE</string>
     <string name="rest_echo_level">LIVELLO ECHO</string>
+    <string name="rest_eccentric_load">CARICO ECCENTRICO</string>
+    <string name="rest_workout_complete">Allenamento completato</string>
+    <string name="rest_weight_per_cable">Peso per cavo</string>
+    <string name="rest_target_reps">Ripetizioni obiettivo</string>
+    <string name="rest_exercise_of">Esercizio %1$d di %2$d</string>
+    <string name="rest_set_of">Serie %1$d di %2$d</string>
+    <string name="rest_mode">Modalità %1$s</string>
+    <string name="rest_resume">Riprendi</string>
+    <string name="rest_pause">Pausa</string>
+    <string name="rest_reset">Azzera</string>
+    <!-- Issue #1360: rest-control rejection feedback (canonical English wire text; see RestControlFeedback). -->
+    <string name="rest_control_not_resting">Il timer di riposo non è attivo in questo momento.</string>
+    <string name="rest_control_stale_owner">Questo riposo è cambiato prima che la modifica venisse applicata.</string>
+    <string name="rest_control_authority_failed">Impossibile confermare il timer di riposo attuale. La modifica non è stata applicata.</string>
+    <string name="rest_control_persistence_failed">Impossibile salvare la modifica al timer di riposo. Puoi riprovare.</string>
+    <string name="rest_control_post_write_drift">Il timer di riposo è cambiato durante il salvataggio. La modifica potrebbe non essere stata applicata.</string>
+    <string name="rest_skip">Salta riposo</string>
+    <string name="rest_end_workout">Termina allenamento</string>
+    <string name="rest_continue">Continua</string>
+    <string name="rest_complete_announcement">Riposo completato</string>
+    <string name="rest_seconds_remaining">%1$d secondi rimanenti</string>
     <string name="drop_set_title">Drop set</string>
-    <string name="drop_set_offer_toggle">Offri un drop set dopo un fallimento.</string>
+    <string name="drop_set_offer_toggle">Offri un drop set dopo il cedimento muscolare.</string>
     <string name="drop_set_min_weight">Peso minimo</string>
     <string name="drop_set_min_weight_supporting">Minimo per cavo in %1$s</string>
     <string name="drop_set_min_weight_error">Inserisci un peso minimo maggiore di 0</string>
@@ -49,7 +356,7 @@
     <string name="drop_set_remaining_one">1 drop rimanente</string>
     <string name="drop_set_remaining_many">%1$d drop rimanenti</string>
     <string name="drop_set_accepted_waiting">Nuovo tentativo a %1$s — %2$s per cavo</string>
-    <string name="drop_set_preparing">Preparazione dell’attrezzo</string>
+    <string name="drop_set_preparing">Preparazione del trainer</string>
     <string name="drop_set_ready">Pronto per riprovare</string>
     <string name="drop_set_recovery">Riconnettiti per riprovare questo drop set</string>
     <string name="drop_set_skip_rest_blocked">Scegli un drop set o saltalo prima di saltare il riposo</string>
@@ -58,120 +365,390 @@
     <string name="cd_drop_set_candidate_unavailable">Drop del %1$s non disponibile</string>
     <string name="cd_drop_set_retry_disabled">Seleziona una percentuale di drop per riprovare</string>
 
-    <!-- ==================== Configuration ==================== -->
-    <string name="progression_eccentric_load_increase_by">Aumenta il carico eccentrico di</string>
-    <string name="bodyweight_effective_load_includes">Incluso: %1$s</string>
-    <string name="bodyweight_effective_load_more">+%1$d in più</string>
+    <!-- ==================== Weight Adjustment ==================== -->
 
-    <!-- ==================== Incoraggiamento verbale (Issue #611) ==================== -->
+    <!-- ==================== Connection Logs ==================== -->
+    <string name="search_logs">Cerca nei log…</string>
+    <string name="auto_scroll">Scorrimento automatico</string>
+    <string name="export_logs">Esporta log</string>
+    <string name="logs_ready_to_export">%1$d voci di log pronte per l’esportazione.</string>
+    <string name="copy_to_clipboard">Copia negli appunti</string>
+    <string name="clear_logs_title">Svuotare i log?</string>
+    <string name="clear_logs_message">Tutte le %1$d voci di log verranno eliminate definitivamente.</string>
+    <string name="clear_all">Svuota tutto</string>
+    <string name="log_level_count">%1$s (%2$d)</string>
+
+    <!-- ==================== Analytics / Export ==================== -->
+    <string name="export_import_data">Esporta / Importa dati</string>
+    <string name="choose_export">Scegli cosa esportare:</string>
+    <string name="personal_records_count">Record personali (%1$d)</string>
+    <string name="workout_history_count">Cronologia allenamenti (%1$d)</string>
+    <string name="pr_progression">Progressione PR</string>
+    <string name="import_label">Importa:</string>
+    <string name="import_workout_csv">Importa cronologia allenamenti (CSV)</string>
+    <string name="no_result_available">Nessun risultato disponibile.</string>
+
+    <!-- ==================== Assessment Wizard ==================== -->
+    <string name="wizard_step_of">Passaggio %1$d di %2$d</string>
+    <string name="actual_weight_label">Peso effettivo utilizzato (kg)</string>
+    <string name="mean_velocity_label">Velocità media (m/s)</string>
+    <string name="cancel_assessment">Annulla valutazione</string>
+    <string name="assessment_save_failed">Impossibile salvare la valutazione. Riprova.</string>
+    <string name="enter_estimate_label">Inserisci la tua stima (kg)</string>
+    <string name="leave_empty_hint">Lascia vuoto per usare il valore calcolato</string>
+    <string name="enter_valid_number">Inserisci un numero valido</string>
+
+    <!-- ==================== Smart Insights ==================== -->
+    <string name="no_workouts_this_week">Nessun allenamento questa settimana</string>
+    <string name="no_balance_data">Dati insufficienti per l’analisi dell’equilibrio</string>
+    <string name="great_variety">Ottima varietà! Tutti gli esercizi sono stati eseguiti di recente.</string>
+    <string name="no_plateaus">Nessuno stallo rilevato. Continua a progredire!</string>
+
+    <!-- ==================== Badges ==================== -->
+
+    <!-- ==================== Daily Routines ==================== -->
+    <string name="workout_in_progress">Allenamento in corso</string>
+    <string name="stop_before_editing">Termina l’allenamento attuale prima di modificare le routine.</string>
+
+    <!-- ==================== Exercise Config Modal ==================== -->
+    <string name="starting_weight">Peso iniziale</string>
+    <string name="eccentric_overload">Sovraccarico eccentrico</string>
+
+    <!-- ==================== Navigation ==================== -->
+    <string name="nav_analytics">Analisi</string>
+    <string name="nav_insights">Consigli</string>
+
+    <!-- ==================== Misc ==================== -->
+
+    <!-- ==================== OneRepMax ==================== -->
+    <string name="orm_placeholder">es. 100</string>
+
+    <!-- ==================== ExerciseEditBottomSheet ==================== -->
+    <string name="percent_label">%1$d%%</string>
+
+    <!-- ==================== Cycle Editor ==================== -->
+
+    <!-- ==================== Progression Settings ==================== -->
+    <string name="nav_previous">◄</string>
+    <string name="nav_next">►</string>
+
+    <!-- ==================== Selection Action Bar ==================== -->
+
+    <!-- ==================== RPE Slider ==================== -->
+
+    <!-- ==================== Velocity Zones ==================== -->
+    <string name="zone_explosive">Esplosiva</string>
+    <string name="zone_fast">Veloce</string>
+    <string name="zone_moderate">Moderata</string>
+    <string name="zone_slow">Lenta</string>
+    <string name="zone_grind">Massimale</string>
+
+    <!-- ==================== Ghost Racing ==================== -->
+
+    <!-- ==================== Issue 1: AnalyticsScreen ==================== -->
+    <string name="analytics_progress">Progressi</string>
+    <string name="analytics_progress_subtitle">Monitora i tuoi guadagni di forza nel tempo</string>
+    <string name="analytics_personal_records">Record personali</string>
+    <string name="analytics_no_prs_title">Nessun PR ancora</string>
+    <string name="analytics_no_prs_message">Completa gli allenamenti per stabilire i tuoi record personali!</string>
+    <string name="analytics_dashboard">Panoramica</string>
+    <string name="analytics_history">Cronologia</string>
+
+    <!-- ==================== Issue 2: SmartInsightsTab ==================== -->
+    <string name="insights_title">Consigli smart</string>
+    <string name="insights_subtitle">Suggerimenti di allenamento personalizzati</string>
+    <string name="insights_weekly_volume">Volume della settimana</string>
+    <string name="insights_training_balance">Equilibrio dell’allenamento</string>
+    <string name="insights_exercise_variety">Varietà degli esercizi</string>
+    <string name="insights_plateau_alert">Avviso di stallo</string>
+    <string name="insights_best_window">Fascia di intensità media massima</string>
+    <string name="insights_col_muscle_group">Gruppo muscolare</string>
+    <string name="insights_col_sets">Serie</string>
+    <string name="insights_col_reps">Rip.</string>
+    <string name="insights_col_total">Totale %1$s</string>
+    <string name="insights_push">Spinta</string>
+    <string name="insights_pull">Tirata</string>
+    <string name="insights_legs">Gambe</string>
+    <string name="insights_well_balanced">Il tuo allenamento è ben equilibrato</string>
+    <string name="insights_days_ago">%1$d giorni fa</string>
+    <string name="insights_need_more_sessions">Servono più sessioni in giorni diversi per individuare la tua fascia migliore</string>
+    <string name="insights_perform_best_in">La tua intensità media più alta è nella fascia:</string>
+    <string name="insights_error_title">Impossibile caricare i consigli</string>
+    <string name="insights_error_message">Si è verificato un errore durante il caricamento dei tuoi dati di allenamento.</string>
+
+    <!-- ==================== Issue 3: ExerciseConfigModal ==================== -->
+    <string name="config_beast_mode">MODALITÀ BEAST</string>
+    <string name="config_extended_difficulty">Difficoltà estesa</string>
+    <string name="config_standard_tut">TUT standard</string>
+    <string name="config_mode_old_school_desc">Allenamento contro resistenza classico con peso costante lungo tutte le serie.</string>
+    <string name="config_mode_tut_beast_title">Modalità TUT Beast</string>
+    <string name="config_mode_tut_title">Tempo sotto tensione</string>
+    <string name="config_mode_tut_beast_desc">Tempo sotto tensione prolungato con difficoltà aumentata. Per utenti avanzati.</string>
+    <string name="config_mode_tut_desc">Mantiene una resistenza costante lungo tutto il movimento per il massimo reclutamento muscolare.</string>
+    <string name="config_mode_pump_title">Modalità Pump</string>
+    <string name="config_mode_pump_desc">Alto volume con tensione continua per massimo afflusso sanguigno e pompaggio muscolare.</string>
+    <string name="config_meta_sets">Serie</string>
+    <string name="config_meta_reps">Rip.</string>
+    <string name="config_meta_1rm">1RM</string>
+
+    <!-- ==================== Issue 4: EmptyState strings ==================== -->
+    <string name="empty_no_routines_title">Nessuna routine ancora</string>
+    <string name="empty_no_routines_message">Crea la tua prima routine di allenamento per iniziare</string>
+    <string name="empty_no_history_title">Nessuna cronologia ancora</string>
+    <string name="empty_no_history_all">Completa il tuo primo allenamento per vederlo qui</string>
+    <string name="empty_no_history_period">Nessun allenamento negli ultimi %1$s</string>
+    <string name="empty_no_cycles_title">Nessun ciclo di allenamento ancora</string>
+    <string name="empty_no_cycles_message">Crea una programmazione flessibile che si adatta alla tua vita, non al calendario</string>
+    <string name="empty_no_external_activities_title">Nessuna attività importata ancora</string>
+    <string name="empty_no_external_activities_message">Collega Hevy, Liftosaur o importa un CSV dalla schermata Integrazioni.</string>
+
+    <!-- ==================== Import/Export messages ==================== -->
+    <string name="import_complete_title">Importazione completata</string>
+    <string name="import_result_title">Risultato importazione</string>
+    <string name="import_issues">Problemi:</string>
+    <string name="import_and_more">… e altri %1$d</string>
+    <string name="export_success">Esportato in: %1$s</string>
+    <string name="export_failed">Esportazione non riuscita: %1$s</string>
+
+    <!-- ==================== Issue 5: Chart empty states ==================== -->
+    <string name="chart_no_data">Nessun dato disponibile</string>
+    <string name="chart_invalid_target">Valore obiettivo non valido</string>
+    <string name="chart_invalid_gauge">Dati dell’indicatore non validi</string>
+
+    <!-- ==================== Issue 7: contentDescription strings ==================== -->
+    <!-- Connection -->
+    <string name="cd_cloud_sync">Sincronizzazione cloud</string>
+    <string name="cd_bluetooth_lost">Connessione Bluetooth persa</string>
+    <string name="cd_connection_error">Errore di connessione</string>
+    <string name="cd_connection_lost">Connessione persa</string>
+    <string name="cd_connection_logs">Log di connessione</string>
+    <string name="cd_sync_error">Errore di sincronizzazione</string>
+    <string name="cd_link_portal">Collega account del portale</string>
+    <!-- Navigation / Actions -->
+    <string name="cd_back">Indietro</string>
+    <string name="cd_close">Chiudi</string>
+    <string name="cd_search">Cerca</string>
+    <string name="cd_clear_search">Cancella ricerca</string>
+    <string name="cd_menu">Menu</string>
+    <string name="cd_expand">Espandi</string>
+    <string name="cd_collapse">Comprimi</string>
+    <string name="cd_selected">Selezionato</string>
+    <string name="cd_decrease">Diminuisci</string>
+    <string name="cd_increase">Aumenta</string>
+    <string name="cd_drag">Trascina</string>
+    <string name="cd_reorder">Riordina</string>
+    <string name="cd_edit">Modifica</string>
+    <string name="cd_stop">Ferma</string>
+    <string name="cd_previous">Precedente</string>
+    <string name="cd_next">Successivo</string>
+    <string name="cd_tip">Suggerimento</string>
+    <!-- Workout -->
+    <string name="cd_start_workout">Avvia allenamento</string>
+    <string name="cd_start_new_workout">Avvia nuovo allenamento</string>
+    <string name="cd_stop_workout">Ferma allenamento</string>
+    <string name="cd_end_workout">Termina allenamento</string>
+    <string name="cd_close_workout">Chiudi allenamento</string>
+    <string name="cd_hands_off_handles">Lascia le impugnature</string>
+    <string name="cd_workout_completed">Allenamento completato</string>
+    <string name="cd_workout_error">Errore allenamento</string>
+    <string name="cd_workout_history">Cronologia allenamenti</string>
+    <!-- Exercises -->
+    <string name="cd_previous_exercise">Esercizio precedente</string>
+    <string name="cd_next_exercise">Esercizio successivo</string>
+    <string name="cd_completed">Completato</string>
+    <string name="cd_thumbnail_for">Miniatura di %1$s</string>
+    <string name="cd_clear_filters">Cancella filtri</string>
+    <string name="cd_alphabet_nav">Navigazione alfabetica. Tocca una lettera per passare agli esercizi che iniziano con quella lettera.</string>
+    <!-- Profiles -->
+    <string name="cd_active">Attivo</string>
+    <!-- Settings / Preferences -->
+    <string name="cd_settings">Impostazioni</string>
+    <string name="cd_appearance">Impostazioni aspetto</string>
+    <string name="cd_dynamic_color">Impostazione colori dinamici Material You</string>
+    <string name="cd_developer_tools">Strumenti sviluppatore</string>
+    <string name="cd_app_info">Informazioni sull’app</string>
+    <string name="cd_support_developer">Supporta lo sviluppatore</string>
+    <string name="cd_led_scheme">Schema colori LED</string>
+    <string name="cd_test_sounds">Prova suoni</string>
+    <!-- Weight -->
+    <string name="cd_decrease_weight">Riduci peso</string>
+    <string name="cd_increase_weight">Aumenta peso</string>
+    <!-- Weight Stepper (BLE config context — machine always uses kg) -->
+    <string name="weight_kg_per_cable">kg per cavo</string>
+    <string name="weight_total_two_cables">Totale: %1$s kg (entrambi i cavi)</string>
+    <!-- Data / Export -->
+    <string name="cd_backup_data">Backup dei dati</string>
+    <string name="cd_restore_data">Ripristina dati</string>
+    <string name="cd_export_data">Esporta dati</string>
+    <string name="cd_export_logs">Esporta log</string>
+    <string name="cd_clear_logs">Svuota log</string>
+    <string name="cd_open_backup_folder">Apri cartella backup</string>
+    <string name="cd_delete_workouts">Cancella cronologia allenamenti</string>
+    <!-- Routines / Cycles -->
+    <string name="cd_add_routine">Aggiungi nuova routine</string>
+    <string name="cd_delete_routine">Elimina sessione della routine</string>
+    <string name="cd_cancel_selection">Annulla selezione</string>
+    <string name="cd_copy_selected">Copia selezionati</string>
+    <string name="cd_delete_selected">Elimina selezionati</string>
+    <string name="cd_adjust_weights">Regola pesi</string>
+    <string name="cd_create_cycle">Crea ciclo</string>
+    <string name="cd_reorder_superset">Riordina superserie</string>
+    <string name="cd_remove_superset">Rimuovi dalla superserie</string>
+    <string name="cd_progression_settings">Impostazioni di progressione</string>
+    <string name="progression_eccentric_load_increase_by">Aumenta il carico eccentrico di</string>
+    <string name="cd_select_template">Seleziona modello</string>
+    <!-- Sets -->
+    <string name="cd_add_set">Aggiungi serie</string>
+    <string name="cd_delete_set">Elimina serie</string>
+    <string name="cd_add_30_seconds">Aggiungi 30 secondi</string>
+    <string name="cd_reset_timer">Azzera timer</string>
+    <string name="cd_skip_rest">Salta riposo</string>
+    <string name="cd_rest_day">Giorno di riposo</string>
+    <!-- Stats / Analytics -->
+    <string name="cd_analytics">Analisi</string>
+    <string name="cd_dashboard">Panoramica dashboard</string>
+    <string name="cd_progress_tracking">Monitoraggio progressi</string>
+    <string name="cd_achievements">Obiettivi</string>
+    <string name="cd_earned">Ottenuto</string>
+    <string name="cd_streak">Serie consecutiva</string>
+    <string name="cd_personal_record">Record personale</string>
+    <string name="cd_balance">Equilibrio</string>
+    <string name="cd_velocity">Velocità</string>
+    <string name="cd_success">Completato</string>
+    <string name="cd_missed">Saltato</string>
+    <!-- Misc -->
+    <string name="cd_empty_state">Stato vuoto</string>
+    <string name="cd_trophy">Celebrazione trofeo</string>
+    <string name="cd_confetti">Coriandoli di celebrazione</string>
+    <string name="cd_phoenix_logo">Logo Phoenix</string>
+    <string name="cd_delete_workout">Elimina allenamento</string>
+    <string name="cd_home">Home</string>
+    <string name="single_exercise_unavailable">L’esercizio non è più disponibile</string>
+
+    <!-- ==================== Voice Emergency Stop (Issue #141) ==================== -->
+    <string name="settings_voice_stop_description">Pronuncia la tua parola di sicurezza durante un allenamento per fermare subito la serie</string>
+    <string name="settings_voice_stop_enable">Attiva stop vocale</string>
+    <string name="settings_safe_word_label">Parola di sicurezza</string>
+    <string name="settings_safe_word_hint">Inserisci una parola di sicurezza (es. PHOENIX)</string>
+    <string name="settings_calibrate_button">Calibra</string>
+    <string name="settings_calibrate_first">Calibra la parola di sicurezza prima di poterla usare negli allenamenti</string>
+    <string name="settings_calibrated_badge">Calibrata</string>
+    <string name="settings_calibration_title">Calibra parola di sicurezza</string>
+    <string name="settings_calibration_prompt">Pronuncia la tua parola di sicurezza:</string>
+    <string name="settings_calibration_listening">In ascolto…</string>
+    <string name="settings_calibration_progress">%1$d di 3 rilevamenti</string>
+    <string name="settings_calibration_mic_error">Per la calibrazione vocale è necessario il permesso per il microfono. Consenti l’accesso al microfono nelle impostazioni del dispositivo, poi riprova.</string>
+    <string name="settings_calibration_open_settings">Apri Impostazioni</string>
+    <string name="cd_calibration_check">Verifica calibrazione</string>
+
+    <!-- ==================== Verbal Encouragement (Issue #611) ==================== -->
     <string name="settings_verbal_encouragement_title">Incoraggiamento verbale</string>
     <string name="settings_vulgar_mode_title">Modalità volgare</string>
-    <string name="settings_vulgar_mode_headphone_warning">Si consiglia vivamente l'uso delle cuffie.</string>
+    <string name="settings_vulgar_mode_headphone_warning">Si consiglia vivamente l’uso delle cuffie.</string>
     <string name="settings_vulgar_mode_tier_label">Livello di volgarità</string>
     <string name="settings_vulgar_mode_tier_mild">Leggera</string>
     <string name="settings_vulgar_mode_tier_strong">Forte</string>
     <string name="settings_vulgar_mode_tier_mix">Misto</string>
     <string name="settings_dominatrix_mode_title">Modalità Dominatrix</string>
-    <string name="settings_dominatrix_mode_description">Comandi vocali di Charlotte. Sovrascrive il pool volgare quando attivo.</string>
+    <string name="settings_dominatrix_mode_description">Comandi vocali di Charlotte. Quando attiva, sostituisce le frasi volgari.</string>
     <string name="settings_dominatrix_unlock_toast">Modalità Dominatrix sbloccata</string>
     <string name="settings_adults_only_title">Solo per adulti</string>
-    <string name="settings_adults_only_body">La modalità volgare contiene parolacce e temi per adulti. Hai 18 anni o più?</string>
-    <string name="settings_adults_only_confirm">Ho 18+ e la nonna non mi sente</string>
-    <string name="settings_adults_only_decline">Mantienilo pulito</string>
+    <string name="settings_adults_only_body">La modalità volgare contiene parolacce e temi per adulti. Hai almeno 18 anni?</string>
+    <string name="settings_adults_only_confirm">Ho 18+ anni e la nonna non mi sente</string>
+    <string name="settings_adults_only_decline">Senza volgarità</string>
     <string name="settings_adults_only_compliance_footer">Apple 16+ / Google Play IARC: Linguaggio forte + Temi suggestivi</string>
-    <string name="settings_ble_compat_title">Modalità di compatibilità BLE</string>
-    <string name="settings_ble_compat_description">Percorso di scrittura con MTU ridotta che risolve le disconnessioni all'avvio dell'allenamento su Pixel 6/7, Fold e Tablet. Auto la attiva solo su quei dispositivi.</string>
-    <string name="settings_ble_compat_description_affected">Percorso di scrittura con MTU ridotta che risolve le disconnessioni all'avvio dell'allenamento su Pixel 6/7, Fold e Tablet. Auto la attiva solo su quei dispositivi (questo dispositivo è interessato).</string>
-    <string name="settings_ble_compat_auto">Auto</string>
-    <string name="settings_ble_compat_on">Attivato</string>
-    <string name="settings_ble_compat_off">Disattivato</string>
-    <string name="settings_ble_compat_reconnect_hint">Ha effetto alla prossima connessione. Riconnettiti al trainer dopo la modifica.</string>
-    <!-- ==================== Set type labels (Issue #646) ==================== -->
-    <string name="set_type_calibration">Calibration Reps</string>
-    <string name="set_type_warmup">Warm-up Set %1$d</string>
-    <string name="set_type_working">Working Set</string>
 
-    <string name="workout_teardown_finishing">Completamento dell’allenamento precedente…</string>
-    <string name="workout_teardown_failed">Il ripristino dell’attrezzo non è stato completato</string>
-    <string name="workout_teardown_retry">Riprova</string>
-    <string name="label_previously_completed">Completati in precedenza</string>
-    <string name="cd_filter_previously_completed">Filtra gli esercizi completati in precedenza</string>
-    <string name="label_essentials">Essenziali</string>
-    <string name="label_recent">Recenti</string>
-    <string name="cd_filter_essentials">Mostra solo gli esercizi essenziali</string>
-    <string name="cd_phoenix_logo">Logo Phoenix</string>
+    <!-- ==================== RPG Attributes ==================== -->
+    <string name="rpg_no_data_yet">Completa il tuo primo allenamento per sbloccare gli attributi RPG</string>
+    <!-- Just Lift exercise tagging -->
+    <string name="action_tag">Etichetta</string>
+    <string name="action_change">Cambia</string>
+    <string name="tag_lift_title">Etichettare questa serie?</string>
+    <string name="tag_lift_message">Questa serie Just Lift non è ancora associata a un esercizio. Etichettarla mantiene precisa la cronologia.</string>
+    <string name="tag_exercise_prompt">Etichetta questo esercizio</string>
+    <string name="tag_exercise_hint">Associa questa serie per tracciarla</string>
+    <string name="tag_exercise_action">Etichetta esercizio</string>
+    <string name="exercise_tagged">Esercizio etichettato</string>
+    <!-- #972: edit/clear a completed Just Lift exercise label -->
+    <string name="action_clear_label">Rimuovi</string>
+    <string name="clear_exercise_label_title">Rimuovere l’etichetta dell’esercizio?</string>
+    <string name="clear_exercise_label_message">La serie resta nella cronologia e apparirà come Just Lift finché non la etichetti di nuovo.</string>
+    <string name="clear_exercise_label_confirm">Rimuovi etichetta</string>
+    <!-- Routine launch modifiers (Issue #495) -->
+    <string name="routine_modifier_active_recovery">Avvia recupero attivo…</string>
+    <string name="routine_modifier_heavy_deload">Avvia scarico pesante…</string>
+    <string name="routine_modifier_percent_label">Modificatore</string>
+    <string name="routine_modifier_start">Avvia</string>
+    <string name="routine_modifier_cancel">Annulla</string>
+    <string name="routine_modifier_active_recovery_description">Pesi ridotti alla percentuale selezionata del tuo 1RM se noto, altrimenti del peso programmato; gli esercizi a corpo libero mantengono i propri carichi. Le ripetizioni allenanti restano invariate; riscaldamenti semplificati.</string>
+    <string name="routine_modifier_heavy_deload_description">Ripetizioni ridotte alla percentuale di volume selezionata; i pesi restano invariati.</string>
 
-    <!-- Shared/opened routine CSV files (#1242) -->
-    <string name="routine_csv_imported_builder">Importato nel Builder: %1$s</string>
-    <string name="routine_csv_imported_builder_more">Importato nel Builder: %1$s (+%2$d in più in Routine giornaliere)</string>
-    <string name="routine_csv_saved_daily">Importato: %1$s. Si trova in Routine giornaliere.</string>
-    <string name="action_open">Apri</string>
-    <string name="routine_csv_import_busy">Un'importazione è già in corso. Condividi di nuovo il file quando termina.</string>
-    <string name="home_recent_activity_one_set">1 serie</string>
-    <string name="home_recent_activity_many_sets">%1$d serie</string>
-    <string name="home_recent_activity_one_rep">1 ripetizione totale</string>
-    <string name="home_recent_activity_many_reps">%1$d ripetizioni totali</string>
-    <string name="home_recent_activity_group_detail">%1$s • %2$s</string>
-    <string name="home_recent_activity_date_pattern">dd/MM/yyyy</string>
-    <string name="home_recent_activity_time_pattern">HH:mm</string>
-    <string name="home_recent_activity_date_time_separator"> • </string>
-    <!-- Issue #1367: Dimensione controlli allenamento -->
-    <string name="settings_weight_text_size">Dimensione controlli allenamento</string>
-    <string name="settings_weight_text_size_standard">Standard</string>
-    <string name="settings_weight_text_size_large">Grande</string>
-    <string name="settings_weight_text_size_extra_large">Molto grande</string>
-    <string name="cd_weight_text_size">Dimensione controlli allenamento</string>
-    <!-- Issue #1358: custom-exercise photos (Phase 1) -->
-    <string name="media_photos_count">Foto · %1$d di %2$d</string>
-    <string name="media_add_photos">Aggiungi foto</string>
-    <string name="media_photos_helper">Fino a 6 foto · 10 MB ciascuna</string>
-    <string name="media_photos_privacy_note">Le copie sono archiviate in privato su questo dispositivo. I tuoi originali restano invariati.</string>
-    <string name="media_flipbook_note">Durante gli allenamenti vengono mostrate fino a 2 foto in rotazione.</string>
-    <string name="media_preference_off_notice">Le demo degli esercizi sono disattivate. Attivale nelle Impostazioni per aggiungere o visualizzare foto.</string>
-    <string name="media_copying_progress">Copia delle foto… %1$d di %2$d</string>
-    <string name="media_photo_badge">Foto</string>
-    <string name="media_preview_title">Foto %1$d di %2$d</string>
-    <string name="media_preview_close">Chiudi</string>
-    <string name="media_preview_previous">Precedente</string>
-    <string name="media_preview_next">Successiva</string>
-    <string name="media_remove_photo">Rimuovi foto</string>
-    <string name="media_remove_confirm_title">Rimuovere questa foto?</string>
-    <string name="media_remove_confirm_message">Salva per rimuovere questa copia dall'esercizio. Il tuo originale resta invariato.</string>
-    <string name="media_removal_queued">Rimozione in attesa. Salva per applicare.</string>
-    <string name="media_error_too_many">Nessuna foto aggiunta: fino a 6 foto per esercizio.</string>
-    <string name="media_error_too_large">Nessuna foto aggiunta: %1$s supera i 10 MB.</string>
-    <string name="media_error_unsupported">Nessuna foto aggiunta: %1$s non è un'immagine supportata.</string>
-    <string name="media_error_unreadable">Nessuna foto aggiunta: %1$s non è stato possibile leggerlo.</string>
-    <string name="media_error_missing_staged">Non salvato: %1$s non è stato trovato. Rimuovili o riselezionali, poi riprova.</string>
-    <string name="media_error_generic">Nessuna foto aggiunta. Riprova.</string>
-    <string name="media_save_media_failed">Esercizio salvato; non è stato possibile salvare le foto. Riaggiungile.</string>
-    <string name="media_save_busy">Le foto sono ancora in fase di aggiunta. Attendi il termine della selezione, poi salva.</string>
-    <string name="media_cleanup_pending">Alcune copie locali non sono state rimosse. Phoenix riproverà.</string>
-    <string name="media_delete_cleanup_transient">Esercizio eliminato. Pulizia delle foto locali…</string>
-    <string name="media_save_failed">Impossibile salvare l'esercizio. Riprova.</string>
-    <string name="media_delete_failed">Impossibile eliminare l'esercizio. Riprova.</string>
-    <string name="delete_exercise_media_message">Eliminare questo esercizio e le sue foto? I tuoi originali restano invariati.</string>
-    <string name="settings_exercise_demos_photos_note">Le demo degli esercizi controllano anche le foto che aggiungi agli esercizi personalizzati.</string>
-    <!-- Issue #1360: rest-control rejection feedback. -->
-    <string name="rest_control_not_resting">Il timer di riposo non è attivo in questo momento.</string>
-    <string name="rest_control_stale_owner">Questo riposo è cambiato prima che la modifica venisse applicata.</string>
-    <string name="rest_control_authority_failed">Impossibile confermare il riposo attuale. La modifica non è stata applicata.</string>
-    <string name="rest_control_persistence_failed">Impossibile salvare la modifica al riposo. Puoi riprovare.</string>
-    <string name="rest_control_post_write_drift">Il riposo è cambiato durante il salvataggio. La modifica potrebbe non essere stata applicata.</string>
-
-    <!-- Wave 3A minimal seed keys for enabled Italian locale and contract tests -->
-    <string name="language_system_default">Predefinito di sistema</string>
-    <string name="language_english">English</string>
-    <string name="language_dutch">Nederlands (Beta)</string>
-    <string name="language_german">Deutsch (Beta)</string>
-    <string name="language_spanish">Español (Beta)</string>
-    <string name="language_french">Français (Beta)</string>
-    <string name="language_italian">Italiano (Beta)</string>
-    <string name="settings_weight_unit">Unità di peso</string>
-    <string name="assessment_save_failed">Impossibile salvare la valutazione. Riprova.</string>
-    <string name="cd_led_scheme">Schema colori LED</string>
-    <string name="equipment_rack_title">Attrezzatura</string>
+    <!-- ==================== Equipment Rack (Issue #448) ==================== -->
+    <string name="equipment_rack_title">Rack attrezzatura</string>
+    <string name="equipment_rack_description">Gestisci accessori locali e carico aggiuntivo per le sessioni di allenamento.</string>
+    <string name="equipment_rack_empty">Nessun elemento nel rack.</string>
+    <string name="equipment_rack_add_item">Aggiungi elemento al rack</string>
+    <string name="equipment_rack_edit_item">Modifica elemento del rack</string>
+    <string name="equipment_rack_name_label">Nome elemento</string>
+    <string name="equipment_rack_weight_label">Peso (%1$s)</string>
+    <string name="equipment_rack_category_label">Categoria</string>
+    <string name="equipment_rack_behavior_label">Comportamento carico</string>
+    <string name="equipment_rack_enabled">Attivo</string>
+    <string name="equipment_rack_invalid_name">Il nome è obbligatorio.</string>
+    <string name="equipment_rack_invalid_weight">Inserisci un peso valido (0 o superiore).</string>
+    <string name="equipment_rack_active_selection">Rack attrezzatura</string>
     <string name="equipment_rack_manage">Gestisci</string>
+    <string name="equipment_rack_no_enabled_items">Nessun elemento attivo nel rack.</string>
+    <string name="equipment_rack_none_selected">Nessun elemento selezionato.</string>
+    <string name="equipment_rack_inline_context">Rack: %1$s</string>
+    <string name="custom_equipment_title">Attrezzatura personalizzata</string>
+    <string name="custom_equipment_description">Aggiungi i nomi della tua attrezzatura (ad esempio Bilanciere EZ) al menu Attrezzatura degli esercizi e ai filtri.</string>
+    <string name="custom_equipment_manage">Gestisci</string>
+    <string name="cd_custom_equipment">Attrezzatura personalizzata</string>
+    <string name="custom_equipment_add_hint">Nome attrezzatura</string>
+    <string name="custom_equipment_empty">Nessuna attrezzatura personalizzata. Aggiungi un nome per renderlo disponibile nell’elenco dell’attrezzatura degli esercizi.</string>
+    <string name="custom_equipment_rename">Rinomina</string>
+    <string name="custom_equipment_remove">Rimuovi</string>
+    <string name="custom_equipment_rename_title">Rinomina attrezzatura</string>
+    <string name="custom_equipment_rename_message">La rinomina modifica l’etichetta negli esercizi esistenti che usano questa attrezzatura. L’attrezzatura mantiene identità e cronologia.</string>
+    <string name="custom_equipment_remove_title">Rimuovere l’attrezzatura?</string>
+    <string name="custom_equipment_remove_message">Gli esercizi che la usano mantengono un nome leggibile. La voce non sarà più un’opzione nei filtri o nei menu. Aggiungere di nuovo lo stesso nome la riutilizzerà per quegli esercizi.</string>
+    <string name="custom_equipment_official_title">Attrezzatura ufficiale</string>
+    <string name="custom_equipment_official_body">L’elenco ufficiale è fisso. I tuoi nomi personalizzati compaiono dopo di esso nel menu dell’esercizio e dopo i chip di filtro.</string>
+    <string name="custom_equipment_error_empty">Inserisci un nome usando lettere o numeri.</string>
+    <string name="custom_equipment_error_too_long">I nomi possono avere fino a 32 caratteri.</string>
+    <string name="custom_equipment_error_comma">I nomi non possono contenere virgole.</string>
+    <string name="custom_equipment_error_control">I nomi non possono contenere caratteri di controllo.</string>
+    <string name="custom_equipment_error_reserved">Questo nome fa già parte dell’elenco ufficiale dell’attrezzatura.</string>
+    <string name="custom_equipment_error_duplicate">Questo nome è già nel tuo elenco.</string>
+    <string name="custom_equipment_error_limit">Puoi salvare fino a 24 nomi di attrezzatura personalizzata.</string>
+    <string name="custom_equipment_error_generic">Impossibile salvare questo nome.</string>
+    <string name="detailed_metrics_not_captured">Metriche dettagliate non acquisite per questa serie</string>
+
+    <!-- ==================== Set type labels (Issue #646) ==================== -->
+    <string name="set_type_calibration">Ripetizioni di calibrazione</string>
+    <string name="set_type_warmup">Serie di riscaldamento %1$d</string>
+    <string name="set_type_working">Serie allenante</string>
+    <string name="equipment_rack_category_weighted_vest">Giubbotto zavorrato</string>
+    <string name="equipment_rack_category_dip_belt">Cintura per dip</string>
+    <string name="equipment_rack_category_chains">Catene</string>
+    <string name="equipment_rack_category_band">Elastico</string>
+    <string name="equipment_rack_category_assistance">Assistenza</string>
+    <string name="equipment_rack_category_attachment">Accessorio</string>
+    <string name="equipment_rack_category_other">Altro</string>
+    <string name="equipment_rack_behavior_added">Resistenza aggiunta</string>
+    <string name="equipment_rack_behavior_counterweight">Contrappeso</string>
+    <string name="equipment_rack_behavior_display_only">Solo visualizzazione</string>
+    <string name="equipment_rack_behavior_added_short">+Carico</string>
+    <string name="equipment_rack_behavior_counterweight_short">-Contr.</string>
+    <string name="equipment_rack_behavior_display_only_short">Solo vis.</string>
+    <string name="equipment_rack_save_override_title">Salvare la modifica?</string>
+    <string name="equipment_rack_save_override_message">Salvare questa configurazione come predefinita per %1$s in questa routine?</string>
+    <string name="equipment_rack_save_override_confirm">Salva</string>
+    <string name="equipment_rack_save_override_dismiss">Solo questa volta</string>
+    <string name="cd_equipment_rack">Rack attrezzatura</string>
+
+    <!-- ==================== Accessibility: profile color picker (task-1.2) ==================== -->
     <string name="color_blue">Blu</string>
     <string name="color_green">Verde</string>
     <string name="color_amber">Ambra</string>
@@ -181,6 +758,53 @@
     <string name="color_cyan">Ciano</string>
     <string name="color_orange">Arancione</string>
     <string name="cd_select_profile_color">Seleziona il colore profilo %1$s</string>
+
+    <!-- ==================== Accessibility: rep counter live region (task-1.2) ==================== -->
+    <string name="cd_rep_counter">%1$d di %2$d ripetizioni, %3$s</string>
+    <string name="cd_phase_idle">a riposo</string>
+    <string name="cd_phase_concentric">concentrica</string>
+    <string name="cd_phase_eccentric">eccentrica</string>
+
+    <!-- ==================== Accessibility: day chip merged description (task-1.2) ==================== -->
+    <string name="cd_day_chip_completed">Giorno %1$d, completato</string>
+    <string name="cd_day_chip_missed">Giorno %1$d, saltato</string>
+    <string name="cd_day_chip_current">Giorno %1$d, attuale</string>
+    <string name="cd_day_chip_upcoming">Giorno %1$d, prossimo</string>
+    <string name="cd_day_chip_rest">Giorno %1$d, giorno di riposo</string>
+
+    <!-- ==================== Exercise detail (task-3.5) ==================== -->
+    <string name="exercise_unknown">Esercizio sconosciuto</string>
+
+    <!-- ==================== Destructive confirm dialogs (task-3.7) ==================== -->
+    <string name="delete_workout_title">Eliminare l’allenamento?</string>
+    <string name="delete_workout_message">Questa azione non può essere annullata.</string>
+    <string name="delete_all_sets">Elimina tutte le serie</string>
+    <string name="delete_routine_session_title">Eliminare la sessione della routine?</string>
+    <string name="delete_routine_session_message">Verranno eliminate tutte le %1$d serie di questa routine. Questa azione non può essere annullata.</string>
+    <string name="delete_all_workouts_title">Eliminare tutti gli allenamenti?</string>
+    <string name="delete_all_workouts_message">Tutta la cronologia degli allenamenti di %1$s verrà eliminata definitivamente. Questa azione non può essere annullata.</string>
+
+    <!-- ==================== Dialog slot/hierarchy fixes (task-3.8) ==================== -->
+    <string name="bulk_weight_adjust_select_hint">Seleziona una percentuale o inserisci un valore per attivare Applica</string>
+    <string name="bulk_adjust_hint_pr_scaled">Tutti gli esercizi usano pesi scalati sul PR — nulla da regolare</string>
+
+    <!-- ==================== Unsaved-changes guard (task-4A.2) ==================== -->
+    <string name="discard_changes_title">Scartare le modifiche?</string>
+    <string name="discard_changes_message">Hai delle modifiche non salvate. Tornando indietro verranno scartate.</string>
+
+    <!-- ==================== Pager / overlay accessibility (task-4A.5) ==================== -->
+    <string name="pager_page_of">Pagina %1$d di %2$d</string>
+
+    <!-- ==================== VBT assessment entry points (task-4B.0) ==================== -->
+    <string name="strength_assessment_cta_title">Valutazione forza</string>
+    <string name="strength_assessment_cta_subtitle">Trova il tuo 1RM con test basati sulla velocità</string>
+    <string name="cd_strength_assessment_cta">Apri selettore valutazione forza</string>
+    <string name="cd_exercise_history_detail">Visualizza cronologia esercizio e 1RM</string>
+
+    <!-- ==================== Just Lift auto-start honesty (task-5B.3) ==================== -->
+    <string name="autostart_connect_prompt">Connettiti per attivare l’avvio automatico</string>
+    <string name="autostart_ready">AVVIO AUTOMATICO PRONTO</string>
+    <string name="autostart_grab_handles">Afferra le impugnature per iniziare</string>
     <string name="nav_profile">Profilo</string>
     <string name="cd_profile">Profilo</string>
     <string name="cd_open_profile_switcher">Apri selettore profilo</string>
@@ -209,17 +833,27 @@
     <string name="profile_vbt_enabled">Usa VBT durante gli allenamenti live</string>
     <string name="profile_switching">Cambio profilo…</string>
     <string name="profile_missing_exercise">Questo esercizio non è più disponibile</string>
-    <string name="profile_insights_load_failed">Impossibile caricare le statistiche dell'esercizio</string>
+    <string name="profile_insights_load_failed">Impossibile caricare le statistiche dell’esercizio</string>
     <string name="profile_update_failed">Impossibile salvare questa preferenza del profilo</string>
     <string name="profile_switch_failed">Impossibile cambiare profilo</string>
     <string name="profile_create_failed">Impossibile creare il profilo</string>
+    <string name="profile_switch_blocked_during_workout">Completa o termina l’allenamento prima di cambiare profilo</string>
     <string name="profile_recovery_title">Ripristino profilo richiesto</string>
     <string name="profile_recovery_message">Phoenix non è riuscito a confermare quale profilo è attivo. Riprova prima di continuare.</string>
     <string name="profile_recovery_retry_failed">Il ripristino del profilo non è ancora disponibile</string>
     <string name="profile_delete_reassign_message">Eliminare &quot;%1$s&quot;? I suoi allenamenti, routine, record, badge, valutazioni e dati di progressione passeranno a Predefinito. Questa azione non può essere annullata.</string>
+    <string name="profile_delete_merge_action">Unisci a Predefinito</string>
+    <string name="profile_delete_permanent_action">Elimina definitivamente</string>
+    <string name="profile_delete_permanent_message">Oppure elimina &quot;%1$s&quot; definitivamente: i suoi allenamenti, routine, cicli e record verranno rimossi da questo dispositivo e dal tuo account del portale. Questa azione non può essere annullata.</string>
     <string name="settings_video_behavior">Demo esercizi</string>
     <string name="settings_show_exercise_videos">Mostra demo esercizi</string>
     <string name="settings_show_exercise_videos_description">Mostra immagini dimostrative degli esercizi; disattiva sui dispositivi più lenti</string>
+    <string name="settings_exercise_demos_disabled">Demo esercizi disattivate</string>
+    <string name="settings_refresh_wger_catalog">Aggiorna esercizi extra da wger</string>
+    <string name="settings_refresh_wger_catalog_description">Scarica esercizi con licenza aperta da wger (CC-BY-SA). Non sostituisce il catalogo integrato.</string>
+    <string name="settings_refresh_wger_catalog_success">Aggiunti %1$d esercizi da wger</string>
+    <string name="settings_refresh_wger_catalog_error">Impossibile aggiornare da wger</string>
+    <string name="settings_refresh_wger_catalog_in_progress">Aggiornamento…</string>
     <string name="profile_weight_increment">Incremento di peso</string>
     <string name="profile_body_weight">Peso corporeo</string>
     <string name="profile_set_summary">Durata riepilogo serie</string>
@@ -236,4 +870,779 @@
     <string name="profile_velocity_loss_threshold">Soglia perdita di velocità</string>
     <string name="profile_auto_end_velocity_loss">Termina automaticamente per perdita di velocità</string>
     <string name="profile_vbt_history_note">Disattivare il VBT influisce solo sugli allenamenti live; le stime e valutazioni salvate restano disponibili.</string>
+    <string name="profile_automatic">Automatico</string>
+    <string name="profile_manual">Manuale</string>
+    <string name="profile_master_beeps">Segnali acustici allenamento</string>
+    <string name="profile_body_weight_unset">Non impostato</string>
+    <string name="profile_body_weight_invalid">Inserisci un peso corporeo tra 20 e 300 kg</string>
+    <string name="profile_body_weight_imported">Corrisponde a una misurazione salute importata</string>
+    <string name="profile_led_scheme_blue">Blu</string>
+    <string name="profile_led_scheme_green">Verde</string>
+    <string name="profile_led_scheme_teal">Verde acqua</string>
+    <string name="profile_led_scheme_yellow">Giallo</string>
+    <string name="profile_led_scheme_pink">Rosa</string>
+    <string name="profile_led_scheme_red">Rosso</string>
+    <string name="profile_led_scheme_purple">Viola</string>
+    <string name="profile_led_scheme_none">Nessuno</string>
+    <string name="cd_select_led_scheme">Seleziona schema LED: %1$s</string>
+    <string name="profile_led_selected_scheme">Selezionato: %1$s</string>
+    <string name="profile_disco_mode">Modalità Disco</string>
+    <string name="profile_disco_requires_connection">Connettiti al trainer per usare la Modalità Disco</string>
+    <string name="profile_disco_unlocked_title">Modalità Disco sbloccata</string>
+    <string name="profile_disco_unlocked_body">Attiva la Modalità Disco nelle preferenze LED per far illuminare a festa il tuo trainer.</string>
+    <string name="profile_disco_unlocked_action">Facciamo festa</string>
+    <string name="profile_adult_enable_partial_failure">La conferma dell’età è stata salvata, ma non è stato possibile attivare la Modalità volgare. Riprova.</string>
+    <string name="label_previously_completed">Completati in precedenza</string>
+    <string name="cd_filter_previously_completed">Filtra gli esercizi completati in precedenza</string>
+    <string name="cd_filter_essentials">Mostra solo gli esercizi essenziali</string>
+    <!-- PR 25: crash report prompt -->
+    <string name="crash_report_title">Report di arresto anomalo disponibile</string>
+    <string name="crash_report_message">L’ultima volta l’app si è chiusa in modo imprevisto. Condividere il report di arresto anomalo? Contiene dettagli tecnici sull’errore; controllalo prima di pubblicarlo.</string>
+    <string name="crash_report_share">Condividi</string>
+    <string name="crash_report_dismiss">Non ora</string>
+    <string name="startup_dual_databases_message">Phoenix ha trovato più di una copia del database locale e non ha potuto determinare con sicurezza quale mantenere, quindi si è fermato prima di aprirne uno. Nulla è stato eliminato. Esporta i file del database per conservarne una copia, poi inviali privatamente via email a support@phoenix-portal.com con i codici di diagnostica e supporto qui sotto. I file contengono la cronologia dei tuoi allenamenti, quindi non allegarli a una segnalazione pubblica. Riprova una volta che il supporto ti avrà aiutato a risolvere il duplicato.</string>
+    <string name="startup_export_database_files">Esporta file del database</string>
+    <string name="startup_export_failed">Impossibile esportare i file del database. Nulla è stato modificato; puoi riprovare.</string>
+    <string name="startup_contact_support">Invia email al supporto</string>
+    <string name="startup_storage_attention_title">Archiviazione locale: attenzione richiesta</string>
+    <string name="startup_local_data_preserved_title">Dati locali preservati</string>
+    <string name="startup_storage_failed_message">Phoenix non è riuscito a preparare in sicurezza l’archiviazione locale. I dati locali esistenti sono rimasti intatti. Puoi riprovare dopo aver risolto il problema del dispositivo o dell’archiviazione.</string>
+    <string name="startup_diagnostic_code">Codice diagnostico: %1$s</string>
+    <string name="startup_support_code">Codice supporto: %1$s</string>
+    <string name="startup_initialization_failed_message">Phoenix non ha completato l’avvio. Mantieni l’app installata per preservare i dati locali. Riprova o contatta il supporto se il problema persiste.</string>
+    <string name="startup_share_diagnostics">Condividi diagnostica di avvio</string>
+    <string name="startup_share_diagnostics_failed">Impossibile aprire la finestra di condivisione. Puoi riprovare.</string>
+    <!-- PR 28: voice safe-word emergency stop availability -->
+    <string name="voice_stop_unavailable_chip">Stop vocale non disponibile: %1$s</string>
+    <string name="voice_stop_unavailable_snackbar">Stop vocale non disponibile: %1$s. Usa il pulsante Stop sullo schermo per terminare la serie.</string>
+    <string name="voice_stop_reason_profile_switching">profilo ancora in caricamento</string>
+    <string name="voice_stop_reason_not_configured">nessuna parola di sicurezza impostata</string>
+    <string name="voice_stop_reason_not_calibrated">parola di sicurezza non calibrata</string>
+    <string name="voice_stop_reason_recognizer_unavailable">riconoscimento vocale non disponibile su questo dispositivo</string>
+    <string name="voice_stop_reason_permission">permesso microfono negato</string>
+    <string name="voice_stop_reason_audio_focus_lost">un’altra app sta usando il microfono</string>
+    <string name="voice_stop_reason_start_failed">impossibile avviare il riconoscimento vocale</string>
+    <!-- PR 11: account-switch dialog and ownership-conflict recovery -->
+    <string name="account_switch_title">I dati di questo telefono appartengono a un altro account</string>
+    <string name="account_switch_message">Hai effettuato l’accesso come %1$s, ma i dati su questo telefono appartengono a %2$s. Gli allenamenti già sincronizzati con %2$s restano su questo telefono e su quell’account; non verranno caricati su %1$s.</string>
+    <string name="account_switch_upload_never_synced">Carica allenamenti non ancora sincronizzati</string>
+    <string name="account_switch_exclude_all">Non caricare i dati esistenti</string>
+    <string name="ownership_conflict_title">Caricamento rifiutato</string>
+    <string name="ownership_conflict_message">Il portale ha rifiutato dati che appartengono a un altro account: %1$s</string>
+    <string name="ownership_conflict_action">Interrompi il caricamento dei dati precedenti al cambio account</string>
+    <string name="cycle_training_max_missing_title">Massimale di allenamento non impostato</string>
+    <string name="cycle_training_max_missing_body">Gli incrementi settimanali del massimale di allenamento vengono saltati per %1$s finché questo profilo non ne imposta uno.</string>
+    <string name="cycle_training_max_missing_action">Imposta massimale</string>
+    <!-- Shared/opened routine CSV files (#1242) -->
+    <string name="routine_csv_imported_builder">Importato nell’editor: %1$s</string>
+    <string name="routine_csv_imported_builder_more">Importato nell’editor: %1$s (+%2$d in più in Routine giornaliere)</string>
+    <string name="routine_csv_saved_daily">Importato: %1$s. Si trova in Routine giornaliere.</string>
+    <string name="action_open">Apri</string>
+    <string name="routine_csv_import_busy">È già in corso un’importazione. Condividi di nuovo il file quando termina.</string>
+    <string name="home_recent_activity_one_set">1 serie</string>
+    <string name="home_recent_activity_many_sets">%1$d serie</string>
+    <string name="home_recent_activity_one_rep">1 ripetizione totale</string>
+    <string name="home_recent_activity_many_reps">%1$d ripetizioni totali</string>
+    <string name="home_recent_activity_group_detail">%1$s • %2$s</string>
+    <string name="home_recent_activity_date_pattern">dd/MM/yyyy</string>
+    <string name="home_recent_activity_time_pattern">HH:mm</string>
+    <string name="home_recent_activity_date_time_separator"> • </string>
+    <!-- Issue #1367: Workout control size preference. -->
+    <string name="settings_weight_text_size">Dimensione controlli allenamento</string>
+    <string name="settings_weight_text_size_standard">Standard</string>
+    <string name="settings_weight_text_size_large">Grande</string>
+    <string name="settings_weight_text_size_extra_large">Molto grande</string>
+    <string name="cd_weight_text_size">Dimensione controlli allenamento</string>
+    <!-- Issue #1358: custom-exercise photos (Phase 1) -->
+    <string name="media_photos_count">Foto · %1$d di %2$d</string>
+    <string name="media_add_photos">Aggiungi foto</string>
+    <string name="media_photos_helper">Fino a 6 foto · 10 MB ciascuna</string>
+    <string name="media_photos_privacy_note">Le copie sono archiviate in privato su questo dispositivo. I tuoi originali restano invariati.</string>
+    <string name="media_flipbook_note">Durante gli allenamenti vengono mostrate fino a 2 foto in rotazione.</string>
+    <string name="media_preference_off_notice">Le demo degli esercizi sono disattivate. Attivale nelle Impostazioni per aggiungere o visualizzare foto.</string>
+    <string name="media_copying_progress">Copia delle foto… %1$d di %2$d</string>
+    <string name="media_photo_badge">Foto</string>
+    <string name="media_preview_title">Foto %1$d di %2$d</string>
+    <string name="media_preview_close">Chiudi</string>
+    <string name="media_preview_previous">Precedente</string>
+    <string name="media_preview_next">Successiva</string>
+    <string name="media_remove_photo">Rimuovi foto</string>
+    <string name="media_remove_confirm_title">Rimuovere questa foto?</string>
+    <string name="media_remove_confirm_message">Salva per rimuovere questa copia dall’esercizio. Il tuo originale resta invariato.</string>
+    <string name="media_removal_queued">Rimozione in attesa. Salva per applicare.</string>
+    <string name="media_error_too_many">Nessuna foto aggiunta: fino a 6 foto per esercizio.</string>
+    <string name="media_error_too_large">Nessuna foto aggiunta: %1$s supera i 10 MB.</string>
+    <string name="media_error_unsupported">Nessuna foto aggiunta: %1$s non è un’immagine supportata.</string>
+    <string name="media_error_unreadable">Nessuna foto aggiunta: impossibile leggere %1$s.</string>
+    <string name="media_error_missing_staged">Non salvato: impossibile trovare %1$s. Rimuovi o riseleziona i file, poi riprova.</string>
+    <string name="media_error_generic">Nessuna foto aggiunta. Riprova.</string>
+    <string name="media_save_media_failed">Esercizio salvato; non è stato possibile salvare le foto. Riaggiungile.</string>
+    <string name="media_save_busy">Le foto sono ancora in fase di aggiunta. Attendi il termine della selezione, poi salva.</string>
+    <string name="media_cleanup_pending">Alcune copie locali non sono state rimosse. Phoenix riproverà.</string>
+    <string name="media_delete_cleanup_transient">Esercizio eliminato. Pulizia delle foto locali…</string>
+    <string name="media_save_failed">Impossibile salvare l’esercizio. Riprova.</string>
+    <string name="media_delete_failed">Impossibile eliminare l’esercizio. Riprova.</string>
+    <string name="delete_exercise_media_message">Eliminare questo esercizio e le sue foto? I tuoi originali restano invariati.</string>
+    <string name="settings_exercise_demos_photos_note">Le demo degli esercizi controllano anche le foto che aggiungi agli esercizi personalizzati.</string>
+
+    <!-- Wave 3A: Extracted UI strings -->
+    <!-- Settings Tab -->
+    <string name="settings_like_work">Ti piace il mio lavoro?</string>
+    <string name="settings_donate_description">Questa app è gratuita al 100% e senza pubblicità, ma accetto volentieri donazioni se ti va di sostenere il progetto!</string>
+    <string name="settings_cloud_sync_description">Sincronizza i tuoi allenamenti con Phoenix Portal per accedervi da più dispositivi</string>
+    <string name="settings_link_portal_account">Collega account del portale</string>
+    <string name="settings_integrations">Integrazioni</string>
+    <string name="settings_integrations_description">Collega Hevy, Liftosaur, app Salute e importa/esporta CSV</string>
+    <string name="settings_data_management">Gestione dati</string>
+    <string name="settings_auto_backup_title">Backup automatico allenamenti e routine</string>
+    <string name="settings_auto_backup_description">Salva automaticamente gli allenamenti singoli e le routine completate nei file di backup locali</string>
+    <string name="settings_auto_backup_description_with_location">Salva automaticamente gli allenamenti singoli e le routine completate nei file di backup locali. %1$s</string>
+    <string name="settings_include_raw_telemetry_title">Includi telemetria grezza</string>
+    <string name="settings_include_raw_telemetry_description">Aggiunge ai backup ogni campione grezzo di forza e posizione. Rende i backup molto più grandi; allenamenti, ripetizioni e record sono sempre inclusi</string>
+    <string name="settings_backup_location">Posizione backup</string>
+    <string name="settings_backup_location_default">Predefinita (%1$s)</string>
+    <string name="settings_change_location">Cambia posizione</string>
+    <string name="settings_reset_to_default">Ripristina predefinita</string>
+    <string name="settings_backup_file_one">1 file di backup</string>
+    <string name="settings_backup_file_other">%1$d file di backup</string>
+    <string name="settings_open_backup_folder">Apri cartella backup</string>
+    <string name="settings_delete_all_workouts">Elimina tutti gli allenamenti</string>
+    <string name="settings_developer_tools">Strumenti sviluppatore</string>
+    <string name="settings_connection_logs">Log di connessione</string>
+    <string name="settings_connection_logs_description">Visualizza i log di debug della connessione Bluetooth per diagnosticare i problemi di connettività</string>
+    <string name="settings_test_sounds">Prova suoni</string>
+    <string name="settings_test_sounds_description">Prova i suoni di allenamento attuali; il conteggio numerato delle ripetizioni richiede Profilo &gt; Allenamento &gt; Conteggio vocale ripetizioni.</string>
+    <string name="settings_app_info">Info app</string>
+    <string name="settings_app_info_description">Progetto open source della community per controllare localmente i macchinari Phoenix Trainer.</string>
+    <string name="settings_unknown_error">Errore sconosciuto</string>
+    <string name="settings_unknown_database_error">Errore sconosciuto del database</string>
+    <string name="settings_backup_complete">Backup completato</string>
+    <string name="settings_restore_incomplete">Ripristino incompleto</string>
+    <string name="settings_restore_complete">Ripristino completato</string>
+    <string name="settings_restore_imported">Importati: %1$d</string>
+    <string name="settings_restore_already_present">Già presenti: %1$d</string>
+    <string name="settings_restore_failed">Non riusciti: %1$d</string>
+    <string name="settings_restore_repaired_references">Riferimenti riparati: %1$d</string>
+    <string name="settings_restore_incomplete_detail_one">Ripristino incompleto: 1 elemento non è stato ripristinato. I conteggi sopra riflettono il risultato parziale.</string>
+    <string name="settings_restore_incomplete_detail_other">Ripristino incompleto: %1$d elementi non sono stati ripristinati. I conteggi sopra riflettono il risultato parziale.</string>
+    <string name="settings_creating_backup">Creazione backup…</string>
+    <string name="settings_restoring_data">Ripristino dati…</string>
+    <string name="settings_import_failed_detail">Importazione non riuscita (%1$s): %2$s</string>
+    <!-- Connection Lost Safety Dialog -->
+    <string name="connection_lost_reconnect_hint">Una riconnessione riuscita può inviare uno stop software, ma non garantisce che i cavi siano scarichi. Segui le indicazioni di sicurezza del trainer; spegnere il trainer è un’ultima risorsa valida.</string>
+    <string name="connection_lost_confirm_load_hint">Le nuove serie restano bloccate finché non confermi. Controlla tu stesso il trainer: impugnature a riposo e cavi non in trazione oltre la normale tensione leggera a riposo.</string>
+    <string name="connection_lost_unknown_load">Phoenix non può confermare se la resistenza è ancora attiva. Non dare per scontato che l’attrezzo sia scarico.</string>
+    <string name="connection_lost_title">Connessione persa</string>
+    <string name="connection_lost_message">Connessione Bluetooth al trainer persa. %1$s</string>
+    <string name="connection_lost_set_end_title">Fine serie non confermata</string>
+    <string name="connection_lost_set_end_message">Phoenix non ha ricevuto conferma che l’ultima serie su questo trainer sia terminata con un comando di stop. %1$s</string>
+    <string name="connection_lost_unconfirmed_title">Carico trainer non confermato</string>
+    <string name="connection_lost_unconfirmed_message">Phoenix ha una segnalazione di sicurezza non risolta per questo trainer. %1$s</string>
+    <string name="connection_lost_phase_connecting">Ricerca del trainer e invio richiesta di stop software…</string>
+    <string name="connection_lost_phase_acknowledged">Stop richiesto via Bluetooth e confermato dal trainer. Ciò non dimostra che i cavi siano scarichi: controlla le impugnature, poi conferma qui sotto.</string>
+    <string name="connection_lost_phase_wrong_device">È connesso un trainer diverso, quindi non è stato richiesto alcuno stop. Connettiti al trainer originale oppure controlla di persona e conferma qui sotto.</string>
+    <string name="connection_lost_phase_disconnect_during_stop">Il Bluetooth si è disconnesso durante l’invio dello stop. Riprova oppure controlla di persona il trainer e conferma qui sotto.</string>
+    <string name="connection_lost_phase_transport_fail">Invio della richiesta di stop non riuscito. Riprova oppure controlla di persona il trainer e conferma qui sotto.</string>
+    <string name="connection_lost_phase_could_not_reach">Impossibile raggiungere il trainer via Bluetooth, quindi non è stato richiesto alcuno stop. Se è spento o in standby, controlla di persona le impugnature e conferma qui sotto.</string>
+    <string name="connection_lost_reconnect_button">Riconnetti per richiedere il rilascio</string>
+    <string name="connection_lost_confirm_button">Ho controllato: impugnature a riposo, rimuovi avviso</string>
+    <string name="connection_lost_remind_later">Ricordamelo più tardi</string>
+    <!-- EULA Screen -->
+    <string name="eula_title">Contratto di licenza con l’utente finale (EULA),\nEsclusione di responsabilità sulla sicurezza e Assunzione del rischio</string>
+    <string name="eula_end_of_agreement">— Fine del contratto —</string>
+    <string name="eula_scroll_down_prompt">↓ Scorri verso il basso per leggere l’intero contratto ↓</string>
+    <string name="eula_age_certification">Dichiaro di avere almeno 18 anni.</string>
+    <string name="eula_accept_button">ACCETTO</string>
+    <string name="eula_scroll_to_continue">SCORRI FINO IN FONDO PER CONTINUARE</string>
+    <string name="eula_confirm_age_to_continue">CONFERMA L’ETÀ PER CONTINUARE</string>
+    <string name="eula_must_accept">Devi accettare questi termini per utilizzare Project Phoenix.</string>
+    <string name="eula_app_name_label">Nome app: </string>
+    <string name="eula_developer_label">Sviluppatore: </string>
+    <string name="eula_developer_name">9th Level Software</string>
+    <string name="eula_section_medical_title">AVVERTENZA MEDICA ED ESCLUSIONE DI RESPONSABILITÀ</string>
+    <string name="eula_section_medical_body">CONSULTARE UN MEDICO PRIMA DELL’USO. I contenuti e le funzionalità forniti da Project Phoenix hanno scopo esclusivamente informativo e di intrattenimento. Prima di iniziare questo o qualsiasi altro programma di allenamento, consulta il tuo medico o un altro professionista sanitario per verificare che sia adatto alle tue esigenze. Non utilizzare Project Phoenix se il tuo medico o operatore sanitario lo sconsiglia. Se avverti svenimento, capogiri, dolore o mancanza di respiro in qualsiasi momento durante l’esercizio, interrompi immediatamente.</string>
+    <string name="eula_section_risk_title">ASSUNZIONE VOLONTARIA DEL RISCHIO</string>
+    <string name="eula_section_risk_highlight">LEGGI ATTENTAMENTE: PROJECT PHOENIX CONTROLLA HARDWARE DI TERZE PARTI IN GRADO DI GENERARE FORZE FISICHE SIGNIFICATIVE.</string>
+    <string name="eula_section_risk_intro">Utilizzando Project Phoenix, riconosci che l’allenamento contro resistenza comporta rischi intrinseci di lesioni gravi, invalidità permanente, paralisi e morte. Riconosci espressamente che le attrezzature a resistenza controllata da software comportano rischi specifici, tra cui, a titolo esemplificativo:</string>
+    <string name="eula_section_risk_bullet_1">Variazioni improvvise di resistenza: bug del software, latenza Bluetooth o interruzioni della connessione possono far sì che l’attrezzo applichi una forza improvvisa e imprevista o non rilasci la forza quando necessario.</string>
+    <string name="eula_section_risk_bullet_2">Mancata risposta dell’hardware: le &quot;funzioni di sicurezza&quot; dell’hardware (ad es. l’assistenza spotter) potrebbero non attivarsi a causa di errori di comunicazione tra questa App e l’hardware.</string>
+    <string name="eula_section_risk_assumption">TI ASSUMI CONSAPEVOLMENTE E LIBERAMENTE TUTTI TALI RISCHI, noti e ignoti, anche se derivanti da negligenza dello Sviluppatore, e ti assumi la piena responsabilità della tua partecipazione.</string>
+    <string name="eula_section_affiliation_title">NESSUNA AFFILIAZIONE (HARDWARE DI TERZE PARTI)</string>
+    <string name="eula_section_affiliation_body">Project Phoenix è un progetto indipendente sviluppato dalla community. NON È AFFILIATO, APPROVATO, AUTORIZZATO NÉ SUPPORTATO DA PHOENIX INVESTMENTS PTY LTD (IN LIQUIDAZIONE), GESTITA DA MERCHANTS ADVISORY, O DA QUALSIASI ALTRO PRODUTTORE DI ATTREZZATURE.</string>
+    <string name="eula_section_affiliation_bullet_1">Riconosci che l’utilizzo di questa App potrebbe invalidare la garanzia del produttore dell’attrezzatura.</string>
+    <string name="eula_section_affiliation_bullet_2">Riconosci che il produttore dell’attrezzatura non è responsabile del funzionamento di questa App.</string>
+    <string name="eula_section_warranty_title">ESCLUSIONE DI GARANZIE (&quot;COSÌ COM’È&quot;)</string>
+    <string name="eula_section_warranty_body">NELLA MISURA MASSIMA CONSENTITA DALLA LEGGE APPLICABILE, L’APPLICAZIONE È FORNITA &quot;COSÌ COM’È&quot; E &quot;SECONDO DISPONIBILITÀ&quot;, CON TUTTI I DIFETTI E SENZA GARANZIE DI ALCUN TIPO. 9TH LEVEL SOFTWARE ESCLUDE ESPRESSAMENTE TUTTE LE GARANZIE E CONDIZIONI RELATIVE ALL’APPLICAZIONE, SIANO ESSE ESPRESSE, IMPLICITE O PREVISTE DALLA LEGGE, INCLUSE, A TITOLO ESEMPLIFICATIVO, LE GARANZIE IMPLICITE DI COMMERCIABILITÀ, IDONEITÀ A UNO SCOPO PARTICOLARE E NON VIOLAZIONE.\n\nNON GARANTIAMO CHE LE FUNZIONI CONTENUTE NELL’APPLICAZIONE SODDISFINO LE TUE ESIGENZE, CHE IL FUNZIONAMENTO DELL’APPLICAZIONE SIA ININTERROTTO O PRIVO DI ERRORI, O CHE I DIFETTI DELL’APPLICAZIONE VENGANO CORRETTI.</string>
+    <string name="eula_section_liability_title">LIMITAZIONE DI RESPONSABILITÀ</string>
+    <string name="eula_section_liability_body">NELLA MISURA NON VIETATA DALLA LEGGE, IN NESSUN CASO 9TH LEVEL SOFTWARE SARÀ RESPONSABILE PER LESIONI PERSONALI O PER QUALSIASI DANNO INCIDENTALE, SPECIALE, INDIRETTO O CONSEQUENZIALE DI QUALSIASI TIPO, INCLUSI, SENZA LIMITAZIONI, DANNI PER PERDITA DI DATI, INTERRUZIONE DELL’ATTIVITÀ O QUALSIASI ALTRO DANNO O PERDITA COMMERCIALE, DERIVANTE DA O CORRELATO ALL’USO O ALL’IMPOSSIBILITÀ DI USARE L’APPLICAZIONE, COMUNQUE CAUSATO E INDIPENDENTEMENTE DALLA TEORIA DI RESPONSABILITÀ (CONTRATTO, ILLECITO CIVILE O ALTRO).</string>
+    <string name="eula_section_indemnification_title">MANLEVA</string>
+    <string name="eula_section_indemnification_body">Accetti di manlevare, difendere e tenere indenne 9th Level Software e i suoi collaboratori da e contro qualsiasi pretesa, perdita, responsabilità, spesa, danno e costo, incluse le ragionevoli spese legali, derivanti o risultanti dal tuo utilizzo dell’App, dalla violazione dei presenti Termini o da qualsiasi lesione o danno causato a te o a terzi durante l’utilizzo dell’App.</string>
+    <string name="eula_section_arbitration_title">ARBITRATO VINCOLANTE E RINUNCIA ALLE AZIONI COLLETTIVE</string>
+    <string name="eula_section_arbitration_body">Tu e 9th Level Software concordate che qualsiasi controversia derivante da o relativa al presente Contratto o all’App sarà risolta legalmente mediante arbitrato vincolante.</string>
+    <string name="eula_section_arbitration_waiver">ACCETTI DI RINUNCIARE AL DIRITTO A UN PROCESSO CON GIURIA O DI PARTECIPARE IN QUALITÀ DI ATTORE O MEMBRO DI UNA CLASSE A QUALSIASI AZIONE COLLETTIVA.</string>
+    <!-- HRM Sensor Settings Card -->
+    <string name="hrm_sensor_name_default">Sensore frequenza cardiaca</string>
+    <string name="hrm_status_connected">Connesso</string>
+    <string name="hrm_status_connecting">Connessione…</string>
+    <string name="hrm_status_scanning">Ricerca sensori…</string>
+    <string name="hrm_status_connection_error">Errore di connessione</string>
+    <string name="hrm_status_disconnected">Disconnesso</string>
+    <string name="hrm_intro">Collega un sensore di frequenza cardiaca per il battito in tempo reale. Le fasce toraciche possono fornire anche intervalli R-R, ECG e telemetria di movimento se supportati.</string>
+    <string name="hrm_remembered_sensor">Sensore memorizzato</string>
+    <string name="hrm_forget">Dimentica</string>
+    <string name="hrm_scan_other">Cerca altri sensori</string>
+    <string name="hrm_scan_for_sensors">Cerca sensori cardio</string>
+    <string name="hrm_scanning_nearby">Ricerca di sensori di frequenza cardiaca nelle vicinanze…</string>
+    <string name="hrm_garmin_tip">Orologio o fascia Garmin? Attiva la modalità Trasmissione FC (es. Impostazioni &gt; Sensori e accessori &gt; Trasmetti frequenza cardiaca) affinché appaia qui.</string>
+    <string name="hrm_chest_strap_tip">Assicurati che la fascia cardio sia inumidita e indossata ben aderente al torace.</string>
+    <string name="hrm_connecting_sensor">Connessione al sensore di frequenza cardiaca…</string>
+    <string name="hrm_device_label">Dispositivo: %1$s</string>
+    <string name="hrm_address_label">Indirizzo: %1$s</string>
+    <string name="hrm_battery_label">Batteria: %1$s</string>
+    <string name="hrm_battery_unavailable">Batteria non disponibile</string>
+    <string name="hrm_live_hr_unknown">FC live: sconosciuta</string>
+    <string name="hrm_live_hr_subscribing">FC live: sottoscrizione ai dati cardio…</string>
+    <string name="hrm_live_hr_waiting">FC live: in attesa del primo campione…</string>
+    <string name="hrm_live_hr_bpm">FC live: %1$d BPM</string>
+    <string name="hrm_live_hr_unavailable_dash">FC live: —</string>
+    <string name="hrm_live_hr_not_standard">FC live: non disponibile — non è un sensore cardio standard</string>
+    <string name="hrm_live_hr_sensor_error">FC live: non disponibile (errore sensore cardio)</string>
+    <string name="hrm_skin_contact_detected">Contatto con la pelle rilevato</string>
+    <string name="hrm_skin_contact_not_detected">Contatto con la pelle non rilevato</string>
+    <string name="hrm_skin_contact_not_reported">Contatto con la pelle: non segnalato</string>
+    <string name="hrm_rr_hrv_available">Intervalli R-R disponibili · HRV (RMSSD)</string>
+    <string name="hrm_hrv_unavailable">HRV non disponibile</string>
+    <string name="hrm_auto_reconnect">Riconnessione automatica all’allenamento</string>
+    <string name="hrm_remember_future_sessions">Ricorda questo sensore per le sessioni future</string>
+    <string name="hrm_save_raw_ecg">Salva ECG grezzo</string>
+    <string name="hrm_raw_ecg_description">Disattivato per impostazione predefinita. Salva localmente fino a 5 minuti per registrazione. L’ECG grezzo viene rimosso dopo 30 giorni o all’eliminazione dell’allenamento; un limite di spazio può rimuovere prima i tracciati più vecchi. L’ECG non viene sincronizzato con il portale.</string>
+    <string name="hrm_currently_state">Attualmente: %1$s</string>
+    <string name="hrm_state_on">Attivo</string>
+    <string name="hrm_state_off">Disattivo</string>
+    <string name="hrm_torso_biomechanics_title">Biomeccanica del busto (ACC 50 Hz)</string>
+    <string name="hrm_pitch">Beccheggio</string>
+    <string name="hrm_roll">Rollio</string>
+    <string name="hrm_dynamic_acc">Acc. dinamica</string>
+    <string name="hrm_mg_value">%1$d mG</string>
+    <string name="hrm_tare_posture">Tara postura</string>
+    <string name="hrm_reset_tare">Azzera tara</string>
+    <string name="hrm_action_connect">Connetti</string>
+    <!-- Main Shell and Splash -->
+    <string name="main_syncing">Sincronizzazione</string>
+    <string name="main_sync_complete">Sincronizzazione completata</string>
+    <string name="main_sync_error_tap">Errore di sincronizzazione, tocca per risolvere</string>
+    <string name="main_sync_partial_retry">Sincronizzazione parziale, tocca per riprovare</string>
+    <string name="main_connect_connecting">Connessione</string>
+    <string name="main_connect_action">Connetti</string>
+    <string name="main_connect_full_click">Tocca per connettere</string>
+    <string name="main_cd_connected">Connesso alla macchina. Tocca per disconnettere</string>
+    <string name="main_cd_connecting">Connessione alla macchina</string>
+    <string name="main_cd_error">Errore di connessione. Tocca per riconnettere</string>
+    <string name="main_cd_tap_connect">Tocca per connettere la macchina</string>
+    <string name="nav_training_cycle">Ciclo di allenamento</string>
+    <string name="nav_cycle_review">Riepilogo ciclo</string>
+    <string name="nav_cycle_short">Ciclo</string>
+    <string name="nav_review_short">Riepilogo</string>
+    <string name="nav_single_exercise">Esercizio singolo</string>
+    <string name="nav_exercise">Esercizio</string>
+    <string name="nav_edit_routine">Modifica routine</string>
+    <string name="nav_routine">Routine</string>
+    <string name="nav_program">Programma</string>
+    <string name="nav_program_playground">Simulatore programma</string>
+    <string name="nav_playground_short">Simulatore</string>
+    <string name="nav_strength_assessment">Valutazione forza</string>
+    <string name="nav_assessment_short">Valutazione</string>
+    <string name="nav_edit_short">Modifica</string>
+    <string name="nav_choose_workout">Scegli il tuo allenamento</string>
+    <string name="nav_daily_routines">Routine giornaliere</string>
+    <string name="nav_achievements">Obiettivi</string>
+    <string name="nav_complete">Completato</string>
+    <string name="nav_workout">Allenamento</string>
+    <string name="nav_app_fallback">Project Phoenix</string>
+    <string name="nav_rack_short">Rack</string>
+    <string name="nav_logs_short">Log</string>
+    <string name="nav_portal_short">Portale</string>
+    <string name="nav_data_short">Dati</string>
+    <string name="nav_activities_short">Attività</string>
+    <string name="nav_programs_short">Programmi</string>
+    <string name="nav_metrics_short">Metriche</string>
+    <string name="splash_title_upper">PROJECT PHOENIX</string>
+    <string name="splash_tagline">Rinasci dalle ceneri</string>
+    <!-- Home Screen -->
+    <string name="home_recent_activity">Attività recente</string>
+    <string name="home_cycle_day_named">%1$s in %2$s</string>
+    <string name="home_cycle_day_numbered">Giorno %1$d in %2$s</string>
+    <string name="home_cd_open_just_lift">Apri Just Lift</string>
+    <string name="home_no_routine_assigned">Nessuna routine assegnata</string>
+    <string name="home_no_recent_workouts">Nessun allenamento recente.</string>
+    <string name="home_workout_session_fallback">Sessione di allenamento</string>
+    <string name="home_cd_open_single_exercise">Apri allenamento Esercizio singolo</string>
+    <string name="home_cd_open_routines">Apri Routine</string>
+    <string name="home_cd_open_cycles">Apri Cicli di allenamento</string>
+    <string name="home_action_routines">Routine</string>
+    <string name="home_action_cycles">Cicli</string>
+    <string name="weekday_initial_mon">L</string>
+    <string name="weekday_initial_tue">M</string>
+    <string name="weekday_initial_wed">M</string>
+    <string name="weekday_initial_thu">G</string>
+    <string name="weekday_initial_fri">V</string>
+    <string name="weekday_initial_sat">S</string>
+    <string name="weekday_initial_sun">D</string>
+    <!-- Workout HUD -->
+    <string name="hud_weight_per_cable_label">Peso/cavo</string>
+    <string name="hud_adaptive">Adattivo</string>
+    <string name="hud_set_of">Serie %1$d / %2$d</string>
+    <string name="hud_time_label">TEMPO</string>
+    <string name="hud_reps_label">RIP.</string>
+    <string name="hud_rep_label">RIP.</string>
+    <string name="hud_warmup_label">RISCALDAMENTO</string>
+    <string name="hud_per_cable_upper">PER CAVO</string>
+    <string name="hud_bodyweight_exercise">Esercizio a corpo libero</string>
+    <string name="hud_no_machine_metrics_bodyweight">Nessuna metrica macchina per corpo libero</string>
+    <string name="hud_waiting_for_metrics">In attesa delle metriche…</string>
+    <string name="hud_live_stats">Statistiche live</string>
+    <string name="hud_mcv_upper">VELOCITÀ CONCENTRICA MEDIA</string>
+    <string name="hud_load_upper">CARICO</string>
+    <string name="hud_velocity_upper">VELOCITÀ</string>
+    <string name="hud_position_upper">POSIZIONE</string>
+    <string name="hud_velocity_loss">Perdita di velocità</string>
+    <string name="hud_threshold_reached">SOGLIA RAGGIUNTA</string>
+    <string name="hud_cd_resume_timer">Riprendi timer</string>
+    <string name="hud_cd_pause_timer">Metti in pausa timer</string>
+    <string name="hud_seconds_short">%1$ds</string>
+    <string name="hud_mcv_value">%1$s m/s</string>
+    <string name="hud_velocity_value">%1$d mm/s</string>
+    <string name="hud_position_value">%1$d mm</string>
+    <string name="hud_cable_left_short">S</string>
+    <string name="hud_cable_right_short">D</string>
+    <string name="hud_mcv_short">MCV</string>
+    <string name="hud_zone">Zona</string>
+    <string name="hud_peak">Picco</string>
+    <string name="hud_est_reps_left">Rip. rim. stim.</string>
+    <string name="hud_left">Sinistra</string>
+    <string name="hud_right">Destra</string>
+    <string name="hud_total">Totale</string>
+    <!-- Insights and Smart Insights -->
+    <string name="insights_this_week">Questa settimana</string>
+    <string name="insights_compared_last_7_days">Rispetto agli ultimi 7 giorni</string>
+    <string name="insights_week_summary">Riepilogo settimana: %1$d allenamenti, %2$s di volume, %3$d rip., %4$d PR</string>
+    <string name="insights_same">uguale</string>
+    <string name="insights_muscle_chest">Petto</string>
+    <string name="insights_muscle_back">Schiena</string>
+    <string name="insights_muscle_legs">Gambe</string>
+    <string name="insights_muscle_shoulders">Spalle</string>
+    <string name="insights_muscle_arms">Braccia</string>
+    <string name="insights_muscle_core">Core</string>
+    <string name="insights_muscle_balance">Equilibrio muscolare</string>
+    <string name="insights_muscle_balance_subtitle">Focus relativo dell’allenamento per distretto corporeo</string>
+    <string name="insights_muscle_balance_empty">Completa gli allenamenti per vedere l’analisi del tuo equilibrio muscolare.</string>
+    <string name="insights_monthly_consistency_cd">Costanza mensile: %1$d allenamenti negli ultimi 30 giorni, obiettivo %2$d</string>
+    <string name="insights_monthly_consistency">Costanza mensile</string>
+    <string name="insights_workouts_last_30_days">Allenamenti negli ultimi 30 giorni</string>
+    <string name="insights_volume_vs_intensity">Volume vs Intensità</string>
+    <string name="insights_last_7_sessions">Ultime 7 sessioni</string>
+    <string name="insights_volume_unit_label">Volume (%1$s)</string>
+    <string name="insights_max_weight_unit_label">Peso max (%1$s)</string>
+    <string name="insights_no_workout_data">Nessun dato di allenamento ancora disponibile.</string>
+    <string name="insights_mode_distribution">Distribuzione modalità</string>
+    <string name="insights_based_on_sessions">Basato sulle sessioni di allenamento</string>
+    <string name="insights_no_mode_data">Nessun dato sulle modalità disponibile.</string>
+    <string name="insights_total_volume_history">Storico volume totale</string>
+    <string name="insights_volume_per_session">Volume sollevato per sessione di allenamento</string>
+    <string name="insights_fun_titanics">Titanic</string>
+    <string name="insights_fun_blue_whales">Balenottere azzurre</string>
+    <string name="insights_fun_jumbo_jets">Jumbo Jet</string>
+    <string name="insights_fun_elephants">Elefanti spostati</string>
+    <string name="insights_fun_cars_crushed">Auto schiacciate</string>
+    <string name="insights_fun_kg_lifted">kg sollevati</string>
+    <string name="insights_lifetime_stats">Statistiche totali</string>
+    <string name="insights_all_time_achievements">I tuoi traguardi di sempre</string>
+    <string name="insights_lifetime_empty">Completa gli allenamenti per vedere le tue statistiche totali!</string>
+    <string name="insights_days_of_gains">giorni di progressi</string>
+    <string name="insights_workouts_count">%1$d allenamenti</string>
+    <string name="insights_total_volume">Volume totale</string>
+    <string name="insights_total_reps">Ripetizioni totali</string>
+    <string name="insights_prs_hit">PR raggiunti</string>
+    <string name="insights_total_workouts">Allenamenti totali</string>
+    <string name="insights_days_since_first">Giorni dal primo</string>
+    <string name="insights_favorite_exercise">Esercizio preferito</string>
+    <string name="insights_favorite_mode">Modalità preferita</string>
+    <string name="insights_dashboard">Panoramica</string>
+    <string name="insights_training_overview">Il riepilogo del tuo allenamento</string>
+    <string name="insights_weekly_snapshot">Istantanea settimanale</string>
+    <string name="insights_weekly_snapshot_subtitle">Confronto tra questa settimana e i 7 giorni precedenti</string>
+    <string name="insights_weekly_snapshot_def">Sessioni completate, volume e record personali.</string>
+    <string name="insights_weekly_snapshot_time">Ultimi 7 giorni vs 7 giorni precedenti</string>
+    <string name="insights_weekly_snapshot_so_what">Valuta il ritmo settimanale prima di modificare volume o carico.</string>
+    <string name="insights_performance_trends">Andamento prestazioni</string>
+    <string name="insights_performance_trends_subtitle">Focus muscolare e copertura di forza</string>
+    <string name="insights_performance_trends_def">Distribuzione dei record personali nei principali gruppi muscolari.</string>
+    <string name="insights_performance_trends_time">PR di sempre</string>
+    <string name="insights_performance_trends_so_what">Individua le aree ben allenate e quelle trascurate per mantenere l’equilibrio.</string>
+    <string name="insights_consistency_title">Costanza</string>
+    <string name="insights_consistency_subtitle">Frequenza delle sessioni negli ultimi 30 giorni</string>
+    <string name="insights_consistency_def">Numero di allenamenti confrontato con un obiettivo di 3 sessioni/settimana.</string>
+    <string name="insights_consistency_time">Ultimi 30 giorni</string>
+    <string name="insights_consistency_so_what">Sessioni settimanali regolari favoriscono una progressione costante nel lungo periodo.</string>
+    <string name="insights_training_load_balance">Carico ed equilibrio</string>
+    <string name="insights_training_load_balance_subtitle">Ripartizione di volume, intensità e modalità</string>
+    <string name="insights_workload_intensity_def">Come evolvono insieme il carico di lavoro totale (volume) e il picco di carico (intensità).</string>
+    <string name="insights_workload_intensity_so_what">Quando il peso massimo sale mentre il volume cala, valuta una sessione di recupero più leggera.</string>
+    <string name="insights_volume_history_def">Carico totale sollevato per periodo di allenamento.</string>
+    <string name="insights_volume_history_so_what">Aumenta il volume gradualmente (5–10% a settimana) per evitare affaticamento eccessivo.</string>
+    <string name="insights_mode_dist_def">Ripartizione delle sessioni tra le varie modalità di allenamento.</string>
+    <string name="insights_mode_dist_so_what">Usa la distribuzione delle modalità per verificare la varietà tra Echo, Old School e modalità speciali.</string>
+    <string name="insights_no_insights_title">Nessun consiglio ancora</string>
+    <string name="insights_no_insights_message">Completa gli allenamenti per sbloccare i consigli</string>
+    <string name="smart_insights_weekly_volume_title">Volume settimanale</string>
+    <string name="smart_insights_weekly_volume_subtitle">Carico per gruppo muscolare negli ultimi 7 giorni</string>
+    <string name="smart_insights_training_balance_title">Equilibrio dell’allenamento</string>
+    <string name="smart_insights_training_balance_subtitle">Distribuzione tra spinta, tirata e parte inferiore</string>
+    <string name="smart_insights_recovery_plateaus_title">Recupero e stalli</string>
+    <string name="smart_insights_recovery_plateaus_subtitle">Movimenti poco allenati e stalli di carico</string>
+    <string name="smart_insights_readiness_schedule_title">Prontezza e orari</string>
+    <string name="smart_insights_readiness_schedule_subtitle">Quando rendi al meglio e indicazioni sul carico di oggi</string>
+    <string name="smart_insights_readiness_title">Prontezza all’allenamento</string>
+    <string name="smart_insights_readiness_def">Confronta gli ultimi 7 giorni di allenamento con la tua media su 28 giorni.</string>
+    <string name="smart_insights_readiness_time">Acuto 7g vs Cronico 28g</string>
+    <string name="smart_insights_readiness_so_what">Regola l’intensità o dai priorità al recupero quando la prontezza cala.</string>
+    <string name="smart_insights_weekly_volume_def">Ripartizione settimanale del carico per gruppo muscolare.</string>
+    <string name="smart_insights_last_7_days">Ultimi 7 giorni</string>
+    <string name="smart_insights_weekly_volume_so_what">Assicurati che i gruppi muscolari principali ricevano un volume settimanale costante.</string>
+    <string name="smart_insights_balance_def">Quota di spinta, tirata e gambe nel tuo volume recente.</string>
+    <string name="smart_insights_last_28_days">Ultimi 28 giorni</string>
+    <string name="smart_insights_balance_so_what">Orienta le prossime sessioni verso il gruppo meno rappresentato.</string>
+    <string name="smart_insights_variety_def">Esercizi non eseguiti di recente.</string>
+    <string name="smart_insights_variety_so_what">Reintroduci un movimento trascurato questa settimana per mantenere la capacità.</string>
+    <string name="smart_insights_plateau_def">Movimenti con progressione del carico massimo in stallo.</string>
+    <string name="smart_insights_recent_sessions">Sessioni recenti confrontabili</string>
+    <string name="smart_insights_plateau_so_what">Cambia ripetizioni, ritmo o variante dell’esercizio per riavviare il sovraccarico.</string>
+    <string name="smart_insights_best_window_def">Fasce orarie associate alle tue sessioni migliori.</string>
+    <string name="smart_insights_best_window_so_what">Programma le sessioni chiave nella fascia oraria in cui rendi di più.</string>
+    <string name="smart_insights_sets_reps">%1$d serie · %2$d rip.</string>
+    <string name="smart_insights_plateau_at">%1$s a %2$s</string>
+    <string name="smart_insights_window_early_morning">Mattino presto</string>
+    <string name="smart_insights_window_morning">Mattina</string>
+    <string name="smart_insights_window_afternoon">Pomeriggio</string>
+    <string name="smart_insights_window_evening">Sera</string>
+    <string name="smart_insights_window_night">Notte</string>
+    <string name="smart_insights_window_range_early_morning">5:00–7:00</string>
+    <string name="smart_insights_window_range_morning">7:00–10:00</string>
+    <string name="smart_insights_window_range_afternoon">10:00–15:00</string>
+    <string name="smart_insights_window_range_evening">15:00–20:00</string>
+    <string name="smart_insights_window_range_night">20:00–5:00</string>
+    <!-- Integrations and External Data -->
+    <string name="integrations_csv_saved">CSV salvato correttamente</string>
+    <string name="integrations_file_read_error">Impossibile leggere il file</string>
+    <string name="integrations_import_preview">Anteprima importazione</string>
+    <string name="integrations_import_count">Importa %1$d</string>
+    <string name="integrations_format">Formato: %1$s</string>
+    <string name="integrations_workouts_found">Allenamenti trovati: %1$d</string>
+    <string name="integrations_date_range">Intervallo date: %1$s – %2$s</string>
+    <string name="integrations_total_duration_mins">Durata totale: %1$d min</string>
+    <string name="integrations_rows_unparsed_one">1 riga non è stata elaborata</string>
+    <string name="integrations_rows_unparsed_other">%1$d righe non sono state elaborate</string>
+    <string name="integrations_connect_hevy">Collega Hevy</string>
+    <string name="integrations_hevy_api_key_hint">Chiave API Hevy</string>
+    <string name="integrations_hevy_api_key_note">Trovi la chiave API nelle impostazioni dell’account Hevy (richiede Hevy Pro). La chiave viene crittografata in transito e salvata in modo sicuro.</string>
+    <string name="integrations_connect_liftosaur">Collega Liftosaur</string>
+    <string name="integrations_liftosaur_api_key_hint">Chiave API Liftosaur</string>
+    <string name="integrations_liftosaur_api_key_note">Genera o copia la chiave API da Liftosaur Impostazioni → Integrazioni. La chiave viene salvata in modo sicuro per sincronizzare i programmi.</string>
+    <string name="integrations_health_apps">App Salute</string>
+    <string name="integrations_apple_health">Apple Health</string>
+    <string name="integrations_health_connect">Google Health Connect</string>
+    <string name="integrations_permissions_attention">Permessi da verificare</string>
+    <string name="integrations_connected_latest_weight">Connesso • ultimo peso bilancia %1$s</string>
+    <string name="integrations_status_not_connected">Non connesso</string>
+    <string name="integrations_body_weight_value">Peso corporeo: %1$s</string>
+    <string name="integrations_last_sync">Ultima sincronizzazione: %1$s</string>
+    <string name="integrations_health_sync_enabled">Sincronizzazione Salute attiva</string>
+    <string name="integrations_enable_health_sync">Attiva sincronizzazione Salute</string>
+    <string name="integrations_retry_permissions">Riprova permessi</string>
+    <string name="integrations_sync_previous">Sincronizza precedenti</string>
+    <string name="integrations_workout_trackers">Tracker allenamenti</string>
+    <string name="integrations_hevy">Hevy</string>
+    <string name="integrations_provider_plan">Piano: %1$s</string>
+    <string name="integrations_hevy_description">Cronologia allenamenti, routine, modelli e misurazioni</string>
+    <string name="integrations_workouts_chip">%1$d allenamenti</string>
+    <string name="integrations_routines_chip">%1$d routine</string>
+    <string name="integrations_folders_chip">%1$d cartelle</string>
+    <string name="integrations_templates_chip">%1$d modelli</string>
+    <string name="integrations_measurements_chip">%1$d misurazioni</string>
+    <string name="integrations_action_sync">Sincronizza</string>
+    <string name="integrations_liftosaur">Liftosaur</string>
+    <string name="integrations_liftosaur_description">Cronologia, programmi, statistiche e anteprime simulatore</string>
+    <string name="integrations_programs_chip">%1$d programmi</string>
+    <string name="integrations_current_chip">%1$d attuale</string>
+    <string name="integrations_stats_chip">%1$d statistiche</string>
+    <string name="integrations_strong_csv">Strong / CSV</string>
+    <string name="integrations_strong_csv_description">Importa o esporta allenamenti in formato CSV compatibile con Strong</string>
+    <string name="integrations_export_weight_unit">Unità di peso esportazione</string>
+    <string name="integrations_export_csv">Esporta CSV</string>
+    <string name="integrations_import_csv">Importa CSV</string>
+    <string name="integrations_data_title">Dati integrazioni</string>
+    <string name="integrations_data_empty_subtitle">Sfoglia i dati importati dai provider</string>
+    <string name="integrations_data_count_subtitle_one">1 allenamento più i record del provider</string>
+    <string name="integrations_data_count_subtitle_other">%1$d allenamenti più i record del provider</string>
+    <string name="integrations_cd_view_data">Visualizza dati integrazioni</string>
+    <string name="integrations_cd_hide_api_key">Nascondi chiave API</string>
+    <string name="integrations_cd_show_api_key">Mostra chiave API</string>
+    <string name="external_workouts">Allenamenti</string>
+    <string name="external_imported_activities_count">%1$d attività importate</string>
+    <string name="external_hevy_routines">Routine Hevy</string>
+    <string name="external_routines_folders_summary">%1$s, %2$s</string>
+    <string name="external_liftosaur_programs">Programmi Liftosaur</string>
+    <string name="external_programs_stats_summary">%1$d programmi, %2$d record statistici</string>
+    <string name="external_measurements">Misurazioni</string>
+    <string name="external_hevy_measurements_summary">%1$d misurazioni Hevy</string>
+    <string name="external_routines_title">Routine esterne</string>
+    <string name="external_routines_empty">Nessuna routine importata ancora</string>
+    <string name="external_unfiled">Senza cartella</string>
+    <string name="external_routine_not_found">Routine non trovata</string>
+    <string name="external_mapping_disclaimer">Controlla l’associazione degli esercizi prima di convertire. I pesi esterni restano solo informativi finché non confermi la mappatura per cavo.</string>
+    <string name="external_set_row">Serie %1$d: %2$s · %3$s rip.%4$s</string>
+    <string name="external_set_type_normal">normale</string>
+    <string name="external_programs_title">Programmi esterni</string>
+    <string name="external_programs_empty">Nessun programma importato ancora</string>
+    <string name="external_program_not_found">Programma non trovato</string>
+    <string name="external_current_program">Programma attuale</string>
+    <string name="external_stats_title">Statistiche</string>
+    <string name="external_stats_approx_minutes">Circa %1$d minuti</string>
+    <string name="external_stats_sets">%1$d serie</string>
+    <string name="external_muscle_breakdown">Ripartizione gruppi muscolari</string>
+    <string name="external_muscle_breakdown_unavailable">Ripartizione gruppi muscolari non disponibile</string>
+    <string name="external_preview_playground">Anteprima simulatore</string>
+    <string name="external_playground_disclaimer">La conversione Liftosaur qui è di sola lettura. La conversione manuale in ciclo Phoenix va eseguita solo dopo aver validato le associazioni Liftoscript.</string>
+    <string name="external_no_script_text">Nessun testo script disponibile</string>
+    <string name="external_playground_title">Simulatore programma</string>
+    <string name="external_simulating">Simulazione…</string>
+    <string name="external_run_preview">Avvia anteprima</string>
+    <string name="external_current_workout">Allenamento attuale</string>
+    <string name="external_current_workout_empty">Avvia un’anteprima per vedere l’allenamento attuale.</string>
+    <string name="external_next_workout">Prossimo allenamento</string>
+    <string name="external_next_workout_empty">Avvia un’anteprima per vedere il prossimo allenamento.</string>
+    <string name="external_updated_program">Programma aggiornato</string>
+    <string name="external_updated_program_empty">Nessun testo del programma aggiornato.</string>
+    <string name="external_action_commit">Conferma</string>
+    <string name="external_measurements_empty">Nessuna misurazione importata ancora</string>
+    <string name="external_measurements_empty_filtered">Nessuna misurazione per questo tipo</string>
+    <string name="external_status_current">Attuale</string>
+    <string name="external_direct_indirect">%1$s diretto · %2$s indiretto</string>
+    <string name="external_activities_title">Attività esterne</string>
+    <string name="external_cd_expanded">Espanso</string>
+    <string name="external_cd_collapsed">Compresso</string>
+    <string name="external_duration_hm">%1$dh %2$dm</string>
+    <string name="external_duration_m">%1$d min</string>
+    <string name="external_kcal">%1$d kcal</string>
+    <string name="external_avg_bpm">%1$d bpm medi</string>
+    <string name="external_max_bpm">%1$d bpm max</string>
+    <string name="external_no_additional_metrics">Nessuna metrica aggiuntiva registrata</string>
+    <string name="external_technical_details">Dettagli tecnici</string>
+    <string name="external_provider_id">ID provider: %1$s</string>
+    <string name="external_distance_mi">%1$s mi</string>
+    <string name="external_distance_ft">%1$d ft</string>
+    <string name="external_distance_km">%1$s km</string>
+    <string name="external_distance_m">%1$d m</string>
+    <string name="external_elev_ft">%1$d ft disl.</string>
+    <string name="external_elev_m">%1$d m disl.</string>
+    <!-- PR, Badges, and Equipment Rack -->
+    <string name="pr_new_mode_banner">NUOVO PR %1$s!</string>
+    <string name="pr_new_banner">NUOVO PR!</string>
+    <string name="pr_phase_label">fase %1$s</string>
+    <string name="pr_tap_to_dismiss">Tocca per chiudere</string>
+    <string name="pr_indicator_none">Nessun PR</string>
+    <string name="pr_indicator_value">%1$d%% PR</string>
+    <string name="pr_indicator_phase_suffix">%1$d%% PR · %2$s</string>
+    <string name="pr_cd_above">Sopra il PR</string>
+    <string name="pr_cd_below">Sotto il PR</string>
+    <string name="badges_day_streak">Serie di giorni</string>
+    <string name="badges_at_risk">A rischio!</string>
+    <string name="badges_workouts_label">Allenamenti</string>
+    <string name="badges_label">Badge</string>
+    <string name="badges_progress_title">Avanzamento badge</string>
+    <string name="badges_fraction">%1$d / %2$d</string>
+    <string name="badges_cd_secret_locked">Badge segreto, bloccato</string>
+    <string name="badges_secret_title">Badge segreto</string>
+    <string name="badges_locked">Bloccato</string>
+    <string name="badges_secret_keep_training">Continua ad allenarti per sbloccare questo badge segreto.</string>
+    <string name="badges_progress_label">Avanzamento</string>
+    <string name="badges_earned_badge">Ottenuto!</string>
+    <string name="badges_secret_category">Segreto</string>
+    <string name="badge_dialog_single_title">Badge ottenuto!</string>
+    <string name="badge_dialog_multi_title">%1$d badge ottenuti!</string>
+    <string name="badge_dialog_dismiss_awesome">Fantastico!</string>
+    <string name="badge_dialog_item_cd">%1$s, livello %2$s, categoria %3$s</string>
+    <string name="rack_selection_default_suffix">%1$s (Predefinito)</string>
+    <string name="rack_selection_display_suffix">solo visualizzazione</string>
+    <string name="rack_delete_title">Eliminare elemento dal rack?</string>
+    <string name="rack_delete_message">Eliminare &quot;%1$s&quot;? Questa azione non può essere annullata.</string>
+    <!-- Profile Recovery and Link Account -->
+    <string name="recovery_failed_generic">Impossibile completare il ripristino. Riprova.</string>
+    <string name="recovery_section_title">Ripristino dati profilo</string>
+    <string name="recovery_section_subtitle">Scegli a quale profilo appartengono i dati locali ambigui. Phoenix conserva ogni ID stabile dei record e non ne modifica il proprietario dell’account.</string>
+    <string name="recovery_cloud_transfers_pending_one">1 trasferimento di proprietà è in attesa di conferma dal cloud.</string>
+    <string name="recovery_cloud_transfers_pending_other">%1$d trasferimenti di proprietà sono in attesa di conferma dal cloud.</string>
+    <string name="recovery_cloud_retry_note">Il ripristino locale è completo. La sincronizzazione riproverà questi ID esatti prima dei normali caricamenti.</string>
+    <string name="recovery_relink_required">Ricollega l’account originale prima di spostare questi record cloud.</string>
+    <string name="recovery_keep_with_default">Mantieni con Predefinito</string>
+    <string name="recovery_move_to_profile">Sposta in %1$s</string>
+    <string name="recovery_table_workout_one">%1$d record allenamento</string>
+    <string name="recovery_table_workout_other">%1$d record allenamento</string>
+    <string name="recovery_table_pr_one">%1$d record personale</string>
+    <string name="recovery_table_pr_other">%1$d record personali</string>
+    <string name="recovery_table_routine_one">%1$d routine</string>
+    <string name="recovery_table_routine_other">%1$d routine</string>
+    <string name="recovery_table_routine_group_one">%1$d gruppo di routine</string>
+    <string name="recovery_table_routine_group_other">%1$d gruppi di routine</string>
+    <string name="recovery_table_cycle_one">%1$d ciclo di allenamento</string>
+    <string name="recovery_table_cycle_other">%1$d cicli di allenamento</string>
+    <string name="recovery_table_assessment_one">%1$d risultato valutazione</string>
+    <string name="recovery_table_assessment_other">%1$d risultati valutazione</string>
+    <string name="recovery_table_strength_estimate_one">%1$d stima di forza</string>
+    <string name="recovery_table_strength_estimate_other">%1$d stime di forza</string>
+    <string name="recovery_table_progression_event_one">%1$d evento di progressione</string>
+    <string name="recovery_table_progression_event_other">%1$d eventi di progressione</string>
+    <string name="recovery_table_earned_badge_one">%1$d badge ottenuto</string>
+    <string name="recovery_table_earned_badge_other">%1$d badge ottenuti</string>
+    <string name="recovery_table_mvt_one">%1$d impostazione velocità esercizio</string>
+    <string name="recovery_table_mvt_other">%1$d impostazioni velocità esercizio</string>
+    <string name="recovery_table_streak_one">%1$d record serie consecutiva</string>
+    <string name="recovery_table_streak_other">%1$d record serie consecutive</string>
+    <string name="recovery_table_baseline_one">%1$d valore base esercizio</string>
+    <string name="recovery_table_baseline_other">%1$d valori base esercizio</string>
+    <string name="recovery_table_default_one">%1$d record profilo</string>
+    <string name="recovery_table_default_other">%1$d record profilo</string>
+    <string name="recovery_resolution_resolved">Ripristino completato.</string>
+    <string name="recovery_resolution_busy">Termina l’allenamento o la valutazione attiva prima di ripristinare i dati del profilo.</string>
+    <string name="recovery_resolution_verification_failed">Phoenix non ha potuto verificare questi dati con l’account connesso. Controlla l’account e riprova.</string>
+    <string name="recovery_resolution_account_mismatch">Esci dall’altro account prima di ripristinare questi dati.</string>
+    <string name="recovery_resolution_missing">Questo elemento di ripristino non è più in sospeso.</string>
+    <string name="link_session_expired">Sessione scaduta: %1$s</string>
+    <string name="link_connection_issue">Problema di connessione. Riprova.</string>
+    <string name="link_sign_in_again">Effettua di nuovo l’accesso.</string>
+    <string name="link_sync_workouts_subtitle">Sincronizza i tuoi allenamenti tra dispositivi</string>
+    <string name="link_this_portal_account">questo account Phoenix Portal</string>
+    <string name="link_unlink_confirm_message">Scollegare %1$s da questo dispositivo? La cronologia locale degli allenamenti resterà su questo dispositivo.</string>
+    <string name="link_linked_account">Account collegato</string>
+    <string name="link_syncing_progress">Sincronizzazione… (%1$d pagine, %2$d elementi)</string>
+    <string name="link_sync_error">Errore di sincronizzazione: %1$s</string>
+    <string name="link_auth_failed">Autenticazione non riuscita — esci e accedi di nuovo</string>
+    <string name="link_sync_partial">Sincronizzazione parziale — recupero non riuscito: %1$s</string>
+    <string name="link_sync_paused_other_account">Sincronizzazione in pausa: i dati di questo telefono appartengono a un altro account</string>
+    <string name="link_upload_refused">Caricamento rifiutato: %1$s</string>
+    <string name="link_force_full_resync">Forza risincronizzazione completa</string>
+    <string name="link_cd_hide_password">Nascondi password</string>
+    <string name="link_cd_show_password">Mostra password</string>
+    <string name="link_login_subtitle">Accedi con il tuo account Phoenix Portal esistente per sincronizzare gli allenamenti tra dispositivi.</string>
+    <string name="link_never">Mai</string>
+    <string name="link_unknown_error">errore sconosciuto</string>
+    <!-- Routines, Cycles, Plurals, Set Ready, Routine Complete, Bulk Weight Adjust -->
+    <string name="exercise_count_one">1 esercizio</string>
+    <string name="exercise_count_other">%1$d esercizi</string>
+    <string name="routine_count_one">1 routine</string>
+    <string name="routine_count_other">%1$d routine</string>
+    <string name="folder_count_one">1 cartella</string>
+    <string name="folder_count_other">%1$d cartelle</string>
+    <string name="day_count_one">1 giorno</string>
+    <string name="day_count_other">%1$d giorni</string>
+    <string name="routine_summary_bullet">%1$s • %2$s</string>
+    <string name="routines_selected_count">%1$d selezionati</string>
+    <string name="routines_move_to_group">Sposta nel gruppo</string>
+    <string name="routines_new_group">Nuovo gruppo</string>
+    <string name="routines_rename_group">Rinomina gruppo</string>
+    <string name="routines_more_options">Altre opzioni</string>
+    <string name="routines_zero_sets">0 serie</string>
+    <string name="routines_duration_min">%1$d min</string>
+    <string name="routines_duration_est_suffix">%1$s (stima)</string>
+    <string name="routine_editor_new_routine">Nuova routine</string>
+    <string name="routine_editor_more_actions">Altre azioni</string>
+    <string name="routine_editor_adjust_all_weights">Regola tutti i pesi</string>
+    <string name="routine_editor_empty_prompt">Tocca + per aggiungere il primo esercizio</string>
+    <string name="routine_editor_copy_suffix">%1$s (Copia)</string>
+    <string name="routine_editor_reorder_exercise">Riordina esercizio</string>
+    <string name="routine_editor_add_to_routine">Aggiungi alla routine</string>
+    <string name="routine_editor_color_selected">Colore %1$d, selezionato</string>
+    <string name="routine_editor_color_option">Colore %1$d</string>
+    <string name="cycles_connection_failed_message">Connessione alla macchina non riuscita — allenamento non avviato.</string>
+    <string name="cycles_missing_routine_message">Impossibile caricare questo allenamento — i dati della routine mancano. Prova a modificare il ciclo.</string>
+    <string name="cycles_validation_failed">Validazione non riuscita: impossibile salvare l’1RM per %1$s. Metadati cavo dell’esercizio non disponibili; controlla il valore e riprova.</string>
+    <string name="cycles_save_1rm_failed">Impossibile salvare l’1RM: %1$s</string>
+    <string name="cycles_create_failed">Impossibile creare il ciclo di allenamento: %1$s</string>
+    <string name="cycles_unexpected_error">Si è verificato un errore imprevisto.</string>
+    <string name="cycles_conflict_title">Ciclo modificato su un altro dispositivo</string>
+    <string name="cycles_conflict_message">La versione sul server di “%1$s” era più recente. La tua versione locale è stata mantenuta e può essere salvata come ciclo inattivo separato.</string>
+    <string name="cycles_save_local_copy">Salva copia locale</string>
+    <string name="cycles_keep_server_version">Mantieni versione del server</string>
+    <string name="cycles_warnings_header">Il ciclo è stato creato, ma i seguenti esercizi non sono stati trovati nella tua libreria:</string>
+    <string name="cycles_warnings_footer">Potrebbe essere necessario aggiungere questi esercizi o aggiornare manualmente le routine.</string>
+    <string name="cycles_deload_complete">Scarico completato! La settimana 1 inizia con un massimale di allenamento aumentato.</string>
+    <string name="cycles_rotation_complete_week">Rotazione completata! Passaggio alla settimana %1$d.</string>
+    <string name="cycles_cycle_complete_rotation">Ciclo completato! Avvio rotazione %1$d</string>
+    <string name="cycles_day_completed">%1$s completato!</string>
+    <string name="cycles_title">Cicli di allenamento</string>
+    <string name="cycles_all_cycles">Tutti i cicli</string>
+    <string name="cycles_up_next">PROSSIMO</string>
+    <string name="cycles_previewing">ANTEPRIMA</string>
+    <string name="cycles_day_of">Giorno %1$d di %2$d</string>
+    <string name="cycles_day_numbered">Giorno %1$d</string>
+    <string name="cycles_rest_day_message">Giorno di riposo - Rilassati!</string>
+    <string name="cycles_routine_data_missing">Dati routine mancanti — modifica il ciclo per riassegnarla</string>
+    <string name="cycles_active_badge">ATTIVO</string>
+    <string name="cycles_day_progress_suffix">%1$s - Giorno %2$d</string>
+    <string name="cycles_rest_badge">Riposo</string>
+    <string name="cycles_activate">Attiva</string>
+    <string name="cycles_deactivate">Disattiva</string>
+    <string name="cycle_editor_save_failed">Salvataggio non riuscito: %1$s</string>
+    <string name="cycle_editor_add_day">Aggiungi giorno</string>
+    <string name="cycle_editor_length">DURATA CICLO: %1$s</string>
+    <string name="cycle_editor_empty_title">Nessun giorno aggiunto ancora.</string>
+    <string name="cycle_editor_empty_subtitle">Costruisci il ciclo aggiungendo giorni di allenamento o di riposo.</string>
+    <string name="cycle_editor_day_removed">Giorno rimosso</string>
+    <string name="cycle_editor_undo">ANNULLA</string>
+    <string name="cycle_review_confirm_finish">Conferma e termina</string>
+    <string name="cycle_review_sets_amrap">%1$dx AMRAP</string>
+    <string name="cycle_review_sets_uniform">%1$dx%2$d</string>
+    <string name="cycle_review_sets_plus_amrap">%1$dx%2$d + %3$dx AMRAP</string>
+    <string name="cycle_review_sets_range">%1$dx%2$d-%3$d</string>
+    <string name="cycle_review_echo_badge">Echo:%1$s</string>
+    <string name="cycle_review_eccentric_badge">Eccentrica %1$d%%</string>
+    <string name="cycle_review_rep_mod_badge">%1$s%2$d rip.</string>
+    <string name="cycle_review_rest_badge">%1$ds riposo</string>
+    <string name="add_day_routine_exercises">%1$s: %2$s</string>
+    <string name="workout_day_title">Giorno %1$d: %2$s</string>
+    <string name="workout_day_est_minutes">%1$s • ~%2$d min</string>
+    <string name="set_ready_start">AVVIA</string>
+    <string name="set_ready_set_selector_cd">Selettore serie, attualmente serie %1$d di %2$d</string>
+    <string name="set_ready_tap_choose_set">Tocca per scegliere un’altra serie</string>
+    <string name="set_ready_set_numbered">Serie %1$d</string>
+    <string name="set_ready_set_numbered_current">Serie %1$d (attuale)</string>
+    <string name="set_ready_timed">A tempo</string>
+    <string name="set_ready_bodyweight_header">Corpo libero • %1$s</string>
+    <string name="set_ready_exercise_variant">Variante esercizio</string>
+    <string name="set_ready_bodyweight_dialog_note">Usato solo per questo allenamento, salvo salvataggio nel profilo.</string>
+    <string name="set_ready_bodyweight_unit_label">Peso corporeo attuale (%1$s)</string>
+    <string name="set_ready_not_set_session">Non impostato per questa sessione</string>
+    <string name="routine_complete_banner">ROUTINE COMPLETATA!</string>
+    <string name="routine_complete_exercises_label">Esercizi</string>
+    <string name="bulk_adjust_apply_count">Applica (%1$d)</string>
+    <string name="bulk_adjust_percentage">Percentuale</string>
+    <string name="bulk_adjust_absolute">Assoluto</string>
+    <string name="bulk_adjust_preview">Anteprima</string>
+    <string name="bulk_adjust_hint_percent">es. 15 o -7.5</string>
+    <string name="bulk_adjust_hint_absolute">es. 5 o -2.5</string>
+    <string name="bulk_adjust_pr_scaled">Scalato su PR</string>
+    <string name="bulk_adjust_clamped_suffix"> (limitato)</string>
+    <string name="bulk_adjust_custom_percent">% personalizzata</string>
+    <string name="bulk_adjust_weight_change">Variazione peso</string>
+    <string name="add_day_title">Aggiungi al ciclo</string>
+    <string name="add_day_edit_exercises">Modifica esercizi</string>
+    <string name="add_day_rest_day">Aggiungi giorno di riposo</string>
+    <string name="add_day_select_workout">Seleziona un allenamento</string>
+    <string name="add_day_recent_routines">Routine recenti</string>
+    <string name="add_day_all_routines">Tutte le routine</string>
+    <string name="add_day_empty_routines">Nessuna routine creata ancora.\nCrea prima una routine per aggiungere giorni di allenamento.</string>
+    <string name="superset_create_new">Crea nuova superserie</string>
+    <string name="superset_or_add_existing">Oppure aggiungi a una esistente:</string>
+    <string name="superset_add_existing">Aggiungi a una esistente:</string>
+    <string name="label_amrap">AMRAP</string>
 </resources>
