@@ -1,13 +1,16 @@
 package com.devil.phoenixproject.presentation.components
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
@@ -132,7 +135,11 @@ private fun ProfileRecoveryCard(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer,
+            contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        ),
     ) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -188,30 +195,50 @@ private fun RecoveryDecision(
         if (recovery.ownerUserId == null && recovery.counts.cloudOriginRowCount > 0) {
             Text(
                 "Relink the original account before moving these cloud records.",
-                color = MaterialTheme.colorScheme.error,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+                fontWeight = FontWeight.Medium,
                 style = MaterialTheme.typography.bodySmall,
             )
         }
         Spacer(Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             OutlinedButton(
                 onClick = { onKeepDefault(recovery.recoveryId) },
                 enabled = enabled,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                ),
+                border = BorderStroke(
+                    width = 1.dp,
+                    color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.6f),
+                ),
             ) {
                 Text("Keep with Default")
             }
-        }
-        profiles
-            .filter { it.id != recovery.sourceProfileId && it.id != "default" }
-            .forEach { profile ->
-                Button(
-                    onClick = { onMove(recovery.recoveryId, profile.id) },
-                    enabled = enabled,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("Move to ${profile.name}")
+            profiles
+                .filter { it.id != recovery.sourceProfileId && it.id != "default" }
+                .forEach { profile ->
+                    Button(
+                        onClick = { onMove(recovery.recoveryId, profile.id) },
+                        enabled = enabled,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error,
+                            contentColor = MaterialTheme.colorScheme.onError,
+                        ),
+                    ) {
+                        Text("Move to ${profile.name}")
+                    }
                 }
-            }
+        }
     }
 }
 

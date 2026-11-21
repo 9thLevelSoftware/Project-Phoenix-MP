@@ -3,6 +3,7 @@ package com.devil.phoenixproject.presentation.components
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -21,6 +22,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -109,6 +111,8 @@ fun ProfileSwitcherSheet(
                     },
                     modifier = Modifier
                         .fillMaxWidth()
+                        .heightIn(min = 56.dp)
+                        .alpha(if (switchingInFlight) 0.38f else 1f)
                         .clickable(
                             enabled = !switchingInFlight,
                             role = Role.Button,

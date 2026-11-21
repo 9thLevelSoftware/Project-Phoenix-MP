@@ -31,17 +31,17 @@ class MainActivity : ComponentActivity() {
 
         volumeControlStream = AudioManager.STREAM_MUSIC
 
-        val systemBarStyle = applyPersistedThemeWindow()
+        val (statusBarStyle, navigationBarStyle) = applyPersistedThemeWindow()
         enableEdgeToEdge(
-            statusBarStyle = systemBarStyle,
-            navigationBarStyle = systemBarStyle,
+            statusBarStyle = statusBarStyle,
+            navigationBarStyle = navigationBarStyle,
         )
         setContent {
             AndroidAppHost()
         }
     }
 
-    private fun applyPersistedThemeWindow(): SystemBarStyle {
+    private fun applyPersistedThemeWindow(): Pair<SystemBarStyle, SystemBarStyle> {
         val prefs = getSharedPreferences(ThemeViewModel.THEME_PREFS_FILE, Context.MODE_PRIVATE)
         val themeMode = runCatching {
             ThemeMode.valueOf(prefs.getString(ThemeViewModel.THEME_MODE_KEY, "SYSTEM") ?: "SYSTEM")
@@ -63,11 +63,15 @@ class MainActivity : ComponentActivity() {
         )
         window.setBackgroundDrawable(ColorDrawable(windowColor))
         return if (useDark) {
-            SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+            val darkStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+            darkStyle to darkStyle
         } else {
             SystemBarStyle.light(
                 android.graphics.Color.TRANSPARENT,
                 android.graphics.Color.TRANSPARENT,
+            ) to SystemBarStyle.light(
+                android.graphics.Color.TRANSPARENT,
+                android.graphics.Color.argb(0x66, 0x0F, 0x17, 0x2A),
             )
         }
     }

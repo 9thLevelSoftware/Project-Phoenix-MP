@@ -7,6 +7,7 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
@@ -35,39 +36,41 @@ fun EulaScreen(
     onAccept: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var ageConfirmed by remember { mutableStateOf(false) }
-    var hasScrolledToBottom by remember { mutableStateOf(false) }
+    var ageConfirmed by rememberSaveable { mutableStateOf(false) }
+    var hasScrolledToBottom by rememberSaveable { mutableStateOf(false) }
 
     val scrollState = rememberScrollState()
 
-    // Track when user has scrolled to the bottom
+    // Latch scroll completion once the user reaches the bottom so slight scroll-up
+    // does not re-disable Continue.
     LaunchedEffect(scrollState.value, scrollState.maxValue) {
-        // If maxValue is 0, content fits on screen without scrolling - consider it "scrolled"
-        // Otherwise, check if user has scrolled within 50px of the end
-        hasScrolledToBottom = when {
-            scrollState.maxValue == 0 -> true
-
-            // No scrolling needed
-            scrollState.maxValue > 0 -> scrollState.value >= (scrollState.maxValue - 50)
-
-            else -> false // maxValue is negative (shouldn't happen, but defensive)
+        if (!hasScrolledToBottom &&
+            (scrollState.maxValue == 0 || scrollState.value >= scrollState.maxValue - 50)
+        ) {
+            hasScrolledToBottom = true
         }
     }
 
     val canAccept = ageConfirmed && hasScrolledToBottom
 
     val bgBrush = screenBackgroundBrush()
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(bgBrush),
+    Surface(
+        modifier = modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background,
     ) {
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .systemBarsPadding()
-                .padding(16.dp),
+                .background(bgBrush),
+            contentAlignment = Alignment.TopCenter,
         ) {
+            Column(
+                modifier = Modifier
+                    .widthIn(max = 720.dp)
+                    .fillMaxSize()
+                    .systemBarsPadding()
+                    .padding(16.dp),
+            ) {
             // Title
             Text(
                 text = "End User License Agreement (EULA),\nSafety Disclaimer, and Assumption of Risk",
@@ -137,7 +140,7 @@ fun EulaScreen(
                         onValueChange = { ageConfirmed = it },
                     )
                     .heightIn(min = 48.dp)
-                    .padding(horizontal = 8.dp),
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Checkbox(
@@ -166,7 +169,7 @@ fun EulaScreen(
                 enabled = canAccept,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(56.dp),
+                    .heightIn(min = 56.dp),
                 shape = MaterialTheme.shapes.small,
             ) {
                 Text(
@@ -179,6 +182,7 @@ fun EulaScreen(
                             "CONFIRM AGE TO CONTINUE"
                         }
                     },
+                    textAlign = TextAlign.Center,
                     style = MaterialTheme.typography.titleMedium.copy(
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 1.sp,
@@ -197,6 +201,7 @@ fun EulaScreen(
                 ),
                 modifier = Modifier.fillMaxWidth(),
             )
+            }
         }
     }
 }
