@@ -1565,6 +1565,19 @@ WHERE gs.rowid = (
         "DELETE FROM VelocityOneRepMaxEstimate",
     )
 
+    // Migration 66: Retire mobile Intervals.icu outbound sync tables added in 63.sqm.
+    // Child table dropped before WorkoutCompletionJournal so FK-enabled drivers never error.
+    // Mirrors 66.sqm exactly.
+    66 -> listOf(
+        "DROP TABLE IF EXISTS WorkoutCompletionJournalChild",
+        "DROP TABLE IF EXISTS WorkoutCompletionJournal",
+        "DROP TABLE IF EXISTS WorkoutCompletionReceipt",
+        "DROP TABLE IF EXISTS IntervalsOutbox",
+        "DROP TABLE IF EXISTS IntervalsExternalIdReservation",
+        "DROP TABLE IF EXISTS IntervalsConnection",
+    )
+
     else -> emptyList()
 }
+
 
