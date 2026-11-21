@@ -7,7 +7,6 @@ import com.devil.phoenixproject.data.ble.HrmBleManager
 import com.devil.phoenixproject.data.integration.ExternalActivityRepository
 import com.devil.phoenixproject.data.integration.HealthIntegration
 import com.devil.phoenixproject.data.integration.IntegrationSyncCursorRepository
-import com.devil.phoenixproject.data.integration.intervals.RoutineCompletionFinalizer
 import com.devil.phoenixproject.data.preferences.CustomEquipmentEdit
 import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.preferences.RecentJustLiftExerciseStore
@@ -550,12 +549,6 @@ class MainViewModel(
     private val profileRecoveryActivityTracker: ProfileRecoveryActivityTracker? = null,
     private val recentJustLiftExerciseStore: RecentJustLiftExerciseStore? = null,
     val hrmBleManager: HrmBleManager? = null,
-    /**
-     * Issue #1384 (packet P3): the narrow completion-finalizer seam, threaded through
-     * [DefaultWorkoutSessionManager] into [ActiveSessionEngine]. Defaults to the no-op
-     * for construction sites not yet wired.
-     */
-    private val completionFinalizer: RoutineCompletionFinalizer = RoutineCompletionFinalizer.NoOp,
 ) : ViewModel() {
 
     // Shared haptic events flow - created here, passed to both GamificationManager and WorkoutSessionManager
@@ -746,7 +739,6 @@ class MainViewModel(
         profileRecoveryActivityTracker = profileRecoveryActivityTracker,
         recentJustLiftExerciseStore = recentJustLiftExerciseStore,
         hrmBleManager = hrmBleManager,
-        completionFinalizer = completionFinalizer,
     )
 
     // === Phase 2a: BleConnectionManager (extracted from this class) ===

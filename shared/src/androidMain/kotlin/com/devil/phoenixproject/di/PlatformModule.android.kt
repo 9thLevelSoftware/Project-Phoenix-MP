@@ -8,7 +8,6 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.auth.OAuthLauncher
 import com.devil.phoenixproject.data.integration.HealthIntegration
 import com.devil.phoenixproject.data.integration.HealthWorkoutWriter
-import com.devil.phoenixproject.data.integration.intervals.IntegrationStorageGate
 import com.devil.phoenixproject.data.local.DriverFactory
 import com.devil.phoenixproject.data.preferences.AndroidPreferenceFileMigrator
 import com.devil.phoenixproject.data.preferences.AndroidPreferenceFileOperations
@@ -74,12 +73,8 @@ actual val platformModule: Module = module {
 
     // Encrypted preferences for auth tokens (JWT, refresh token, email)
     single<Settings>(SecureSettingsQualifier) {
-        SharedPreferencesSettings(get<AndroidPreferenceStores>().encrypted)
+        SharedPreferencesSettings(get<AndroidPreferenceStores>().encrypted).also(::purgeRetiredDirectExportSecrets)
     }
-
-    // Integration storage fail-closed seam (issue #1384, integration-model §6):
-    // Android has no database backup-exclusion requirement to prove.
-    single<IntegrationStorageGate> { IntegrationStorageGate { true } }
 
     single { OAuthLauncher(androidContext()) }
     single<BleRepository> { KableBleRepository() }
@@ -132,8 +127,6 @@ actual val platformModule: Module = module {
             profileRecoveryActivityTracker = get(),
             recentJustLiftExerciseStore = get(),
             hrmBleManager = getOrNull(),
-            // Issue #1384 (packet P3): real completion finalizer (symmetric with iOS).
-            completionFinalizer = get(),
         )
     }
 }

@@ -1378,10 +1378,85 @@ class SchemaParityTest {
         }
     }
 
+    @Test
+    fun `migration 66 drops retired direct-export tables and indexes safely even with foreign keys enabled`() {
+        val retiredTables = listOf(
+            "WorkoutCompletionJournalChild",
+            "WorkoutCompletionJournal",
+            "WorkoutCompletionReceipt",
+            "IntervalsOutbox",
+            "IntervalsExternalIdReservation",
+            "IntervalsConnection",
+        )
+        val retiredIndexes = listOf(
+            "idx_completion_journal_state",
+            "idx_completion_journal_child_session",
+            "idx_completion_receipt_external",
+            "idx_intervals_outbox_due",
+            "idx_intervals_outbox_lease",
+        )
+        listOf("generated" to false, "fallback" to true).forEach { (scenario, fallback) ->
+            val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+            buildSchemaAtVersion(driver, 66)
+            retiredTables.forEach { table ->
+                assertEquals(true, getTables(driver).contains(table), "$scenario pre-check $table")
+            }
+            driver.execute(null, "PRAGMA foreign_keys = ON", 0)
+            driver.execute(
+                null,
+                """
+                INSERT INTO WorkoutCompletionJournal (
+                    profile_id, local_kind, completion_id, state, finish_reason, routine_title,
+                    expected_session_count, expected_set_count, membership_digest,
+                    start_epoch_ms, start_local_iso, time_zone_id, utc_offset_minutes,
+                    completed_epoch_ms, eligible, resolved_athlete_id, connection_generation,
+                    destination_digest, created_at, updated_at
+                ) VALUES (
+                    'default', 'ROUTINE', 'comp-1', 'REQUESTED', 'NORMAL_FINISH', 'Push',
+                    1, 1, 'digest', 1000, '2026-11-19T10:00:00', 'UTC', 0,
+                    2000, 1, 'ath-1', 1, 'dest', 1000, 1000
+                )
+                """.trimIndent(),
+                0,
+            )
+            driver.execute(
+                null,
+                """
+                INSERT INTO WorkoutCompletionJournalChild (
+                    journal_profile_id, journal_local_kind, journal_completion_id,
+                    child_key, child_kind, session_id, codec_version, replay_payload, committed
+                ) VALUES (
+                    'default', 'ROUTINE', 'comp-1', 'set-1', 'COMPLETED_SET', 'sess-1', 1, '{}', 0
+                )
+                """.trimIndent(),
+                0,
+            )
+
+            if (fallback) {
+                val results = applyMigrationResilient(driver, 66)
+                assertEquals(true, results.all { it.success }, scenario)
+            } else {
+                PhoenixDatabase.Schema.migrate(driver, 66, 67)
+            }
+
+            retiredTables.forEach { table ->
+                assertEquals(false, getTables(driver).contains(table), "$scenario migrated $table")
+            }
+            retiredIndexes.forEach { index ->
+                assertEquals(false, indexExistsInDriver(driver, index), "$scenario migrated $index")
+            }
+
+            reconcileFullSchema(driver)
+            retiredTables.forEach { table ->
+                assertEquals(false, getTables(driver).contains(table), "$scenario healed $table")
+            }
+        }
+    }
+
     // ==================== HELPERS ====================
 
     companion object {
-        private const val EXPECTED_SCHEMA_VERSION = 66L
+        private const val EXPECTED_SCHEMA_VERSION = 67L
 
         /**
          * A database built the way every existing user gets it: minimal v1 schema, each
