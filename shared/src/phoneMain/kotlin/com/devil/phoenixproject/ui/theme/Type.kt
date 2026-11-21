@@ -63,32 +63,32 @@ val Typography = Typography(
     ),
     titleMedium = TextStyle(
         fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Medium,
-        fontSize = 16.sp,
-        lineHeight = 24.sp,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 18.sp,
+        lineHeight = 26.sp,
         letterSpacing = 0.15.sp,
     ),
     titleSmall = TextStyle(
         fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Medium,
-        fontSize = 14.sp,
-        lineHeight = 20.sp,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 16.sp,
+        lineHeight = 22.sp,
         letterSpacing = 0.1.sp,
     ),
 
-    // Body styles (content text) - Expressive: Larger
+    // Body styles (content text) - Headings always outweigh body copy
     bodyLarge = TextStyle(
         fontFamily = FontFamily.Default,
         fontWeight = FontWeight.Normal,
-        fontSize = 18.sp, // Expressive: Increased from 16sp
-        lineHeight = 26.sp, // Expressive: Increased from 24sp
+        fontSize = 16.sp,
+        lineHeight = 24.sp,
         letterSpacing = 0.5.sp,
     ),
     bodyMedium = TextStyle(
         fontFamily = FontFamily.Default,
         fontWeight = FontWeight.Normal,
-        fontSize = 16.sp, // Expressive: Increased from 14sp
-        lineHeight = 22.sp, // Expressive: Increased from 20sp
+        fontSize = 14.sp,
+        lineHeight = 20.sp,
         letterSpacing = 0.25.sp,
     ),
     bodySmall = TextStyle(

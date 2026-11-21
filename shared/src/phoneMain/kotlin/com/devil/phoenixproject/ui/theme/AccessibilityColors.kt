@@ -57,11 +57,11 @@ data class AccessibilityColors(
 )
 
 /**
- * Standard palette -- preserves current visual appearance.
+ * Dark-mode accessibility palette -- preserves existing dark visual appearance.
  * Velocity zones aligned to BiomechanicsHistoryCard mapping (VBT standard):
  * Cyan=Explosive, Green=Fast, Amber=Moderate, Orange=Slow, Red=Grind.
  */
-internal val StandardPalette = AccessibilityColors(
+internal val DarkAccessibilityPalette = AccessibilityColors(
     // Semantic status (single source of truth: Color.kt)
     success = SignalSuccess,
     error = SignalError,
@@ -96,9 +96,56 @@ internal val StandardPalette = AccessibilityColors(
     onSuccess = Color(0xFF052E16),      // Tailwind green-950 — >7:1 on success (#22C55E)
 
     // Integration / log colors
-    connectedGreen = Color(0xFF10B981), // Emerald — distinct from success lime #22C55E
+    connectedGreen = ForgeGreen,        // Emerald 0xFF10B981 — distinct from success lime #22C55E
     info = Color(0xFF2196F3),           // Material Blue — informational, not a semantic status
 )
+
+/**
+ * Light-mode accessibility palette -- >= 4.5:1 WCAG AA stops against white/#DCE3EC.
+ */
+internal val LightAccessibilityPalette = AccessibilityColors(
+    // Semantic status
+    success = Color(0xFF15803D),
+    error = Color(0xFFB91C1C),
+    warning = Color(0xFFB45309),
+    neutral = Color(0xFF475569),
+
+    // Velocity zones
+    zoneExplosive = Color(0xFF0E7490),
+    zoneFast = Color(0xFF15803D),
+    zoneModerate = Color(0xFFB45309),
+    zoneSlow = Color(0xFFC2410C),
+    zoneGrind = Color(0xFFB91C1C),
+
+    // Asymmetry severity
+    asymmetryGood = Color(0xFF15803D),
+    asymmetryCaution = Color(0xFFB45309),
+    asymmetryBad = Color(0xFFB91C1C),
+
+    // Rep quality
+    qualityExcellent = Color(0xFF15803D),
+    qualityGood = Color(0xFF166534),
+    qualityFair = Color(0xFFA16207),
+    qualityBelowAverage = Color(0xFFC2410C),
+    qualityPoor = Color(0xFFB91C1C),
+
+    // Reserved -- match status colors
+    statusGreen = Color(0xFF15803D),
+    statusYellow = Color(0xFFB45309),
+    statusRed = Color(0xFFB91C1C),
+
+    // Content color for success containers
+    onSuccess = Color.White,
+
+    // Integration / log colors
+    connectedGreen = Color(0xFF047857),
+    info = Color(0xFF0369A1),
+)
+
+/**
+ * Standard palette alias preserved for callers and unit tests referencing the default dark palette.
+ */
+internal val StandardPalette: AccessibilityColors = DarkAccessibilityPalette
 
 /**
  * CompositionLocal for the active accessibility color palette.

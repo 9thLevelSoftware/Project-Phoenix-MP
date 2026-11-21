@@ -1,7 +1,8 @@
 package com.devil.phoenixproject.presentation.components
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.Settings
@@ -14,6 +15,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.ui.theme.PhoenixTheme
+import com.devil.phoenixproject.ui.theme.ThemeMode
 import com.devil.phoenixproject.util.openAppSettings
 import kotlinx.cinterop.ExperimentalForeignApi
 import platform.CoreBluetooth.*
@@ -152,6 +155,8 @@ private class BluetoothPermissionManager(
 @OptIn(ExperimentalForeignApi::class)
 @Composable
 internal fun RequireBlePermissions(
+    themeMode: ThemeMode = ThemeMode.SYSTEM,
+    dynamicColorEnabled: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val log = remember { Logger.withTag("RequireBlePermissions") }
@@ -187,7 +192,7 @@ internal fun RequireBlePermissions(
         }
 
         is BlePermissionState.NotGranted -> {
-            PermissionScreenTheme {
+            PermissionScreenTheme(themeMode, dynamicColorEnabled) {
                 BlePermissionRequestScreen(
                     onRequestPermission = {
                         permissionManager.requestPermission()
@@ -197,13 +202,13 @@ internal fun RequireBlePermissions(
         }
 
         is BlePermissionState.Requesting -> {
-            PermissionScreenTheme {
+            PermissionScreenTheme(themeMode, dynamicColorEnabled) {
                 BlePermissionRequestingScreen()
             }
         }
 
         is BlePermissionState.Denied -> {
-            PermissionScreenTheme {
+            PermissionScreenTheme(themeMode, dynamicColorEnabled) {
                 BlePermissionDeniedScreen(
                     onOpenSettings = { openAppSettings() },
                     onRetry = {
@@ -219,13 +224,19 @@ internal fun RequireBlePermissions(
 }
 
 /**
- * Simple theme wrapper for permission screens.
+ * Themes the BLE gate from the persisted [ThemeMode] via [PhoenixTheme].
  */
 @Composable
-private fun PermissionScreenTheme(content: @Composable () -> Unit) {
-    val isDark = isSystemInDarkTheme()
-    val colorScheme = if (isDark) darkColorScheme() else lightColorScheme()
-    MaterialTheme(colorScheme = colorScheme, content = content)
+private fun PermissionScreenTheme(
+    themeMode: ThemeMode,
+    dynamicColorEnabled: Boolean,
+    content: @Composable () -> Unit,
+) {
+    PhoenixTheme(
+        themeMode = themeMode,
+        dynamicColorEnabled = dynamicColorEnabled,
+        content = content,
+    )
 }
 
 /**
@@ -242,6 +253,8 @@ private fun BlePermissionRequestScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .systemBarsPadding()
+                .verticalScroll(rememberScrollState())
                 .padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
@@ -277,7 +290,7 @@ private fun BlePermissionRequestScreen(
                 onClick = onRequestPermission,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(56.dp),
+                    .heightIn(min = 56.dp),
             ) {
                 Text(
                     text = "Continue",
@@ -301,6 +314,8 @@ private fun BlePermissionRequestingScreen() {
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .systemBarsPadding()
+                .verticalScroll(rememberScrollState())
                 .padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
@@ -346,6 +361,8 @@ private fun BlePermissionDeniedScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .systemBarsPadding()
+                .verticalScroll(rememberScrollState())
                 .padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
@@ -381,7 +398,7 @@ private fun BlePermissionDeniedScreen(
                 onClick = onOpenSettings,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(56.dp),
+                    .heightIn(min = 56.dp),
             ) {
                 Icon(
                     imageVector = Icons.Default.Settings,
@@ -402,7 +419,7 @@ private fun BlePermissionDeniedScreen(
                 onClick = onRetry,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(56.dp),
+                    .heightIn(min = 56.dp),
             ) {
                 Text(
                     text = "Check Again",

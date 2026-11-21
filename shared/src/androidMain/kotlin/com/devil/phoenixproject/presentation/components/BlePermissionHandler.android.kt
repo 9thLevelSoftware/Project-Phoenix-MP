@@ -10,6 +10,8 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.Settings
@@ -220,6 +222,8 @@ private fun BlePermissionRequestScreen(onRequestPermission: () -> Unit) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .systemBarsPadding()
+                .verticalScroll(rememberScrollState())
                 .padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
@@ -255,7 +259,7 @@ private fun BlePermissionRequestScreen(onRequestPermission: () -> Unit) {
                 onClick = onRequestPermission,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(56.dp),
+                    .heightIn(min = 56.dp),
             ) {
                 Text(
                     text = "Grant Permission",
@@ -293,6 +297,8 @@ private fun BlePermissionDeniedScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .systemBarsPadding()
+                .verticalScroll(rememberScrollState())
                 .padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
@@ -329,7 +335,7 @@ private fun BlePermissionDeniedScreen(
                     onClick = onRetry,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(56.dp),
+                        .heightIn(min = 56.dp),
                 ) {
                     Text(
                         text = "Try Again",
@@ -342,7 +348,7 @@ private fun BlePermissionDeniedScreen(
                     onClick = onOpenSettings,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(56.dp),
+                        .heightIn(min = 56.dp),
                 ) {
                     Icon(
                         imageVector = Icons.Default.Settings,

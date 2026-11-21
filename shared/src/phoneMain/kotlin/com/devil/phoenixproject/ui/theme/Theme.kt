@@ -48,6 +48,8 @@ private val DarkColorScheme = darkColorScheme(
     // Status
     error = SignalError,
     onError = Color.White,
+    errorContainer = ErrorContainerDark,
+    onErrorContainer = OnErrorContainerDark,
 
     outline = Slate400,
     outlineVariant = Slate700,
@@ -63,13 +65,13 @@ private val LightColorScheme = lightColorScheme(
     // Secondary (Gold)
     secondary = EmberYellowLight,
     onSecondary = Color.White,
-    secondaryContainer = Color(0xFFFFE06F).copy(alpha = 0.3f),
+    secondaryContainer = SecondaryContainerLight,
     onSecondaryContainer = Secondary20,
 
     // Tertiary (Teal)
     tertiary = AshBlueLight,
     onTertiary = Color.White,
-    tertiaryContainer = AshBlueDark.copy(alpha = 0.2f),
+    tertiaryContainer = TertiaryContainerLight,
     onTertiaryContainer = AshBlueLight,
 
     // Backgrounds & Surfaces
@@ -91,8 +93,10 @@ private val LightColorScheme = lightColorScheme(
     surfaceContainerHighest = SurfaceContainerHighestLight,
 
     // Status
-    error = SignalError,
+    error = SignalErrorLight,
     onError = Color.White,
+    errorContainer = ErrorContainerLight,
+    onErrorContainer = OnErrorContainerLight,
 
     outline = Slate400,
     outlineVariant = Slate200,
@@ -132,8 +136,13 @@ fun PhoenixTheme(
         typography = Typography,
         shapes = ExpressiveShapes, // Material 3 Expressive: More rounded shapes
     ) {
+        val accessibilityColors = if (useDarkColors) {
+            DarkAccessibilityPalette
+        } else {
+            LightAccessibilityPalette
+        }
         CompositionLocalProvider(
-            LocalAccessibilityColors provides StandardPalette,
+            LocalAccessibilityColors provides accessibilityColors,
             content = content,
         )
     }
