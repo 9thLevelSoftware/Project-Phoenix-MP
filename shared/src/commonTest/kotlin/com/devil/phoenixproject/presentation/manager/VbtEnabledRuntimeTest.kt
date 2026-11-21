@@ -339,25 +339,34 @@ class VbtUiWiringTest {
         assertTrue(statsSource.contains("val zColor = if (vbtEnabled)"))
 
         val zoneGate = blocksFor(statsSource, "if (vbtEnabled) {")
-            .singleOrNull { it.contains("label = \"Zone\"") }
+            .singleOrNull { hasStatLabel(it, "Zone", "hud_zone") }
         assertNotNull(zoneGate, "Zone must have one explicit VBT gate.")
-        assertTrue(zoneGate.contains("label = \"Zone\""), "Zone must be inside its VBT gate.")
-        assertTrue(!zoneGate.contains("label = \"MCV\""), "Raw MCV must remain outside the VBT gate.")
-        assertTrue(!zoneGate.contains("label = \"Peak\""), "Raw Peak must remain outside the VBT gate.")
+        assertTrue(hasStatLabel(zoneGate, "Zone", "hud_zone"), "Zone must be inside its VBT gate.")
+        assertTrue(!hasStatLabel(zoneGate, "MCV", "hud_mcv_short"), "Raw MCV must remain outside the VBT gate.")
+        assertTrue(!hasStatLabel(zoneGate, "Peak", "hud_peak"), "Raw Peak must remain outside the VBT gate.")
 
         val lossHeader = "if (vbtEnabled && vloss != null) {"
         val lossGateStart = statsSource.indexOf(lossHeader)
         assertTrue(lossGateStart >= 0, "Velocity-loss interpretation must have a master gate.")
         val lossGate = blockFor(statsSource, lossHeader)
         assertTrue(lossGate.contains("VelocityLossIndicator("), "Velocity loss must stay inside its gate.")
-        assertTrue(lossGate.contains("label = \"Est. Reps Left\""), "Estimated reps must stay inside the loss gate.")
-        assertTrue(!lossGate.contains("label = \"MCV\""), "Raw MCV must not move into the loss gate.")
-        assertTrue(!lossGate.contains("label = \"Peak\""), "Raw Peak must not move into the loss gate.")
+        assertTrue(hasStatLabel(lossGate, "Est. Reps Left", "hud_est_reps_left"), "Estimated reps must stay inside the loss gate.")
+        assertTrue(!hasStatLabel(lossGate, "MCV", "hud_mcv_short"), "Raw MCV must not move into the loss gate.")
+        assertTrue(!hasStatLabel(lossGate, "Peak", "hud_peak"), "Raw Peak must not move into the loss gate.")
 
-        val mcvIndex = statsSource.indexOf("label = \"MCV\"")
-        val peakIndex = statsSource.indexOf("label = \"Peak\"")
+        val mcvIndex = findStatLabelIndex(statsSource, "MCV", "hud_mcv_short")
+        val peakIndex = findStatLabelIndex(statsSource, "Peak", "hud_peak")
         assertTrue(mcvIndex in 0 until lossGateStart, "Raw MCV must render before the loss gate.")
         assertTrue(peakIndex in 0 until lossGateStart, "Raw Peak must render before the loss gate.")
+    }
+
+    private fun hasStatLabel(source: String, literal: String, resKey: String): Boolean =
+        source.contains("label = \"$literal\"") || source.contains("label = stringResource(Res.string.$resKey)")
+
+    private fun findStatLabelIndex(source: String, literal: String, resKey: String): Int {
+        val literalIndex = source.indexOf("label = \"$literal\"")
+        if (literalIndex >= 0) return literalIndex
+        return source.indexOf("label = stringResource(Res.string.$resKey)")
     }
 
     private fun blockFor(source: String, header: String): String {

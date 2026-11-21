@@ -79,8 +79,14 @@ class RoutineResumeScreenWiringTest {
         assertFalse("launchDailyRoutine(" in home)
         assertTrue("onConnectionFailed" in cycles)
         assertTrue("onWorkoutLoadFailed" in cycles)
-        assertTrue("CONNECTION_FAILED_MESSAGE" in cycles)
-        assertTrue("WORKOUT_LOAD_FAILED_MESSAGE" in cycles)
+        assertTrue(
+            "CONNECTION_FAILED_MESSAGE" in cycles ||
+                "Res.string.cycles_connection_failed_message" in cycles,
+        )
+        assertTrue(
+            "WORKOUT_LOAD_FAILED_MESSAGE" in cycles ||
+                "Res.string.cycles_missing_routine_message" in cycles,
+        )
         assertFalse("launchDailyRoutine(" in cycles)
     }
 
