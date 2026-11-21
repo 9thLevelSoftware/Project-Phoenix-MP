@@ -83,7 +83,7 @@ struct ContentView: View {
             Button("End Session", role: .destructive) { model.bridge.confirmSessionExit(); model.refresh() }
                 .accessibilityIdentifier("session.confirm-end")
         } message: {
-            Text("Phoenix stops the active set before asking to leave. The app is not a certified emergency stop.")
+            Text("Phoenix stops any active load before leaving. Keep your trainer's physical controls within reach.")
         }
         .onAppear { if scenePhase == .active { model.bridge.onForeground() } }
         .onChange(of: snapshot?.sessionOpen) { wasOpen, isOpen in
@@ -133,10 +133,17 @@ struct ContentView: View {
                 menuLink("Connect to Trainer", detail: "Scan and choose a trainer", screen: .connect, id: "home.connect")
                 menuLink("Just Lift", detail: "Choose an exercise and configure a set", screen: .justLift, id: "home.just-lift")
                 menuLink("Daily Routines", detail: "Run a saved routine", screen: .routines, id: "home.daily-routines")
-                menuLink("Account & Sync", detail: snapshot?.cloudConfigured == true ? (snapshot?.authenticated == true ? (snapshot?.accountEmail ?? "Signed in") : "Email and password sign-in") : "Cloud unavailable in this build", screen: .account, id: "home.account")
+                menuLink(
+                    "Account & Sync",
+                    detail: snapshot?.cloudConfigured == true
+                        ? (snapshot?.authenticated == true ? (snapshot?.accountEmail ?? "Signed in") : "Sign in to sync workouts and routines")
+                        : "Cloud sync not configured",
+                    screen: .account,
+                    id: "home.account"
+                )
             }
             .frame(maxWidth: 900)
-            if let message = snapshot?.actionError, !message.isEmpty { errorBanner(message) }
+            if let message = displayError(actionError: snapshot?.actionError, excluding: []) { errorBanner(message) }
         }
         .padding(64)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
@@ -145,8 +152,8 @@ struct ContentView: View {
 
     private var eulaGate: some View {
         VStack(alignment: .leading, spacing: 26) {
-            title("PHOENIX", subtitle: "Experimental Apple TV beta")
-            Text("This app is experimental and intended for supervised beta testing. It is not a certified emergency-stop system. Stay within reach of the trainer's physical controls and do not use this app as the sole means of stopping a workout.")
+            title("PHOENIX", subtitle: "Apple TV companion beta")
+            Text("This Apple TV app is not a certified emergency stop. Stay within reach of your trainer's physical controls during every set.")
                 .font(.title3).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Button("Accept and Continue") { model.bridge.acceptEula(); model.refresh() }
                 .buttonStyle(.borderedProminent).tint(phoenixOrange)
@@ -157,7 +164,7 @@ struct ContentView: View {
 
     private var loading: some View {
         VStack(alignment: .leading, spacing: 20) {
-            title("PHOENIX", subtitle: "Preparing shared training services…")
+            title("PHOENIX", subtitle: "Preparing Phoenix…")
             ProgressView().tint(phoenixOrange)
             betaNotice
         }
@@ -166,8 +173,8 @@ struct ContentView: View {
 
     private var startupFailure: some View {
         VStack(alignment: .leading, spacing: 24) {
-            title("Phoenix could not start", subtitle: "No workout controls are available.")
-            errorBanner("Startup requirement failed: \(snapshot?.startupErrorCode ?? "UNKNOWN")")
+            title("Phoenix could not start", subtitle: "Unable to initialize local training data.")
+            errorBanner("Startup error (\(snapshot?.startupErrorCode ?? "UNKNOWN")). Please try again.")
             Button("Retry startup") { model.bridge.start(); model.refresh() }.buttonStyle(.borderedProminent)
         }
         .padding(72).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading).background(background)
@@ -188,21 +195,21 @@ struct ContentView: View {
         NavigationLink(value: screen) {
             HStack(spacing: 24) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(title).font(.title3.weight(.semibold))
-                    Text(detail).font(.subheadline).foregroundStyle(.secondary)
+                    Text(title).font(.title3.weight(.semibold)).lineLimit(1)
+                    Text(detail).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer()
                 Image(systemName: "chevron.right").font(.title3.weight(.bold)).foregroundStyle(phoenixOrange)
             }
             .padding(.horizontal, 26).padding(.vertical, 19)
-            .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 18))
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .buttonStyle(.card)
         .accessibilityIdentifier(id)
     }
 
     private var betaNotice: some View {
-        Label("EXPERIMENTAL BETA · NOT A CERTIFIED EMERGENCY-STOP SYSTEM", systemImage: "exclamationmark.triangle.fill")
+        Label("APPLE TV BETA · NOT AN EMERGENCY STOP", systemImage: "exclamationmark.triangle.fill")
             .font(.caption.weight(.bold)).tracking(1.1).foregroundStyle(phoenixOrange)
     }
 
@@ -233,25 +240,33 @@ private struct ConnectScreen: View {
     @ObservedObject var model: TvAppModel
     private var state: TvAppSnapshot? { model.snapshot }
     private var devices: [TvDeviceRow] { state?.devices ?? [] }
+    private var shownConnectionError: String? {
+        guard state?.connectionState == "error",
+              let message = state?.connectionMessage,
+              !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+        return message
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            pageTitle("Connect", subtitle: "Select the trainer you intend to use. Phoenix never auto-connects to the first result.")
-            HStack(spacing: 18) {
-                Button("Scan for Trainers") { model.bridge.startScanning(); model.refresh() }
-                    .buttonStyle(.borderedProminent).tint(phoenixOrange).accessibilityIdentifier("connect.scan")
-                if state?.connectionState == "connected" {
-                    Text(state?.connectionMessage ?? "Connected").font(.title3.weight(.semibold)).foregroundStyle(.green)
-                    Button("Disconnect") { model.bridge.disconnectTrainer(); model.refresh() }.buttonStyle(.bordered)
-                } else {
-                    Text("Status: \(state?.connectionState ?? "disconnected")").font(.title3).foregroundStyle(.secondary)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                pageTitle("Connect", subtitle: "Scan and select your Phoenix trainer to connect.")
+                HStack(spacing: 18) {
+                    Button("Scan for Trainers") { model.bridge.startScanning(); model.refresh() }
+                        .buttonStyle(.borderedProminent).tint(phoenixOrange).accessibilityIdentifier("connect.scan")
+                    if state?.connectionState == "connected" {
+                        Text(state?.connectionMessage ?? "Connected").font(.title3.weight(.semibold)).foregroundStyle(.green)
+                        Button("Disconnect") { model.bridge.disconnectTrainer(); model.refresh() }.buttonStyle(.bordered)
+                    } else {
+                        Text("Status: \(displayConnectionStatus(state?.connectionState))").font(.title3).foregroundStyle(.secondary)
+                    }
                 }
-            }
-            if devices.isEmpty {
-                emptyState("No trainer selected", detail: "Start a scan, then choose a discovered trainer. Keep the trainer nearby and awake.")
-            } else {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 12) {
+                if devices.isEmpty {
+                    emptyState("No trainer selected", detail: "Select Scan for Trainers with your trainer powered on and nearby.")
+                } else {
+                    LazyVStack(alignment: .leading, spacing: 12) {
                         ForEach(devices, id: \.address) { device in
                             Button {
                                 model.bridge.connectSelectedTrainer(address: device.address)
@@ -259,8 +274,14 @@ private struct ConnectScreen: View {
                             } label: {
                                 HStack(spacing: 22) {
                                     VStack(alignment: .leading, spacing: 4) {
-                                        Text(device.name).font(.title3.weight(.semibold))
-                                        Text("Signal \(device.rssi) dBm · \(device.address)").font(.caption).foregroundStyle(.secondary)
+                                        Text(device.name)
+                                            .font(.title3.weight(.semibold))
+                                            .lineLimit(2)
+                                            .multilineTextAlignment(.leading)
+                                        Text("Signal \(device.rssi) dBm · \(device.address)")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(1)
                                     }
                                     Spacer(minLength: 40)
                                     Text(state?.selectedTrainerAddress == device.address && state?.connectionState == "connected" ? "Selected" : "Connect")
@@ -268,22 +289,23 @@ private struct ConnectScreen: View {
                                         .padding(.horizontal, 18).padding(.vertical, 12)
                                         .background(phoenixOrange.opacity(0.15), in: Capsule())
                                 }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(18)
-                                .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 14))
+                                .frame(maxWidth: .infinity, height: 88, alignment: .leading)
+                                .padding(.horizontal, 18)
                             }
-                            .buttonStyle(.bordered)
-                            .tint(phoenixOrange)
+                            .buttonStyle(.card)
                             .accessibilityIdentifier("connect.device.\(device.address)")
                         }
                     }
                 }
+                if let error = shownConnectionError { errorText(error) }
+                if let error = displayError(actionError: state?.actionError, excluding: [shownConnectionError]) {
+                    errorText(error)
+                }
             }
-            if let error = state?.connectionMessage, state?.connectionState == "error" { errorText(error) }
-            if let error = state?.actionError { errorText(error) }
-            Spacer()
+            .padding(60)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(60).background(Color(red: 0.04, green: 0.06, blue: 0.09).ignoresSafeArea())
+        .background(Color(red: 0.04, green: 0.06, blue: 0.09).ignoresSafeArea())
     }
 }
 
@@ -291,45 +313,93 @@ private struct JustLiftScreen: View {
     @ObservedObject var model: TvAppModel
     @Environment(\.dismiss) private var dismiss
     @State private var selectedExerciseId = ""
+    @State private var selectedMuscleGroup = "All"
     @FocusState private var focusedControl: String?
     private var state: TvAppSnapshot? { model.snapshot }
     private var exercises: [TvExerciseRow] { state?.exercises.filter { !$0.isBodyweight } ?? [] }
     private var active: Bool { ["active", "paused"].contains(state?.workoutState ?? "") }
     private var summary: Bool { ["set_summary", "resting", "completed"].contains(state?.workoutState ?? "") }
+    private var muscleGroups: [String] {
+        let groups = Set(
+            exercises
+                .map { $0.muscleGroup.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+        ).sorted()
+        return ["All"] + groups
+    }
+    private var activeMuscleGroup: String {
+        muscleGroups.contains(selectedMuscleGroup) ? selectedMuscleGroup : "All"
+    }
+    private var filteredExercises: [TvExerciseRow] {
+        guard activeMuscleGroup != "All" else { return exercises }
+        return exercises.filter {
+            $0.muscleGroup.trimmingCharacters(in: .whitespacesAndNewlines) == activeMuscleGroup
+        }
+    }
+    private var defaultExerciseFocus: String? {
+        guard state?.connectionState == "connected",
+              state?.sessionOpen != true,
+              !active,
+              !summary,
+              state?.workoutState != "initializing",
+              state?.workoutState != "countdown",
+              state?.workoutState != "error",
+              state?.workoutState != "bodyweight_entry",
+              state?.completionFailed != true,
+              state?.saveFailure != true,
+              let first = filteredExercises.first else {
+            return nil
+        }
+        return "exercise.\(first.id)"
+    }
+    private var shownWorkoutError: String? {
+        guard state?.completionFailed == true || state?.workoutState == "error" else { return nil }
+        return state?.workoutMessage
+    }
+    private var weightStepLabel: String {
+        "\(formatWeight(state?.weightIncrementKg ?? 2.5, unit: state?.weightUnit)) / cable"
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 22) {
-            pageTitle("Just Lift", subtitle: "Shared Phoenix workout logic · explicit start required")
-            if state?.saveFailure == true {
-                errorText("This set could not be saved locally. Keep the session open and retry.")
-                Button("Retry saving set") { model.bridge.retryWorkoutSave(); model.refresh() }
-                    .accessibilityIdentifier("workout.retry-save")
-            } else if state?.completionFailed == true {
-                workoutError
-            } else if active {
-                activeSet
-            } else if summary {
-                setSummary
-            } else if state?.workoutState == "initializing" || state?.workoutState == "countdown" {
-                preparingSet
-            } else if state?.workoutState == "error" {
-                workoutError
-            } else if state?.workoutState == "bodyweight_entry" {
-                bodyweightUnavailable
-            } else if state?.connectionState != "connected" {
-                emptyState("Connect to a trainer first", detail: "Use Connect to scan and explicitly select the machine.")
-            } else {
-                setup
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                pageTitle("Just Lift", subtitle: "Choose an exercise, set your load, and press Start Set when ready.")
+                if state?.saveFailure == true {
+                    errorText("This set could not be saved locally. Keep the session open and retry.")
+                    Button("Retry saving set") { model.bridge.retryWorkoutSave(); model.refresh() }
+                        .buttonStyle(.borderedProminent).tint(phoenixOrange)
+                        .accessibilityIdentifier("workout.retry-save")
+                } else if state?.completionFailed == true {
+                    workoutError
+                } else if active {
+                    activeSet
+                } else if summary {
+                    setSummary
+                } else if state?.workoutState == "initializing" || state?.workoutState == "countdown" {
+                    preparingSet
+                } else if state?.workoutState == "error" {
+                    workoutError
+                } else if state?.workoutState == "bodyweight_entry" {
+                    bodyweightUnavailable
+                } else if state?.connectionState != "connected" {
+                    emptyState("Connect to a trainer first", detail: "Open Connect on the Home screen to select your trainer.")
+                } else {
+                    setup
+                }
+                if state?.teardownState == "recovery_required" {
+                    errorText("Trainer stop did not confirm. Retry recovery before ending your session.")
+                    Button("Retry safe stop recovery") { model.bridge.retrySafeStopRecovery(); model.refresh() }
+                        .buttonStyle(.borderedProminent).tint(.red)
+                }
+                if let error = displayError(actionError: state?.actionError, excluding: [shownWorkoutError]) {
+                    errorText(error)
+                }
             }
-            if state?.teardownState == "recovery_required" {
-                errorText("Machine stop recovery is required. Do not leave the session while the trainer may still be loaded.")
-                Button("Retry safe stop recovery") { model.bridge.retrySafeStopRecovery(); model.refresh() }
-                    .buttonStyle(.borderedProminent).tint(.red)
-            }
-            if let error = state?.actionError { errorText(error) }
-            Spacer()
+            .padding(60)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(60).background(Color(red: 0.04, green: 0.06, blue: 0.09).ignoresSafeArea())
+        .background(Color(red: 0.04, green: 0.06, blue: 0.09).ignoresSafeArea())
+        .defaultFocus($focusedControl, defaultExerciseFocus)
         .onPlayPauseCommand { model.bridge.handlePlayPause(); model.refresh() }
         .onExitCommand {
             if state?.sessionOpen == true { model.bridge.handleBackDuringSession(); model.refresh() }
@@ -344,40 +414,73 @@ private struct JustLiftScreen: View {
         VStack(alignment: .leading, spacing: 20) {
             Text("Choose exercise").font(.title2.weight(.semibold))
             if exercises.isEmpty {
-                emptyState("Exercise library unavailable", detail: "Phoenix could not load exercises. No mock exercises are shown.")
+                emptyState("Exercise library unavailable", detail: "Phoenix could not load the exercise library. Try restarting the app.")
             } else {
-                ScrollView(.horizontal) {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(muscleGroups, id: \.self) { group in
+                            Button(group) {
+                                selectedMuscleGroup = group
+                            }
+                            .buttonStyle(.bordered)
+                            .tint(activeMuscleGroup == group ? phoenixOrange : .secondary)
+                            .focused($focusedControl, equals: "muscle.\(group)")
+                            .accessibilityIdentifier("justlift.muscle.\(group)")
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+                .focusSection()
+                ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(spacing: 18) {
-                        ForEach(exercises, id: \.id) { exercise in
+                        ForEach(filteredExercises, id: \.id) { exercise in
                             Button {
                                 selectedExerciseId = exercise.id
                                 model.bridge.selectJustLiftExercise(id: exercise.id); model.refresh()
                             } label: {
                                 VStack(alignment: .leading, spacing: 8) {
-                                    Text(exercise.name).font(.headline)
-                                    Text(exercise.isBodyweight ? "Bodyweight" : "Cable exercise").font(.caption).foregroundStyle(.secondary)
+                                    Text(exercise.name)
+                                        .font(.headline)
+                                        .lineLimit(2)
+                                        .multilineTextAlignment(.leading)
+                                    Spacer(minLength: 0)
+                                    HStack {
+                                        Text(exercise.muscleGroup.isEmpty ? "Cable exercise" : exercise.muscleGroup)
+                                            .font(.caption)
+                                            .foregroundStyle(selectedExerciseId == exercise.id ? phoenixOrange : .secondary)
+                                            .lineLimit(1)
+                                        Spacer(minLength: 4)
+                                        if selectedExerciseId == exercise.id {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .font(.caption)
+                                                .foregroundStyle(phoenixOrange)
+                                        }
+                                    }
                                 }
-                                .padding(20).frame(width: 280, alignment: .leading)
-                                .background(.white.opacity(selectedExerciseId == exercise.id ? 0.16 : 0.07), in: RoundedRectangle(cornerRadius: 14))
+                                .padding(20)
+                                .frame(width: 280, height: 120, alignment: .topLeading)
                             }
                             .buttonStyle(.card)
+                            .focused($focusedControl, equals: "exercise.\(exercise.id)")
                             .accessibilityIdentifier("justlift.exercise.\(exercise.id)")
                         }
                     }
                 }
                 .focusSection()
             }
-            Text("\(state?.exerciseName ?? "No exercise selected") · \(state?.weightPerCableKg ?? 0, specifier: "%.1f") kg per cable")
+            Text("\(state?.exerciseName ?? "No exercise selected") · \(formatWeightPerCable(state?.weightPerCableKg ?? 0, unit: state?.weightUnit))")
                 .font(.title3.weight(.semibold))
             HStack(spacing: 18) {
-                Button("− 2.5 kg / cable") { model.bridge.adjustJustLiftWeight(weightKg: max(0, (state?.weightPerCableKg ?? 0) - 2.5)); model.refresh() }
+                Button("− \(weightStepLabel)") { model.bridge.stepJustLiftWeight(deltaSteps: -1); model.refresh() }
                     .buttonStyle(.bordered).accessibilityIdentifier("justlift.weight.down")
-                Button("+ 2.5 kg / cable") { model.bridge.adjustJustLiftWeight(weightKg: (state?.weightPerCableKg ?? 0) + 2.5); model.refresh() }
+                Button("+ \(weightStepLabel)") { model.bridge.stepJustLiftWeight(deltaSteps: 1); model.refresh() }
                     .buttonStyle(.bordered).accessibilityIdentifier("justlift.weight.up")
-                Button("Rest: \(state?.configuredRestSeconds ?? 0)s · change") { model.bridge.adjustJustLiftRest(seconds: state?.configuredRestSeconds == 0 ? 60 : 0); model.refresh() }
+                Button("Rest: \(state?.configuredRestSeconds ?? 0)s · Change") { model.bridge.cycleJustLiftRestPreset(); model.refresh() }
                     .buttonStyle(.bordered).accessibilityIdentifier("justlift.rest-setting")
+                Button("Mode: \(state?.programModeName ?? "Old School")") { model.bridge.cycleJustLiftMode(); model.refresh() }
+                    .buttonStyle(.bordered).accessibilityIdentifier("justlift.mode")
             }
-            Text("Apple TV uses manual starts. Your phone's autoplay preferences are unchanged; each TV set requires Select.")
+            Text("Press Start Set whenever you are ready. Auto-start is disabled on Apple TV.")
                 .font(.caption).foregroundStyle(.secondary)
             Button("Start Set") { model.bridge.startJustLift(); model.refresh() }
                 .buttonStyle(.borderedProminent).tint(phoenixOrange)
@@ -396,7 +499,7 @@ private struct JustLiftScreen: View {
             Text(state?.exerciseName ?? "Just Lift")
                 .font(.system(size: 34, weight: .bold, design: .rounded))
             ProgressView().tint(phoenixOrange)
-            Text("Phoenix is validating and preparing the set you requested. Play/Pause or Menu cancels preparation through the shared stop path.")
+            Text("Sending workout settings to your trainer. Press Play/Pause or Menu to cancel.")
                 .font(.title3).foregroundStyle(.secondary)
             Button("Cancel Set") { model.bridge.stopActiveSet(); model.refresh() }
                 .buttonStyle(.borderedProminent).tint(.red).accessibilityIdentifier("justlift.cancel-start")
@@ -408,7 +511,7 @@ private struct JustLiftScreen: View {
     private var workoutError: some View {
         VStack(alignment: .leading, spacing: 18) {
             Text(state?.completionFailed == true ? "SET NOT SAVED" : "SET COULD NOT START").font(.caption.weight(.bold)).tracking(2).foregroundStyle(.orange)
-            errorText(state?.workoutMessage ?? "Phoenix could not start this set. No active controls are available.")
+            errorText(state?.workoutMessage ?? "Phoenix could not start this set. Check your trainer connection and try again.")
             if state?.teardownState == "recovery_required" {
                 Button("Retry safe stop recovery") { model.bridge.retrySafeStopRecovery(); model.refresh() }
                     .buttonStyle(.borderedProminent).tint(.red)
@@ -423,7 +526,7 @@ private struct JustLiftScreen: View {
     }
 
     private var bodyweightUnavailable: some View {
-        emptyState("Bodyweight sets are unavailable on Apple TV", detail: "Select a cable exercise to train with the connected Vitruvian trainer.")
+        emptyState("Bodyweight sets are unavailable on Apple TV", detail: "Select a cable exercise to train with your connected Phoenix trainer.")
     }
 
     private var activeSet: some View {
@@ -434,11 +537,11 @@ private struct JustLiftScreen: View {
                 Text("\(state?.workingReps ?? 0)").font(.system(size: 82, weight: .bold, design: .rounded))
                 Text("REPS").font(.title2.weight(.bold)).foregroundStyle(.secondary)
             }
-            Text("Target: \(state?.weightPerCableKg ?? 0, specifier: "%.1f") kg per cable · measured total \(state?.measuredTotalLoadKg?.floatValue ?? 0, specifier: "%.1f") kg")
+            Text("Target: \(formatWeightPerCable(state?.weightPerCableKg ?? 0, unit: state?.weightUnit)) · measured total \(formatWeight(state?.measuredTotalLoadKg?.floatValue ?? 0, unit: state?.weightUnit))")
                 .font(.title3).foregroundStyle(.secondary)
             Button("Stop Set") { model.bridge.stopActiveSet(); model.refresh() }
                 .buttonStyle(.borderedProminent).tint(.red).accessibilityIdentifier("justlift.stop")
-            Text("Play/Pause also requests Phoenix's shared stop path. This is not an emergency stop.")
+            Text("Press Play/Pause or Stop Set to unload cables. Stay near your trainer's controls.")
                 .font(.caption).foregroundStyle(.secondary)
         }
         .padding(26).frame(maxWidth: 900, alignment: .leading)
@@ -459,7 +562,9 @@ private struct JustLiftScreen: View {
                 Button("End Session") { model.bridge.endSession(); model.refresh() }.buttonStyle(.bordered)
                     .accessibilityIdentifier("justlift.end")
             }
-        }.padding(26).background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 22))
+        }
+        .padding(26).frame(maxWidth: 900, alignment: .leading)
+        .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 22))
     }
 }
 
@@ -469,37 +574,49 @@ private struct RoutinesScreen: View {
     private var routines: [TvRoutineRow] { model.snapshot?.routines ?? [] }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            pageTitle("Daily Routines", subtitle: "Saved routines from Phoenix. Sync is explicit after sign-in and identity resolution.")
-            if routines.isEmpty {
-                emptyState("No saved routines", detail: "Sign in, resolve account identity if prompted, then choose Sync Now. Routines are never fetched by login alone.")
-            } else {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 14) {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                pageTitle("Daily Routines", subtitle: "Select a saved routine to preview and start.")
+                if routines.isEmpty {
+                    emptyState("No saved routines", detail: "Create routines on your phone, then sign in and tap Sync Now under Account & Sync.")
+                } else {
+                    LazyVStack(alignment: .leading, spacing: 14) {
                         ForEach(routines, id: \.id) { routine in
                             Button {
                                 model.bridge.openRoutineOverview(id: routine.id)
                                 model.refresh()
                                 openOverview()
                             } label: {
-                                HStack {
+                                HStack(spacing: 20) {
                                     VStack(alignment: .leading, spacing: 5) {
-                                        Text(routine.name).font(.title3.weight(.semibold))
-                                        Text("\(routine.exerciseCount) exercises · \(routine.description_)").font(.subheadline).foregroundStyle(.secondary)
+                                        Text(routine.name)
+                                            .font(.title3.weight(.semibold))
+                                            .lineLimit(2)
+                                            .multilineTextAlignment(.leading)
+                                        Text("\(routine.exerciseCount) exercises · \(routine.description_)")
+                                            .font(.subheadline)
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(2)
                                     }
-                                    Spacer()
+                                    Spacer(minLength: 16)
                                     Image(systemName: "chevron.right").foregroundStyle(phoenixOrange)
                                 }
-                                .padding(22).background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 16))
+                                .padding(.horizontal, 22)
+                                .frame(maxWidth: .infinity, height: 104, alignment: .leading)
                             }
-                            .buttonStyle(.card).accessibilityIdentifier("routine.\(routine.id)")
+                            .buttonStyle(.card)
+                            .accessibilityIdentifier("routine.\(routine.id)")
                         }
                     }
                 }
+                if let error = displayError(actionError: model.snapshot?.actionError, excluding: []) {
+                    errorText(error)
+                }
             }
-            if let error = model.snapshot?.actionError { errorText(error) }
-            Spacer()
-        }.padding(60).background(Color(red: 0.04, green: 0.06, blue: 0.09).ignoresSafeArea())
+            .padding(60)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .background(Color(red: 0.04, green: 0.06, blue: 0.09).ignoresSafeArea())
     }
 }
 
@@ -508,29 +625,33 @@ private struct RoutineOverviewScreen: View {
     @Environment(\.dismiss) private var dismiss
     private var state: TvAppSnapshot? { model.snapshot }
     private var exercises: [TvRoutineExerciseRow] { state?.selectedRoutineExercises ?? [] }
+    private var shownWorkoutError: String? {
+        guard state?.completionFailed == true || state?.workoutState == "error" else { return nil }
+        return state?.workoutMessage
+    }
 
     private var routineExecution: some View {
         VStack(alignment: .leading, spacing: 20) {
             Text("ROUTINE IN PROGRESS").font(.caption.weight(.bold)).tracking(2).foregroundStyle(phoenixOrange)
             switch state?.workoutState {
             case _ where state?.completionFailed == true:
-                errorText(state?.workoutMessage ?? "Set not saved. Complete safe stop recovery before ending the session.")
+                errorText(state?.workoutMessage ?? "Set could not be saved. Retry recovery before ending this session.")
             case _ where state?.saveFailure == true:
                 Text("SET NOT SAVED").font(.title2.weight(.bold))
             case "bodyweight_entry":
                 BodyweightEntryView(model: model)
             case "initializing", "countdown":
                 Text("PREPARING SET").font(.title2.weight(.bold)).accessibilityIdentifier("routine.preparing")
-                ProgressView()
+                ProgressView().tint(phoenixOrange)
                 Button("Cancel Set") { model.bridge.stopActiveSet(); model.refresh() }
                     .buttonStyle(.borderedProminent).tint(.red).accessibilityIdentifier("routine.cancel-start")
             case "active", "paused":
                 Text(state?.routineExerciseName ?? "Active set").font(.system(size: 34, weight: .bold, design: .rounded))
                 if state?.currentSetIsBodyweight == true {
-                    Text("Bodyweight · \(state?.exerciseSecondsRemaining?.intValue ?? 0)s remaining. Enter actual reps after the timer; no trainer load is applied.")
+                    Text("Bodyweight timer · \(state?.exerciseSecondsRemaining?.intValue ?? 0)s remaining. Log your reps once finished.")
                         .font(.title3).accessibilityIdentifier("routine.bodyweight-active")
                 } else {
-                    Text("\(state?.workingReps ?? 0) reps · \(state?.routineReadyWeightKg ?? 0, specifier: "%.1f") kg per cable")
+                    Text("\(state?.workingReps ?? 0) reps · \(formatWeightPerCable(state?.routineReadyWeightKg ?? 0, unit: state?.weightUnit))")
                         .font(.title2).foregroundStyle(.secondary)
                 }
                 Button("Stop Set") { model.bridge.stopActiveSet(); model.refresh() }
@@ -538,15 +659,19 @@ private struct RoutineOverviewScreen: View {
             case _ where state?.routineFlowState == "complete" || state?.workoutState == "routine_complete":
                 Text("Routine complete").font(.system(size: 36, weight: .bold, design: .rounded))
                     .accessibilityIdentifier("routine.complete")
-                Text("Training finished. Sync is available from Account; completion alone does not confirm every set was saved.")
+                Text("Workout complete. Visit Account & Sync to upload your session.")
                     .font(.title3).foregroundStyle(.secondary)
             case _ where state?.routineReadyToStart == true:
                 Text("\(state?.routineExerciseName ?? "Next exercise") · Set \(state?.routineSetNumber ?? 1) of \(state?.routineSetCount ?? 0)")
                     .font(.system(size: 30, weight: .bold, design: .rounded))
-                Text(state?.currentSetIsBodyweight == true ? "\(state?.routineReadyReps ?? 0) planned reps · Bodyweight" : "\(state?.routineReadyReps ?? 0) reps · \(String(format: "%.1f", state?.routineReadyWeightKg ?? 0)) kg per cable")
-                    .font(.title2).foregroundStyle(.secondary)
+                Text(
+                    state?.currentSetIsBodyweight == true
+                        ? "\(state?.routineReadyReps ?? 0) planned reps · Bodyweight"
+                        : "\(state?.routineReadyReps ?? 0) reps · \(formatWeightPerCable(state?.routineReadyWeightKg ?? 0, unit: state?.weightUnit))"
+                )
+                .font(.title2).foregroundStyle(.secondary)
                 if let rest = state?.manualRoutineRestSeconds {
-                    Text("Manual rest · suggested \(rest.intValue)s. No automatic countdown or start; select Start Set when ready.")
+                    Text("Manual rest · Suggested \(rest.intValue)s. Press Start Set when you are ready.")
                         .font(.title3).foregroundStyle(.secondary).accessibilityIdentifier("routine.rest")
                 }
                 Button("Start Set") { model.bridge.startRoutineSet(); model.refresh() }
@@ -567,11 +692,12 @@ private struct RoutineOverviewScreen: View {
                 Button("Retry safe stop recovery") { model.bridge.retrySafeStopRecovery(); model.refresh() }
                     .buttonStyle(.borderedProminent).tint(.red)
             default:
-                Text("Waiting for the shared workout transition…").font(.title3)
+                Text("Preparing next step…").font(.title3)
             }
             if state?.saveFailure == true {
-                errorText("A set failed to save locally. Retry before leaving this session.")
+                errorText("This set could not be saved. Retry saving before ending your session.")
                 Button("Retry saving set") { model.bridge.retryWorkoutSave(); model.refresh() }
+                    .buttonStyle(.borderedProminent).tint(phoenixOrange)
                     .accessibilityIdentifier("workout.retry-save")
             }
             if !["active", "paused", "initializing", "countdown"].contains(state?.workoutState ?? "") && state?.teardownState == "ready" {
@@ -579,49 +705,81 @@ private struct RoutineOverviewScreen: View {
                     .buttonStyle(.bordered).accessibilityIdentifier("routine.end")
             }
             if state?.teardownState == "recovery_required" {
-                errorText("The machine stop requires recovery. Do not leave while load may remain applied.")
+                errorText("Trainer stop did not confirm. Retry recovery before ending your session.")
                 Button("Retry safe stop recovery") { model.bridge.retrySafeStopRecovery(); model.refresh() }
                     .buttonStyle(.borderedProminent).tint(.red)
             }
-            if let error = state?.actionError { errorText(error) }
+            if let error = displayError(actionError: state?.actionError, excluding: [shownWorkoutError]) {
+                errorText(error)
+            }
         }
         .padding(26).frame(maxWidth: 1000, alignment: .leading)
         .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 22))
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            pageTitle(state?.selectedRoutineName ?? "Routine", subtitle: state?.selectedRoutineDescription ?? "Saved routine overview")
-            if state?.sessionOpen == true {
-                routineExecution
-            } else if exercises.isEmpty {
-                emptyState("Routine details unavailable", detail: "The selected routine may have changed. Return to Daily Routines and select it again.")
-            } else {
-                ScrollView {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                pageTitle(state?.selectedRoutineName ?? "Routine", subtitle: state?.selectedRoutineDescription ?? "Saved routine overview")
+                if state?.sessionOpen == true {
+                    routineExecution
+                } else if exercises.isEmpty {
+                    emptyState("Routine details unavailable", detail: "This routine is unavailable. Go back to Daily Routines and select it again.")
+                    if let error = displayError(actionError: state?.actionError, excluding: []) {
+                        errorText(error)
+                    }
+                } else {
                     VStack(alignment: .leading, spacing: 12) {
+                        Button("Begin Routine") { model.bridge.beginSelectedRoutine(); model.refresh() }
+                            .buttonStyle(.borderedProminent).tint(phoenixOrange).accessibilityIdentifier("routine.begin")
+                        Text("Press Start Set before each set. Bodyweight exercises use an on-screen timer and manual rep entry.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    if state?.connectionState != "connected" && exercises.contains(where: { !$0.isBodyweight }) {
+                        errorText("Connect to a selected trainer before starting a cable set.")
+                    }
+                    if let error = displayError(actionError: state?.actionError, excluding: []) {
+                        errorText(error)
+                    }
+                    Text("Exercises (\(exercises.count))")
+                        .font(.title3.weight(.semibold))
+                        .padding(.top, 8)
+                    LazyVStack(alignment: .leading, spacing: 12) {
                         ForEach(Array(exercises.enumerated()), id: \.offset) { index, exercise in
-                            HStack(spacing: 20) {
-                                Text(String(format: "%02d", index + 1)).font(.title2.weight(.bold)).foregroundStyle(phoenixOrange)
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(exercise.name).font(.title3.weight(.semibold))
-                                    Text(exercise.isBodyweight ? "\(exercise.setCount) sets · \(exercise.reps) planned reps · Bodyweight" : "\(exercise.setCount) sets · \(exercise.reps) reps · \(String(format: "%.1f", exercise.weightPerCableKg)) kg per cable")
-                                        .font(.subheadline).foregroundStyle(.secondary)
+                            Button {} label: {
+                                HStack(spacing: 20) {
+                                    Text(String(format: "%02d", index + 1))
+                                        .font(.title2.weight(.bold))
+                                        .foregroundStyle(phoenixOrange)
+                                        .frame(width: 44, alignment: .leading)
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(exercise.name)
+                                            .font(.title3.weight(.semibold))
+                                            .lineLimit(2)
+                                            .multilineTextAlignment(.leading)
+                                        Text(
+                                            exercise.isBodyweight
+                                                ? "\(exercise.setCount) sets · \(exercise.reps) planned reps · Bodyweight"
+                                                : "\(exercise.setCount) sets · \(exercise.reps) reps · \(formatWeightPerCable(exercise.weightPerCableKg, unit: state?.weightUnit))"
+                                        )
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(2)
+                                    }
+                                    Spacer(minLength: 0)
                                 }
-                            }.padding(16).background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+                                .padding(.horizontal, 16)
+                                .frame(maxWidth: .infinity, height: 92, alignment: .leading)
+                            }
+                            .buttonStyle(.card)
                         }
                     }
                 }
-                Text("Apple TV requires Select for every set; phone preferences are unchanged. Bodyweight sets use Phoenix's timer and manual rep entry without trainer load.")
-                    .font(.caption).foregroundStyle(.secondary)
-                Button("Begin Routine") { model.bridge.beginSelectedRoutine(); model.refresh() }
-                    .buttonStyle(.borderedProminent).tint(phoenixOrange).accessibilityIdentifier("routine.begin")
             }
-            if let error = state?.actionError { errorText(error) }
-            if state?.connectionState != "connected" && exercises.contains(where: { !$0.isBodyweight }) {
-                errorText("Connect to a selected trainer before starting a cable set.")
-            }
-            Spacer()
-        }.padding(60).background(Color(red: 0.04, green: 0.06, blue: 0.09).ignoresSafeArea())
+            .padding(60)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .background(Color(red: 0.04, green: 0.06, blue: 0.09).ignoresSafeArea())
         .onPlayPauseCommand { model.bridge.handlePlayPause(); model.refresh() }
         .onExitCommand {
             if state?.sessionOpen == true { model.bridge.handleBackDuringSession(); model.refresh() }
@@ -657,7 +815,7 @@ private struct BodyweightEntryView: View {
                 model.refresh()
             }.buttonStyle(.borderedProminent).tint(phoenixOrange)
                 .disabled(variants.isEmpty).accessibilityIdentifier("bodyweight.confirm")
-            Text("Uses Phoenix's saved exercise variants and manual-completion logic. No trainer load is applied.")
+            Text("Choose your exercise variation and completed reps to log this bodyweight set.")
                 .font(.caption).foregroundStyle(.secondary)
         }
         .onAppear {
@@ -674,50 +832,109 @@ private struct AccountScreen: View {
     private var state: TvAppSnapshot? { model.snapshot }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 22) {
-            pageTitle("Account & Sync", subtitle: "Email/password authentication uses Phoenix's existing account and secure token storage.")
-            if state?.authenticated == true {
-                Text("Signed in as \(state?.accountEmail ?? "account")").font(.title2.weight(.semibold))
-                Text("Sync state: \(state?.syncState ?? "idle")").font(.title3).foregroundStyle(.secondary)
-                if state?.accountMismatch == true {
-                    errorText("Account mismatch: previous \(state?.previousAccount ?? "unknown") · new \(state?.newAccount ?? "unknown"). Resolve identity before syncing.")
-                    Button("Keep existing data separate") { model.bridge.resolveAccountMismatch(uploadNeverSynced: false); model.refresh() }
-                        .buttonStyle(.borderedProminent).tint(phoenixOrange)
-                    Button("Upload never-synced data to this account") { model.bridge.resolveAccountMismatch(uploadNeverSynced: true); model.refresh() }
-                        .buttonStyle(.bordered)
-                } else {
-                    Button("Sync Now") { model.bridge.syncNow(); model.refresh() }
-                        .buttonStyle(.borderedProminent).tint(phoenixOrange).disabled(state?.cloudConfigured != true)
-                        .accessibilityIdentifier("account.sync")
-                    if state?.cloudConfigured != true {
-                        errorText("Cloud Sync is unavailable because this build has no server configuration.")
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                pageTitle("Account & Sync", subtitle: "Sign in with your Phoenix account to sync routines and workouts.")
+                if state?.authenticated == true {
+                    Text("Signed in as \(state?.accountEmail ?? "account")").font(.title2.weight(.semibold))
+                    Text("Sync status: \(displaySyncState(state?.syncState))").font(.title3).foregroundStyle(.secondary)
+                    if state?.accountMismatch == true {
+                        errorText("This trainer data belongs to \(state?.previousAccount ?? "another account"), and you signed in as \(state?.newAccount ?? "this account"). Choose how to handle unsynced workouts:")
+                        Button("Keep existing data separate") { model.bridge.resolveAccountMismatch(uploadNeverSynced: false); model.refresh() }
+                            .buttonStyle(.borderedProminent).tint(phoenixOrange)
+                        Button("Upload never-synced data to this account") { model.bridge.resolveAccountMismatch(uploadNeverSynced: true); model.refresh() }
+                            .buttonStyle(.bordered)
+                    } else {
+                        Button("Sync Now") { model.bridge.syncNow(); model.refresh() }
+                            .buttonStyle(.borderedProminent).tint(phoenixOrange).disabled(state?.cloudConfigured != true)
+                            .accessibilityIdentifier("account.sync")
+                        if state?.cloudConfigured != true {
+                            errorText("Cloud sync is not configured in this build.")
+                        }
+                        Text("Select Sync Now to upload completed workouts and fetch your latest routines.")
+                            .font(.callout).foregroundStyle(.secondary)
                     }
-                    Text("Login does not pull routines. Sync Now runs only after identity resolution and required local migration.")
-                        .font(.callout).foregroundStyle(.secondary)
+                    Button("Sign Out") { model.bridge.signOut(); model.refresh() }.buttonStyle(.bordered)
+                } else if state?.cloudConfigured == true {
+                    TextField("Email", text: $email).textContentType(.emailAddress).autocorrectionDisabled()
+                        .textInputAutocapitalization(.never).frame(maxWidth: 650).accessibilityIdentifier("account.email")
+                    SecureField("Password", text: $password).textContentType(.password)
+                        .frame(maxWidth: 650).accessibilityIdentifier("account.password")
+                    Button("Sign In") { model.bridge.login(email: email, password: password); password = ""; model.refresh() }
+                        .buttonStyle(.borderedProminent).tint(phoenixOrange).disabled(email.isEmpty || password.isEmpty)
+                        .accessibilityIdentifier("account.login")
+                    Text("Sign in with your Phoenix email and password. Workout history and routines sync from your phone.")
+                        .font(.caption).foregroundStyle(.secondary)
+                } else {
+                    errorText("Cloud sync is not configured in this build. You can still train locally without signing in.")
+                        .accessibilityIdentifier("account.unavailable")
                 }
-                Button("Sign Out") { model.bridge.signOut(); model.refresh() }.buttonStyle(.bordered)
-            } else if state?.cloudConfigured == true {
-                TextField("Email", text: $email).textContentType(.emailAddress).autocorrectionDisabled()
-                    .textInputAutocapitalization(.never).frame(maxWidth: 650).accessibilityIdentifier("account.email")
-                SecureField("Password", text: $password).textContentType(.password)
-                    .frame(maxWidth: 650).accessibilityIdentifier("account.password")
-                Button("Sign In") { model.bridge.login(email: email, password: password); password = ""; model.refresh() }
-                    .buttonStyle(.borderedProminent).tint(phoenixOrange).disabled(email.isEmpty)
-                    .accessibilityIdentifier("account.login")
-                Text("No OAuth, Health, backup, CSV, or analytics controls are available in this experimental TV app.")
-                    .font(.caption).foregroundStyle(.secondary)
-            } else {
-                errorText("Cloud account service is unavailable in this build because server configuration is missing. Local workouts remain available.")
-                    .accessibilityIdentifier("account.unavailable")
+                if let error = state?.syncError, !error.isEmpty { errorText(error) }
+                if let error = displayError(actionError: state?.actionError, excluding: [state?.syncError]) {
+                    errorText(error)
+                }
             }
-            if let error = state?.syncError { errorText(error) }
-            if let error = state?.actionError { errorText(error) }
-            Spacer()
-        }.padding(60).background(Color(red: 0.04, green: 0.06, blue: 0.09).ignoresSafeArea())
+            .padding(60)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .background(Color(red: 0.04, green: 0.06, blue: 0.09).ignoresSafeArea())
     }
 }
 
 private var phoenixOrange: Color { Color(red: 1.0, green: 0.39, blue: 0.12) }
+
+private func isPoundsUnit(_ weightUnit: String?) -> Bool {
+    weightUnit?.uppercased() == "LB"
+}
+
+private func formatWeightValue(_ kg: Float, unit: String?) -> String {
+    let value = isPoundsUnit(unit) ? (kg * 2.2046226) : kg
+    return String(format: "%.1f", value)
+}
+
+private func weightUnitLabel(_ unit: String?) -> String {
+    isPoundsUnit(unit) ? "lbs" : "kg"
+}
+
+private func formatWeight(_ kg: Float, unit: String?) -> String {
+    "\(formatWeightValue(kg, unit: unit)) \(weightUnitLabel(unit))"
+}
+
+private func formatWeightPerCable(_ kg: Float, unit: String?) -> String {
+    "\(formatWeight(kg, unit: unit)) per cable"
+}
+
+private func displayConnectionStatus(_ raw: String?) -> String {
+    switch raw {
+    case "connected": return "Connected"
+    case "connecting": return "Connecting…"
+    case "scanning": return "Scanning…"
+    case "error": return "Connection error"
+    default: return "Not connected"
+    }
+}
+
+private func displaySyncState(_ raw: String?) -> String {
+    switch raw {
+    case "syncing": return "Syncing…"
+    case "success": return "Up to date"
+    case "partial_success": return "Synced with warnings"
+    case "error": return "Sync failed"
+    case "not_authenticated": return "Sign in required"
+    case "not_premium": return "Subscription required for cloud sync"
+    case "account_mismatch": return "Account switch confirmation needed"
+    case "ownership_conflict": return "Account ownership conflict"
+    default: return "Ready"
+    }
+}
+
+private func displayError(actionError: String?, excluding shown: [String?]) -> String? {
+    guard let trimmed = actionError?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else {
+        return nil
+    }
+    let excluded = Set(shown.compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })
+    return excluded.contains(trimmed) ? nil : actionError
+}
 
 private func pageTitle(_ title: String, subtitle: String) -> some View {
     VStack(alignment: .leading, spacing: 8) {
