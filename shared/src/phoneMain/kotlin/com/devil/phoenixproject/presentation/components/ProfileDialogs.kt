@@ -6,20 +6,26 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -33,7 +39,10 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
 import com.devil.phoenixproject.data.repository.UserProfile
 import org.jetbrains.compose.resources.stringResource
 import projectphoenix.shared.generated.resources.Res
@@ -131,57 +140,77 @@ fun ProfileDeleteDialog(
         "Only the active non-default profile may be deleted from Profile"
     }
 
-    AlertDialog(
-        onDismissRequest = {
+    PhoenixModalDialogFrame(
+        title = stringResource(Res.string.delete_profile),
+        onDismiss = {
             if (!isSubmitting) onDismiss()
         },
-        title = { Text(stringResource(Res.string.delete_profile)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    text = stringResource(
-                        Res.string.profile_delete_reassign_message,
-                        profile.name,
-                    ),
-                )
-                Text(
-                    text = stringResource(
-                        Res.string.profile_delete_permanent_message,
-                        profile.name,
-                    ),
-                )
-            }
-        },
-        // PR 20: the owner's rule is to offer the choice. Merge keeps today's behaviour;
-        // "Delete permanently" removes the data here and from the portal.
-        confirmButton = {
-            Column(horizontalAlignment = Alignment.End) {
-                TextButton(
-                    onClick = onConfirm,
-                    enabled = !isSubmitting,
-                ) {
-                    Text(stringResource(Res.string.profile_delete_merge_action))
-                }
-                TextButton(
-                    onClick = onDeletePermanently,
-                    enabled = !isSubmitting,
-                ) {
-                    Text(
-                        text = stringResource(Res.string.profile_delete_permanent_action),
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-            }
-        },
-        dismissButton = {
-            TextButton(
+        dismissOnClickOutside = !isSubmitting,
+        actions = {
+            OutlinedButton(
                 onClick = onDismiss,
                 enabled = !isSubmitting,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .heightIn(min = 56.dp),
+                shape = MaterialTheme.shapes.extraLarge,
             ) {
-                Text(stringResource(Res.string.action_cancel))
+                Text(
+                    text = stringResource(Res.string.action_cancel),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         },
-    )
+    ) {
+        Text(
+            text = stringResource(
+                Res.string.profile_delete_reassign_message,
+                profile.name,
+            ),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        Text(
+            text = stringResource(
+                Res.string.profile_delete_permanent_message,
+                profile.name,
+            ),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        // Clear hierarchy: primary/tonal safe reassign option first, destructive permanent delete below.
+        FilledTonalButton(
+            onClick = onConfirm,
+            enabled = !isSubmitting,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 56.dp),
+            shape = MaterialTheme.shapes.extraLarge,
+        ) {
+            Text(
+                text = stringResource(Res.string.profile_delete_merge_action),
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+        Button(
+            onClick = onDeletePermanently,
+            enabled = !isSubmitting,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 56.dp),
+            shape = MaterialTheme.shapes.extraLarge,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.error,
+                contentColor = MaterialTheme.colorScheme.onError,
+            ),
+        ) {
+            Text(
+                text = stringResource(Res.string.profile_delete_permanent_action),
+                fontWeight = FontWeight.Bold,
+            )
+        }
+    }
 }
 
 @Composable
@@ -192,9 +221,16 @@ fun ProfileRecoveryDialog(
 ) {
     AlertDialog(
         onDismissRequest = {},
+        properties = DialogProperties(
+            dismissOnBackPress = false,
+            dismissOnClickOutside = false,
+        ),
         title = { Text(stringResource(Res.string.profile_recovery_title)) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
                 Text(stringResource(Res.string.profile_recovery_message))
                 errorMessage?.let {
                     Text(
@@ -208,7 +244,11 @@ fun ProfileRecoveryDialog(
             }
         },
         confirmButton = {
-            Button(onClick = onRetry, enabled = !isRetrying) {
+            Button(
+                onClick = onRetry,
+                enabled = !isRetrying,
+                modifier = Modifier.heightIn(min = 56.dp),
+            ) {
                 Text(stringResource(Res.string.action_retry))
             }
         },
@@ -229,59 +269,73 @@ private fun ProfileIdentityDialog(
     onDismiss: () -> Unit,
 ) {
     val trimmedName = name.trim()
-    AlertDialog(
-        onDismissRequest = {
+    PhoenixModalDialogFrame(
+        title = title,
+        onDismiss = {
             if (!isSubmitting) onDismiss()
         },
-        title = { Text(title) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = onNameChange,
-                    enabled = !isSubmitting,
-                    label = { Text(stringResource(Res.string.label_name)) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                errorMessage?.let { message ->
-                    Text(
-                        text = message,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.semantics {
-                            liveRegion = LiveRegionMode.Polite
-                        },
-                    )
-                }
-                Text(
-                    text = stringResource(Res.string.choose_color),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                ProfileColorSelector(
-                    selectedColorIndex = selectedColorIndex,
-                    enabled = !isSubmitting,
-                    onColorSelected = onColorSelected,
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = onConfirm,
-                enabled = trimmedName.isNotEmpty() && !isSubmitting,
-            ) {
-                Text(confirmLabel)
-            }
-        },
-        dismissButton = {
-            TextButton(
+        dismissOnClickOutside = !isSubmitting,
+        actions = {
+            OutlinedButton(
                 onClick = onDismiss,
                 enabled = !isSubmitting,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .heightIn(min = 56.dp),
+                shape = MaterialTheme.shapes.extraLarge,
             ) {
-                Text(stringResource(Res.string.action_cancel))
+                Text(
+                    text = stringResource(Res.string.action_cancel),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Button(
+                onClick = onConfirm,
+                enabled = trimmedName.isNotEmpty() && !isSubmitting,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .heightIn(min = 56.dp),
+                shape = MaterialTheme.shapes.extraLarge,
+            ) {
+                Text(
+                    text = confirmLabel,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         },
-    )
+    ) {
+        OutlinedTextField(
+            value = name,
+            onValueChange = onNameChange,
+            enabled = !isSubmitting,
+            label = { Text(stringResource(Res.string.label_name)) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        errorMessage?.let { message ->
+            Text(
+                text = message,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.semantics {
+                    liveRegion = LiveRegionMode.Polite
+                },
+            )
+        }
+        Text(
+            text = stringResource(Res.string.choose_color),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        ProfileColorSelector(
+            selectedColorIndex = selectedColorIndex,
+            enabled = !isSubmitting,
+            onColorSelected = onColorSelected,
+        )
+    }
 }
 
 @Composable

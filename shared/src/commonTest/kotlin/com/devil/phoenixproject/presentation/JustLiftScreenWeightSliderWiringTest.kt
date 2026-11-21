@@ -55,12 +55,14 @@ class JustLiftScreenWeightSliderWiringTest {
     fun progressionSliderWiring_pinsValueRangeAndStepCount() {
         val src = readJustLiftScreenSource()
 
-        // Lock down the explicit valueRange on the ProgressionSlider call site.
+        // Lock down the ProgressionSlider range bound via CommandLimits.MAX_PROGRESSION_KG.
         assertTrue(
-            src.contains("valueRange = -10f..10f"),
-            "JustLiftScreen.kt must keep ProgressionSlider(valueRange = -10f..10f). " +
-                "Changing this widens the slider's allowed values and reintroduces the " +
-                "issue #571 regression where 29/30/44-49 could appear on screen.",
+            src.contains("CommandLimits.MAX_PROGRESSION_KG"),
+            "JustLiftScreen.kt must bound ProgressionSlider using CommandLimits.MAX_PROGRESSION_KG.",
+        )
+        assertTrue(
+            src.contains("valueRange = -maxProgression..maxProgression"),
+            "JustLiftScreen.kt must pass valueRange = -maxProgression..maxProgression to ProgressionSlider.",
         )
     }
 

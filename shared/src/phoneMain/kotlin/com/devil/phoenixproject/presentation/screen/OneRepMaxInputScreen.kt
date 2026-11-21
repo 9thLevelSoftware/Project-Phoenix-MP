@@ -17,7 +17,9 @@ import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.oneRepMaxInputUnitLabel
+import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
 import com.devil.phoenixproject.ui.theme.Spacing
+import com.devil.phoenixproject.util.KmpUtils
 import com.devil.phoenixproject.util.UnitConverter
 import org.jetbrains.compose.resources.stringResource
 import projectphoenix.shared.generated.resources.*
@@ -59,9 +61,14 @@ fun OneRepMaxInputScreen(
             mainLiftNames.forEach { name ->
                 val existingValueKg = existingOneRepMaxValues[name]
                 if (existingValueKg != null && existingValueKg > 0f) {
-                    // Convert from kg to display unit and format nicely
+                    // Convert from kg to display unit without truncating fractional loads
                     val displayValue = kgToDisplay(existingValueKg, weightUnit)
-                    put(name, displayValue.toInt().toString())
+                    val formatted = if (kotlin.math.abs(displayValue - displayValue.toInt()) < 0.05f) {
+                        displayValue.toInt().toString()
+                    } else {
+                        KmpUtils.formatFloat(displayValue, 1)
+                    }
+                    put(name, formatted)
                 } else {
                     put(name, "")
                 }
@@ -79,19 +86,30 @@ fun OneRepMaxInputScreen(
     }
     val canContinue = hasAtLeastOneValue && allValidOrEmpty
 
-    // Use Box with bottom bar instead of Scaffold to avoid double TopAppBar (Unified Bar spec)
-    Box(
+    val contentMaxWidth = ResponsiveDimensions.contentMaxWidth()
+    val widthModifier = if (contentMaxWidth != null) {
+        Modifier.widthIn(max = contentMaxWidth).fillMaxWidth()
+    } else {
+        Modifier.fillMaxWidth()
+    }
+
+    // Use Column with weight(1f) scroll area + docked bottom bar (zero overlap at large font scales)
+    Column(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background),
     ) {
-        Column(
+        Box(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(bottom = 160.dp) // Space for bottom bar
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(Spacing.medium),
+                .weight(1f)
+                .fillMaxWidth(),
+            contentAlignment = Alignment.TopCenter,
         ) {
+            Column(
+                modifier = widthModifier
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(Spacing.medium),
+            ) {
             // Title
             Text(
                 text = "Enter Your 1RM Values",
@@ -188,102 +206,109 @@ fun OneRepMaxInputScreen(
 
             // Bottom spacer for better scroll experience
             Spacer(modifier = Modifier.height(Spacing.small))
+            }
         }
 
         // Bottom action bar
         Surface(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth(),
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 3.dp,
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .padding(Spacing.medium),
-                verticalArrangement = Arrangement.spacedBy(Spacing.small),
+            Box(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.Center,
             ) {
-                // Skip button - styled as a distinct outlined button
-                OutlinedButton(
-                    onClick = {
-                        // Continue with zeros for all lifts
-                        val emptyMap = mainLiftNames.associateWith { 0f }
-                        onConfirm(emptyMap)
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.tertiary,
-                    ),
-                    border = ButtonDefaults.outlinedButtonBorder(enabled = true).copy(
-                        brush = androidx.compose.ui.graphics.SolidColor(
-                            MaterialTheme.colorScheme.tertiary.copy(alpha = 0.5f),
-                        ),
-                    ),
+                Column(
+                    modifier = widthModifier
+                        .navigationBarsPadding()
+                        .padding(Spacing.medium),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.small),
                 ) {
-                    Icon(
-                        Icons.Default.SkipNext,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        "Skip for now",
-                        style = MaterialTheme.typography.labelLarge,
-                    )
-                }
-
-                // Bottom action buttons
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(Spacing.small),
-                ) {
+                    // Skip button - styled as a distinct outlined button
                     OutlinedButton(
-                        onClick = onCancel,
-                        modifier = Modifier.weight(1f).height(56.dp),
+                        onClick = {
+                            // Continue with zeros for all lifts
+                            val emptyMap = mainLiftNames.associateWith { 0f }
+                            onConfirm(emptyMap)
+                        },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                         colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            contentColor = MaterialTheme.colorScheme.tertiary,
+                        ),
+                        border = ButtonDefaults.outlinedButtonBorder(enabled = true).copy(
+                            brush = androidx.compose.ui.graphics.SolidColor(
+                                MaterialTheme.colorScheme.tertiary.copy(alpha = 0.5f),
+                            ),
                         ),
                     ) {
-                        Text(stringResource(Res.string.action_cancel))
+                        Icon(
+                            Icons.Default.SkipNext,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "Skip for now",
+                            style = MaterialTheme.typography.labelLarge,
+                        )
                     }
 
-                    Button(
-                        onClick = {
-                            // Parse valid inputs and convert back to kg, use 0 for empty
-                            val oneRepMaxValues = inputValues.mapNotNull { (name, value) ->
-                                val displayValue = value.toFloatOrNull()
-                                if (displayValue != null && displayValue > 0) {
-                                    // Convert display value back to kg for storage
-                                    val kgValue = displayToKg(displayValue, weightUnit)
-                                    name to kgValue
-                                } else if (value.isBlank()) {
-                                    name to 0f
-                                } else {
-                                    null
-                                }
-                            }.toMap()
-                            onConfirm(oneRepMaxValues)
-                        },
-                        modifier = Modifier.weight(1f).height(56.dp),
-                        enabled = canContinue,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        ),
-                        shape = MaterialTheme.shapes.medium,
+                    // Bottom action buttons
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.small),
                     ) {
-                        Text(
-                            "Continue",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
-                        )
+                        OutlinedButton(
+                            onClick = onCancel,
+                            modifier = Modifier.weight(1f).heightIn(min = 56.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            ),
+                        ) {
+                            Text(
+                                text = stringResource(Res.string.action_cancel),
+                                maxLines = 2,
+                            )
+                        }
+
+                        Button(
+                            onClick = {
+                                // Parse valid inputs and convert back to kg, use 0 for empty
+                                val oneRepMaxValues = inputValues.mapNotNull { (name, value) ->
+                                    val displayValue = value.toFloatOrNull()
+                                    if (displayValue != null && displayValue > 0) {
+                                        // Convert display value back to kg for storage
+                                        val kgValue = displayToKg(displayValue, weightUnit)
+                                        name to kgValue
+                                    } else if (value.isBlank()) {
+                                        name to 0f
+                                    } else {
+                                        null
+                                    }
+                                }.toMap()
+                                onConfirm(oneRepMaxValues)
+                            },
+                            modifier = Modifier.weight(1f).heightIn(min = 56.dp),
+                            enabled = canContinue,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            ),
+                            shape = MaterialTheme.shapes.medium,
+                        ) {
+                            Text(
+                                "Continue",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 2,
+                            )
+                        }
                     }
                 }
             }
         }
-    } // End Box
+    } // End root Column
 }
 
 /**

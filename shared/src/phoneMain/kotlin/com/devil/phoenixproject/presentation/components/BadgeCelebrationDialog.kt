@@ -424,17 +424,28 @@ internal fun BatchedBadgeCelebrationDialogContent(
                 .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
+            val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
+
             // Lottie trophy animation in background (decorative size shrinks in
             // extremely short windows per the layout budget)
             Box(
                 modifier = Modifier.size(budget.trophySize),
                 contentAlignment = Alignment.Center,
             ) {
-                LottieAnimation(
-                    animationJson = CelebrationAnimations.trophy,
-                    size = budget.trophySize,
-                    contentDescription = stringResource(Res.string.cd_trophy),
-                )
+                if (reduceMotion) {
+                    Icon(
+                        imageVector = Icons.Default.EmojiEvents,
+                        contentDescription = stringResource(Res.string.cd_trophy),
+                        tint = MaterialTheme.colorScheme.secondary,
+                        modifier = Modifier.size(budget.trophySize * 0.8f),
+                    )
+                } else {
+                    LottieAnimation(
+                        animationJson = CelebrationAnimations.trophy,
+                        size = budget.trophySize,
+                        contentDescription = stringResource(Res.string.cd_trophy),
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(budget.spacerSmall))
@@ -444,9 +455,9 @@ internal fun BatchedBadgeCelebrationDialogContent(
                 text = if (badges.size ==
                     1
                 ) {
-                    "Badge Earned!"
+                    stringResource(Res.string.badge_dialog_single_title)
                 } else {
-                    "${badges.size} Badges Earned!"
+                    stringResource(Res.string.badge_dialog_multi_title, badges.size)
                 },
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
@@ -537,21 +548,28 @@ internal fun BatchedBadgeCelebrationDialogContent(
 
                         Spacer(modifier = Modifier.height(8.dp))
 
-                        // Category chip
-                        AssistChip(
-                            onClick = { },
-                            label = { Text(badge.category.displayName) },
-                            leadingIcon = {
+                        // Category pill (non-clickable)
+                        Surface(
+                            shape = MaterialTheme.shapes.small,
+                            color = tierColor.copy(alpha = 0.15f),
+                            contentColor = MaterialTheme.colorScheme.onSurface,
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
                                 Icon(
                                     imageVector = getCategoryIcon(badge.category),
                                     contentDescription = null,
                                     modifier = Modifier.size(16.dp),
                                 )
-                            },
-                            colors = AssistChipDefaults.assistChipColors(
-                                containerColor = tierColor.copy(alpha = 0.15f),
-                            ),
-                        )
+                                Text(
+                                    text = badge.category.displayName,
+                                    style = MaterialTheme.typography.labelMedium,
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -581,7 +599,7 @@ internal fun BatchedBadgeCelebrationDialogContent(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "Awesome!",
+                    text = stringResource(Res.string.badge_dialog_dismiss_awesome),
                     fontWeight = FontWeight.Bold,
                 )
             }
@@ -597,30 +615,33 @@ internal fun BatchedBadgeCelebrationDialogContent(
 private fun BadgeGridItem(badge: Badge, isSelected: Boolean, onClick: () -> Unit, animationDelay: Int) {
     val tierColor = Color(badge.tier.colorHex.toInt())
 
+    // dialogs-overlays-10: HighBouncy + StiffnessLow for the badge grid pop-in (properly festive).
+    // reduceMotion: OR with reduceMotion so target is immediately 1f (channel settles immediately).
+    val reduceMotionItem = LocalPlatformAccessibilitySettings.current.reduceMotion
+
     // Stagger fade-in animation
-    var isVisible by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        delay(animationDelay.toLong())
+    var isVisible by remember(reduceMotionItem) { mutableStateOf(reduceMotionItem) }
+    LaunchedEffect(reduceMotionItem) {
+        if (!reduceMotionItem) {
+            delay(animationDelay.toLong())
+        }
         isVisible = true
     }
 
     val itemAlpha by animateFloatAsState(
-        targetValue = if (isVisible) 1f else 0f,
-        animationSpec = tween(durationMillis = 300),
+        targetValue = if (isVisible || reduceMotionItem) 1f else 0f,
+        animationSpec = if (reduceMotionItem) snap() else tween(durationMillis = 300),
         label = "itemAlpha",
     )
 
-    // dialogs-overlays-10: HighBouncy + StiffnessLow for the badge grid pop-in (properly festive).
-    // reduceMotion: OR with reduceMotion so target is immediately 1f (channel settles immediately).
-    val reduceMotionItem = LocalPlatformAccessibilitySettings.current.reduceMotion
     val itemScale by animateFloatAsState(
         targetValue = if (isVisible || reduceMotionItem) 1f else 0.5f,
-        animationSpec = ExpressiveMotion.SpringBouncy,
+        animationSpec = if (reduceMotionItem) snap() else ExpressiveMotion.SpringBouncy,
         label = "itemScale",
     )
 
-    // Pulse animation only for selected badge (avoids wasteful infinite transitions on unselected items)
-    val pulseScale = if (isSelected) {
+    // Pulse animation only for selected badge when reduced motion is off
+    val pulseScale = if (isSelected && !reduceMotionItem) {
         val infiniteTransition = rememberInfiniteTransition(label = "pulse")
         infiniteTransition.animateFloat(
             initialValue = 1f,
@@ -637,6 +658,12 @@ private fun BadgeGridItem(badge: Badge, isSelected: Boolean, onClick: () -> Unit
 
     val displayScale = itemScale * pulseScale
 
+    val badgeContentDescription = stringResource(
+        Res.string.badge_dialog_item_cd,
+        badge.name,
+        badge.tier.displayName,
+        badge.category.displayName,
+    )
     Column(
         modifier = Modifier
             .alpha(itemAlpha)
@@ -645,8 +672,7 @@ private fun BadgeGridItem(badge: Badge, isSelected: Boolean, onClick: () -> Unit
             .clickable(onClick = onClick)
             .padding(4.dp)
             .semantics {
-                contentDescription =
-                    "${badge.name}, ${badge.tier.displayName} tier, ${badge.category.displayName} category"
+                contentDescription = badgeContentDescription
             },
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {

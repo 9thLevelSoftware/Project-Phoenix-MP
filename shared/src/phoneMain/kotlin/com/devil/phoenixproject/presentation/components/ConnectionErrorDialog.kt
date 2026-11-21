@@ -1,6 +1,8 @@
 package com.devil.phoenixproject.presentation.components
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
@@ -29,7 +31,9 @@ fun ConnectionErrorDialog(message: String, onDismiss: () -> Unit, onRetry: (() -
         title = { Text(stringResource(Res.string.connection_failed)) },
         text = {
             Column(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Text(
@@ -56,16 +60,22 @@ fun ConnectionErrorDialog(message: String, onDismiss: () -> Unit, onRetry: (() -
         },
         confirmButton = {
             if (onRetry != null) {
-                TextButton(onClick = {
-                    onDismiss()
-                    onRetry()
-                }) {
+                TextButton(
+                    onClick = {
+                        onDismiss()
+                        onRetry()
+                    },
+                    modifier = Modifier.heightIn(min = 48.dp),
+                ) {
                     Text(stringResource(Res.string.action_retry))
                 }
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier.heightIn(min = 48.dp),
+            ) {
                 Text(stringResource(Res.string.action_ok))
             }
         },

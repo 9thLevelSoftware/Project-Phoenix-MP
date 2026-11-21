@@ -1,25 +1,28 @@
 package com.devil.phoenixproject.presentation.screen
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -54,12 +57,14 @@ import com.devil.phoenixproject.presentation.components.DominatrixUnlockDialog
 import com.devil.phoenixproject.presentation.components.ExercisePickerDialog
 import com.devil.phoenixproject.presentation.components.LoadingIndicator
 import com.devil.phoenixproject.presentation.components.LoadingIndicatorSize
+import com.devil.phoenixproject.presentation.components.PhoenixSectionCard
 import com.devil.phoenixproject.presentation.components.ProfileAvatar
 import com.devil.phoenixproject.presentation.components.ProfileDeleteDialog
 import com.devil.phoenixproject.presentation.components.ProfileEditDialog
 import com.devil.phoenixproject.presentation.components.ProfileExerciseInsights
 import com.devil.phoenixproject.presentation.components.ProfilePreferenceSections
 import com.devil.phoenixproject.presentation.components.canDeleteProfile
+import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
 import com.devil.phoenixproject.presentation.util.TestTags
 import com.devil.phoenixproject.presentation.viewmodel.ProfileIdentityMutationKind
 import com.devil.phoenixproject.presentation.viewmodel.ProfilePreferenceMutationKind
@@ -325,16 +330,23 @@ fun ProfileScreen(
         }
     }
 
-    Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        modifier = modifier.testTag(TestTags.SCREEN_PROFILE),
-    ) { padding ->
+    val contentMaxWidth = ResponsiveDimensions.contentMaxWidth()
+    val constrainedWidthModifier = if (contentMaxWidth != null) {
+        Modifier.widthIn(max = contentMaxWidth).fillMaxWidth()
+    } else {
+        Modifier.fillMaxWidth()
+    }
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .testTag(TestTags.SCREEN_PROFILE),
+    ) {
         if (ready == null) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(padding),
+                    .padding(16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
@@ -346,11 +358,13 @@ fun ProfileScreen(
             }
         } else {
             LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
                 contentPadding = PaddingValues(
                     start = 16.dp,
-                    top = padding.calculateTopPadding() + 12.dp,
+                    top = 12.dp,
                     end = 16.dp,
-                    bottom = padding.calculateBottomPadding() + 24.dp,
+                    bottom = 24.dp,
                 ),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
@@ -361,6 +375,7 @@ fun ProfileScreen(
                         onSwitchProfile = onOpenProfileSwitcher,
                         onEdit = { editTargetProfileId = ready.profile.id },
                         onDelete = { deleteTargetProfileId = ready.profile.id },
+                        modifier = constrainedWidthModifier,
                     )
                 }
                 item(key = "exercise-insights") {
@@ -374,12 +389,23 @@ fun ProfileScreen(
                         weightUnit = ready.preferences.core.value.weightUnit,
                         onChooseExercise = { pickerProfileId = ready.profile.id },
                         onViewFullHistory = onNavigateToExerciseDetail,
+                        modifier = constrainedWidthModifier,
                     )
                 }
                 item(key = "achievements") {
                     Card(
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                        modifier = constrainedWidthModifier
+                            .heightIn(min = 48.dp)
                             .testTag(TestTags.ACTION_BADGES),
+                        shape = MaterialTheme.shapes.medium,
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        ),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                        border = BorderStroke(
+                            width = 1.dp,
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+                        ),
                         onClick = onNavigateToBadges,
                     ) {
                         Row(
@@ -406,6 +432,7 @@ fun ProfileScreen(
                         stringResource(Res.string.profile_preferences_title),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
+                        modifier = constrainedWidthModifier,
                     )
                 }
                 item(key = "profile-preferences") {
@@ -438,10 +465,16 @@ fun ProfileScreen(
                         onManageEquipmentRack = onNavigateToEquipmentRack,
                         onManageCustomEquipment = onNavigateToCustomEquipment,
                         onDiscoModeToggle = onDiscoModeToggle,
+                        modifier = constrainedWidthModifier,
                     )
                 }
             }
         }
+
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter),
+        )
     }
 
     val editTarget = ready?.profile?.takeIf { it.id == editTargetProfileId }
@@ -534,39 +567,47 @@ private fun ProfileHeaderCard(
     onSwitchProfile: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val switchLabel = stringResource(Res.string.switch_profile)
     val editLabel = stringResource(Res.string.action_edit)
     val deleteLabel = stringResource(Res.string.action_delete)
-    Card(modifier = Modifier.fillMaxWidth()) {
+    PhoenixSectionCard(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
+            modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             ProfileAvatar(profile = profile, isActive = true, size = 56.dp)
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = profile.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                TextButton(
-                    onClick = onSwitchProfile,
-                    enabled = !identityMutationInFlight,
-                    modifier = Modifier
-                        .heightIn(min = 48.dp)
-                        .semantics {
-                            contentDescription = switchLabel
-                            role = Role.Button
-                        },
-                ) {
-                    Text(switchLabel)
-                }
+            Text(
+                text = profile.name,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+            itemVerticalAlignment = Alignment.CenterVertically,
+        ) {
+            TextButton(
+                onClick = onSwitchProfile,
+                enabled = !identityMutationInFlight,
+                modifier = Modifier
+                    .heightIn(min = 48.dp)
+                    .semantics {
+                        contentDescription = switchLabel
+                        role = Role.Button
+                    },
+            ) {
+                Text(switchLabel)
             }
             IconButton(
                 onClick = onEdit,

@@ -7,13 +7,17 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -49,6 +53,7 @@ import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.TemplateExercise
 import com.devil.phoenixproject.domain.model.defaultPercentOfOneRmForReps
 import com.devil.phoenixproject.presentation.components.MiniExercisePickerDialog
+import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
 import com.devil.phoenixproject.ui.theme.Spacing
 
 /**
@@ -83,21 +88,34 @@ fun TemplatePreviewEditSheet(
         }
     }
 
-    Box(
+    val contentMaxWidth = ResponsiveDimensions.contentMaxWidth()
+    val widthModifier = if (contentMaxWidth != null) {
+        Modifier.widthIn(max = contentMaxWidth).fillMaxWidth()
+    } else {
+        Modifier.fillMaxWidth()
+    }
+
+    Column(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background),
     ) {
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(
-                start = Spacing.medium,
-                end = Spacing.medium,
-                top = Spacing.medium,
-                bottom = 140.dp, // space for bottom bar
-            ),
-            verticalArrangement = Arrangement.spacedBy(Spacing.small),
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth(),
+            contentAlignment = Alignment.TopCenter,
         ) {
+            LazyColumn(
+                modifier = widthModifier.fillMaxHeight(),
+                contentPadding = PaddingValues(
+                    start = Spacing.medium,
+                    end = Spacing.medium,
+                    top = Spacing.medium,
+                    bottom = Spacing.medium,
+                ),
+                verticalArrangement = Arrangement.spacedBy(Spacing.small),
+            ) {
             item {
                 Text(
                     text = template.name,
@@ -170,31 +188,36 @@ fun TemplatePreviewEditSheet(
                 }
             }
         }
+        }
 
-        // Bottom action bar
+        // Bottom action bar cleanly docked below the LazyColumn
         Surface(
-            modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth(),
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
             tonalElevation = 3.dp,
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .padding(Spacing.medium),
-                horizontalArrangement = Arrangement.spacedBy(Spacing.small),
+            Box(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.Center,
             ) {
-                OutlinedButton(
-                    onClick = onCancel,
-                    modifier = Modifier.weight(1f).height(56.dp),
+                Row(
+                    modifier = widthModifier
+                        .navigationBarsPadding()
+                        .padding(Spacing.medium),
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.small),
                 ) {
-                    Text("Back")
-                }
-                Button(
-                    onClick = { onContinue(template.copy(days = editedDays)) },
-                    modifier = Modifier.weight(1f).height(56.dp),
-                ) {
-                    Text("Continue")
+                    OutlinedButton(
+                        onClick = onCancel,
+                        modifier = Modifier.weight(1f).heightIn(min = 56.dp),
+                    ) {
+                        Text("Back", maxLines = 2)
+                    }
+                    Button(
+                        onClick = { onContinue(template.copy(days = editedDays)) },
+                        modifier = Modifier.weight(1f).heightIn(min = 56.dp),
+                    ) {
+                        Text("Continue", maxLines = 2)
+                    }
                 }
             }
         }
@@ -421,16 +444,22 @@ private fun StepperControl(
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        IconButton(onClick = onDecrement, modifier = Modifier.size(32.dp)) {
-            Icon(Icons.Default.Remove, contentDescription = "$label -1", modifier = Modifier.size(16.dp))
+        IconButton(
+            onClick = onDecrement,
+            modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
+        ) {
+            Icon(Icons.Default.Remove, contentDescription = "$label -1", modifier = Modifier.size(18.dp))
         }
         Text(
             value,
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.SemiBold,
         )
-        IconButton(onClick = onIncrement, modifier = Modifier.size(32.dp)) {
-            Icon(Icons.Default.Add, contentDescription = "$label +1", modifier = Modifier.size(16.dp))
+        IconButton(
+            onClick = onIncrement,
+            modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
+        ) {
+            Icon(Icons.Default.Add, contentDescription = "$label +1", modifier = Modifier.size(18.dp))
         }
     }
 }

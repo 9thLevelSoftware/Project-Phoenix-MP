@@ -7,6 +7,7 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
@@ -19,6 +20,41 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
+import org.jetbrains.compose.resources.stringResource
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.eula_accept_button
+import projectphoenix.shared.generated.resources.eula_age_certification
+import projectphoenix.shared.generated.resources.eula_app_name_label
+import projectphoenix.shared.generated.resources.eula_confirm_age_to_continue
+import projectphoenix.shared.generated.resources.eula_developer_label
+import projectphoenix.shared.generated.resources.eula_developer_name
+import projectphoenix.shared.generated.resources.eula_end_of_agreement
+import projectphoenix.shared.generated.resources.eula_must_accept
+import projectphoenix.shared.generated.resources.eula_scroll_down_prompt
+import projectphoenix.shared.generated.resources.eula_scroll_to_continue
+import projectphoenix.shared.generated.resources.eula_section_affiliation_body
+import projectphoenix.shared.generated.resources.eula_section_affiliation_bullet_1
+import projectphoenix.shared.generated.resources.eula_section_affiliation_bullet_2
+import projectphoenix.shared.generated.resources.eula_section_affiliation_title
+import projectphoenix.shared.generated.resources.eula_section_arbitration_body
+import projectphoenix.shared.generated.resources.eula_section_arbitration_title
+import projectphoenix.shared.generated.resources.eula_section_arbitration_waiver
+import projectphoenix.shared.generated.resources.eula_section_indemnification_body
+import projectphoenix.shared.generated.resources.eula_section_indemnification_title
+import projectphoenix.shared.generated.resources.eula_section_liability_body
+import projectphoenix.shared.generated.resources.eula_section_liability_title
+import projectphoenix.shared.generated.resources.eula_section_medical_body
+import projectphoenix.shared.generated.resources.eula_section_medical_title
+import projectphoenix.shared.generated.resources.eula_section_risk_assumption
+import projectphoenix.shared.generated.resources.eula_section_risk_bullet_1
+import projectphoenix.shared.generated.resources.eula_section_risk_bullet_2
+import projectphoenix.shared.generated.resources.eula_section_risk_highlight
+import projectphoenix.shared.generated.resources.eula_section_risk_intro
+import projectphoenix.shared.generated.resources.eula_section_risk_title
+import projectphoenix.shared.generated.resources.eula_section_warranty_body
+import projectphoenix.shared.generated.resources.eula_section_warranty_title
+import projectphoenix.shared.generated.resources.eula_title
+import projectphoenix.shared.generated.resources.nav_app_fallback
 
 /**
  * Full-screen EULA acceptance screen.
@@ -35,42 +71,44 @@ fun EulaScreen(
     onAccept: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var ageConfirmed by remember { mutableStateOf(false) }
-    var hasScrolledToBottom by remember { mutableStateOf(false) }
+    var ageConfirmed by rememberSaveable { mutableStateOf(false) }
+    var hasScrolledToBottom by rememberSaveable { mutableStateOf(false) }
 
     val scrollState = rememberScrollState()
 
-    // Track when user has scrolled to the bottom
+    // Latch scroll completion once the user reaches the bottom so slight scroll-up
+    // does not re-disable Continue.
     LaunchedEffect(scrollState.value, scrollState.maxValue) {
-        // If maxValue is 0, content fits on screen without scrolling - consider it "scrolled"
-        // Otherwise, check if user has scrolled within 50px of the end
-        hasScrolledToBottom = when {
-            scrollState.maxValue == 0 -> true
-
-            // No scrolling needed
-            scrollState.maxValue > 0 -> scrollState.value >= (scrollState.maxValue - 50)
-
-            else -> false // maxValue is negative (shouldn't happen, but defensive)
+        if (!hasScrolledToBottom &&
+            (scrollState.maxValue == 0 || scrollState.value >= scrollState.maxValue - 50)
+        ) {
+            hasScrolledToBottom = true
         }
     }
 
     val canAccept = ageConfirmed && hasScrolledToBottom
 
     val bgBrush = screenBackgroundBrush()
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(bgBrush),
+    Surface(
+        modifier = modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background,
     ) {
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .systemBarsPadding()
-                .padding(16.dp),
+                .background(bgBrush),
+            contentAlignment = Alignment.TopCenter,
         ) {
+            Column(
+                modifier = Modifier
+                    .widthIn(max = 720.dp)
+                    .fillMaxSize()
+                    .systemBarsPadding()
+                    .padding(16.dp),
+            ) {
             // Title
             Text(
-                text = "End User License Agreement (EULA),\nSafety Disclaimer, and Assumption of Risk",
+                text = stringResource(Res.string.eula_title),
                 style = MaterialTheme.typography.titleLarge.copy(
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary,
@@ -101,7 +139,7 @@ fun EulaScreen(
                     // Scroll indicator at bottom
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
-                        text = "— End of Agreement —",
+                        text = stringResource(Res.string.eula_end_of_agreement),
                         style = MaterialTheme.typography.bodySmall.copy(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center,
@@ -114,7 +152,7 @@ fun EulaScreen(
             // Scroll hint (shown until user scrolls to bottom)
             if (!hasScrolledToBottom) {
                 Text(
-                    text = "↓ Scroll down to read the full agreement ↓",
+                    text = stringResource(Res.string.eula_scroll_down_prompt),
                     style = MaterialTheme.typography.bodySmall.copy(
                         color = MaterialTheme.colorScheme.primary,
                         textAlign = TextAlign.Center,
@@ -137,7 +175,7 @@ fun EulaScreen(
                         onValueChange = { ageConfirmed = it },
                     )
                     .heightIn(min = 48.dp)
-                    .padding(horizontal = 8.dp),
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Checkbox(
@@ -150,7 +188,7 @@ fun EulaScreen(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "I certify that I am at least 18 years of age.",
+                    text = stringResource(Res.string.eula_age_certification),
                     style = MaterialTheme.typography.bodyMedium.copy(
                         color = MaterialTheme.colorScheme.onSurface,
                         fontWeight = FontWeight.Medium,
@@ -166,19 +204,20 @@ fun EulaScreen(
                 enabled = canAccept,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(56.dp),
+                    .heightIn(min = 56.dp),
                 shape = MaterialTheme.shapes.small,
             ) {
                 Text(
                     text = if (canAccept) {
-                        "I ACCEPT"
+                        stringResource(Res.string.eula_accept_button)
                     } else {
                         if (!hasScrolledToBottom) {
-                            "SCROLL TO BOTTOM TO CONTINUE"
+                            stringResource(Res.string.eula_scroll_to_continue)
                         } else {
-                            "CONFIRM AGE TO CONTINUE"
+                            stringResource(Res.string.eula_confirm_age_to_continue)
                         }
                     },
+                    textAlign = TextAlign.Center,
                     style = MaterialTheme.typography.titleMedium.copy(
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 1.sp,
@@ -190,13 +229,14 @@ fun EulaScreen(
 
             // Cannot proceed without accepting
             Text(
-                text = "You must accept these terms to use Project Phoenix.",
+                text = stringResource(Res.string.eula_must_accept),
                 style = MaterialTheme.typography.bodySmall.copy(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
                 ),
                 modifier = Modifier.fillMaxWidth(),
             )
+            }
         }
     }
 }
@@ -212,6 +252,11 @@ private fun EulaContent() {
     val primary = MaterialTheme.colorScheme.primary
     val errorColor = AccessibilityTheme.colors.error
 
+    val appNameLabel = stringResource(Res.string.eula_app_name_label)
+    val appTitle = stringResource(Res.string.nav_app_fallback)
+    val developerLabel = stringResource(Res.string.eula_developer_label)
+    val developerName = stringResource(Res.string.eula_developer_name)
+
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -220,17 +265,17 @@ private fun EulaContent() {
         Text(
             text = buildAnnotatedString {
                 withStyle(SpanStyle(color = onSurfaceVariant)) {
-                    append("App Name: ")
+                    append(appNameLabel)
                 }
                 withStyle(SpanStyle(color = onSurface, fontWeight = FontWeight.Bold)) {
-                    append("Project Phoenix")
+                    append(appTitle)
                 }
                 append("\n")
                 withStyle(SpanStyle(color = onSurfaceVariant)) {
-                    append("Developer: ")
+                    append(developerLabel)
                 }
                 withStyle(SpanStyle(color = onSurface, fontWeight = FontWeight.Bold)) {
-                    append("9th Level Software")
+                    append(developerName)
                 }
             },
             style = MaterialTheme.typography.bodyMedium,
@@ -241,33 +286,33 @@ private fun EulaContent() {
         // Section 1: Medical Warning
         EulaSection(
             number = "1",
-            title = "MEDICAL WARNING AND DISCLAIMER",
-            content = """CONSULT A PHYSICIAN BEFORE USE. The content and functionality provided by Project Phoenix are for informational and entertainment purposes only. You should consult your physician or other health care professional before starting this or any other fitness program to determine if it is right for your needs. Do not use Project Phoenix if your physician or health care provider advises against it. If you experience faintness, dizziness, pain, or shortness of breath at any time while exercising, you should stop immediately.""",
+            title = stringResource(Res.string.eula_section_medical_title),
+            content = stringResource(Res.string.eula_section_medical_body),
             isWarning = true,
         )
 
         // Section 2: Assumption of Risk
         EulaSection(
             number = "2",
-            title = "VOLUNTARY ASSUMPTION OF RISK",
+            title = stringResource(Res.string.eula_section_risk_title),
             content = null,
             isWarning = true,
         )
         Text(
-            text = "READ CAREFULLY: PROJECT PHOENIX CONTROLS THIRD-PARTY HARDWARE CAPABLE OF GENERATING SIGNIFICANT PHYSICAL FORCE.",
+            text = stringResource(Res.string.eula_section_risk_highlight),
             style = MaterialTheme.typography.bodyMedium.copy(
                 color = errorColor,
                 fontWeight = FontWeight.Bold,
             ),
         )
         Text(
-            text = """By using Project Phoenix, you acknowledge that resistance training involves inherent risks of serious injury, permanent disability, paralysis, and death. You explicitly acknowledge that software-controlled resistance equipment carries unique risks, including but not limited to:""",
+            text = stringResource(Res.string.eula_section_risk_intro),
             style = MaterialTheme.typography.bodyMedium.copy(color = onSurface),
         )
-        BulletPoint("Sudden Resistance Changes: Software bugs, Bluetooth latency, or connection drops may cause the equipment to apply sudden, unexpected force or fail to release force when required.")
-        BulletPoint("Hardware Unresponsiveness: The \"safety features\" of the hardware (e.g., spotting) may fail to engage due to communication errors between this App and the hardware.")
+        BulletPoint(stringResource(Res.string.eula_section_risk_bullet_1))
+        BulletPoint(stringResource(Res.string.eula_section_risk_bullet_2))
         Text(
-            text = "YOU KNOWINGLY AND FREELY ASSUME ALL SUCH RISKS, both known and unknown, even if arising from the negligence of the Developer, and assume full responsibility for your participation.",
+            text = stringResource(Res.string.eula_section_risk_assumption),
             style = MaterialTheme.typography.bodyMedium.copy(
                 color = errorColor,
                 fontWeight = FontWeight.Bold,
@@ -277,56 +322,54 @@ private fun EulaContent() {
         // Section 3: No Affiliation
         EulaSection(
             number = "3",
-            title = "NO AFFILIATION (THIRD-PARTY HARDWARE)",
+            title = stringResource(Res.string.eula_section_affiliation_title),
             content = null,
         )
         Text(
-            text = "Project Phoenix is an independent, community-developed project. IT IS NOT AFFILIATED WITH, ENDORSED BY, AUTHORIZED BY, OR SUPPORTED BY PHOENIX INVESTMENTS PTY LTD (IN LIQUIDATION), MANAGED BY MERCHANTS ADVISORY, OR ANY OTHER EQUIPMENT MANUFACTURER.",
+            text = stringResource(Res.string.eula_section_affiliation_body),
             style = MaterialTheme.typography.bodyMedium.copy(
                 color = onSurface,
                 fontWeight = FontWeight.Bold,
             ),
         )
-        BulletPoint("You acknowledge that using this App may void your warranty with the equipment manufacturer.")
-        BulletPoint("You acknowledge that the equipment manufacturer is not responsible for the performance of this App.")
+        BulletPoint(stringResource(Res.string.eula_section_affiliation_bullet_1))
+        BulletPoint(stringResource(Res.string.eula_section_affiliation_bullet_2))
 
         // Section 4: Disclaimer of Warranties
         EulaSection(
             number = "4",
-            title = "DISCLAIMER OF WARRANTIES (\"AS IS\")",
-            content = """TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE APPLICATION IS PROVIDED "AS IS" AND "AS AVAILABLE," WITH ALL FAULTS AND WITHOUT WARRANTY OF ANY KIND. 9TH LEVEL SOFTWARE HEREBY DISCLAIMS ALL WARRANTIES AND CONDITIONS WITH RESPECT TO THE APPLICATION, EITHER EXPRESS, IMPLIED, OR STATUTORY, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT.
-
-WE DO NOT WARRANT THAT THE FUNCTIONS CONTAINED IN THE APPLICATION WILL MEET YOUR REQUIREMENTS, THAT THE OPERATION OF THE APPLICATION WILL BE UNINTERRUPTED OR ERROR-FREE, OR THAT DEFECTS IN THE APPLICATION WILL BE CORRECTED.""",
+            title = stringResource(Res.string.eula_section_warranty_title),
+            content = stringResource(Res.string.eula_section_warranty_body),
             isAllCaps = true,
         )
 
         // Section 5: Limitation of Liability
         EulaSection(
             number = "5",
-            title = "LIMITATION OF LIABILITY",
-            content = """TO THE EXTENT NOT PROHIBITED BY LAW, IN NO EVENT SHALL 9TH LEVEL SOFTWARE BE LIABLE FOR PERSONAL INJURY, OR ANY INCIDENTAL, SPECIAL, INDIRECT, OR CONSEQUENTIAL DAMAGES WHATSOEVER, INCLUDING, WITHOUT LIMITATION, DAMAGES FOR LOSS OF DATA, BUSINESS INTERRUPTION, OR ANY OTHER COMMERCIAL DAMAGES OR LOSSES, ARISING OUT OF OR RELATED TO YOUR USE OR INABILITY TO USE THE APPLICATION, HOWEVER CAUSED, REGARDLESS OF THE THEORY OF LIABILITY (CONTRACT, TORT, OR OTHERWISE).""",
+            title = stringResource(Res.string.eula_section_liability_title),
+            content = stringResource(Res.string.eula_section_liability_body),
             isAllCaps = true,
         )
 
         // Section 6: Indemnification
         EulaSection(
             number = "6",
-            title = "INDEMNIFICATION",
-            content = """You agree to indemnify, defend, and hold harmless 9th Level Software and its contributors from and against any and all claims, losses, liabilities, expenses, damages, and costs, including reasonable attorneys' fees, resulting from or arising out of your use of the App, your violation of these Terms, or any injury or damage caused to you or any third party during the use of the App.""",
+            title = stringResource(Res.string.eula_section_indemnification_title),
+            content = stringResource(Res.string.eula_section_indemnification_body),
         )
 
         // Section 7: Arbitration
         EulaSection(
             number = "7",
-            title = "BINDING ARBITRATION AND CLASS ACTION WAIVER",
+            title = stringResource(Res.string.eula_section_arbitration_title),
             content = null,
         )
         Text(
-            text = """You and 9th Level Software agree that any dispute arising out of or relating to this Agreement or the App shall be legally settled by binding arbitration.""",
+            text = stringResource(Res.string.eula_section_arbitration_body),
             style = MaterialTheme.typography.bodyMedium.copy(color = onSurface),
         )
         Text(
-            text = "YOU AGREE THAT YOU ARE WAIVING THE RIGHT TO A TRIAL BY JURY OR TO PARTICIPATE AS A PLAINTIFF OR CLASS MEMBER IN ANY CLASS ACTION PROCEEDING.",
+            text = stringResource(Res.string.eula_section_arbitration_waiver),
             style = MaterialTheme.typography.bodyMedium.copy(
                 color = errorColor,
                 fontWeight = FontWeight.Bold,

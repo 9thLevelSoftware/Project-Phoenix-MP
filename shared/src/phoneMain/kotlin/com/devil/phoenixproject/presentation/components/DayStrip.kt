@@ -11,6 +11,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.NightsStay
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -209,11 +210,12 @@ private fun DayChip(dayNumber: Int, isRestDay: Boolean, state: DayState, isSelec
             contentAlignment = Alignment.Center,
         ) {
             when {
-                // Rest days show sleep emoji
+                // Rest days show moon icon
                 isRestDay -> {
-                    Text(
-                        text = "\uD83D\uDCA4", // ZZZ/Sleep emoji
-                        style = MaterialTheme.typography.bodyMedium,
+                    Icon(
+                        imageVector = Icons.Default.NightsStay,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
                     )
                 }
 

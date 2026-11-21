@@ -33,15 +33,20 @@ fun RestDayRow(rest: CycleItem.Rest, onTap: (() -> Unit)? = null, dragModifier: 
                 .padding(horizontal = 12.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // Drag handle
-            Icon(
-                imageVector = Icons.Default.DragHandle,
-                contentDescription = stringResource(Res.string.cd_reorder),
-                modifier = dragModifier.size(24.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            // Drag handle (48dp touch target)
+            Box(
+                modifier = dragModifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Default.DragHandle,
+                    contentDescription = stringResource(Res.string.cd_reorder),
+                    modifier = Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
 
-            Spacer(modifier = Modifier.width(12.dp))
+            Spacer(modifier = Modifier.width(8.dp))
 
             // Content
             Text(

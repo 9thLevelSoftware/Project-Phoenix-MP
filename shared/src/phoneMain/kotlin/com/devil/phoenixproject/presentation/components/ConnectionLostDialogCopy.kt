@@ -1,10 +1,26 @@
 package com.devil.phoenixproject.presentation.components
 
+import androidx.compose.runtime.Composable
 import com.devil.phoenixproject.data.repository.MachineSafetyConnectResult
 import com.devil.phoenixproject.data.repository.MachineSafetyHazardCause
 import com.devil.phoenixproject.data.repository.MachineSafetyHazardDocument
 import com.devil.phoenixproject.data.repository.MachineSafetyPhase
 import com.devil.phoenixproject.data.repository.MachineSafetyWriteResult
+import org.jetbrains.compose.resources.stringResource
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.connection_lost_message
+import projectphoenix.shared.generated.resources.connection_lost_phase_acknowledged
+import projectphoenix.shared.generated.resources.connection_lost_phase_connecting
+import projectphoenix.shared.generated.resources.connection_lost_phase_could_not_reach
+import projectphoenix.shared.generated.resources.connection_lost_phase_disconnect_during_stop
+import projectphoenix.shared.generated.resources.connection_lost_phase_transport_fail
+import projectphoenix.shared.generated.resources.connection_lost_phase_wrong_device
+import projectphoenix.shared.generated.resources.connection_lost_set_end_message
+import projectphoenix.shared.generated.resources.connection_lost_set_end_title
+import projectphoenix.shared.generated.resources.connection_lost_title
+import projectphoenix.shared.generated.resources.connection_lost_unconfirmed_message
+import projectphoenix.shared.generated.resources.connection_lost_unconfirmed_title
+import projectphoenix.shared.generated.resources.connection_lost_unknown_load
 
 /**
  * Text for [ConnectionLostDialog], derived from the durable hazard record so the warning says
@@ -78,5 +94,49 @@ private fun recoveryStatusCopy(hazard: MachineSafetyHazardDocument): String? = w
         else ->
             "Could not reach the trainer over Bluetooth, so no stop was requested. If it is " +
                 "powered off or asleep, check the handles yourself and confirm below."
+    }
+}
+
+@Composable
+internal fun localizedConnectionLostDialogCopy(hazard: MachineSafetyHazardDocument?): ConnectionLostDialogCopy {
+    val loadUnknown = stringResource(Res.string.connection_lost_unknown_load)
+    val (title, body) = when (hazard?.cause) {
+        null, MachineSafetyHazardCause.CONNECTION_LOST ->
+            stringResource(Res.string.connection_lost_title) to
+                stringResource(Res.string.connection_lost_message, loadUnknown)
+
+        MachineSafetyHazardCause.SET_END_UNCONFIRMED ->
+            stringResource(Res.string.connection_lost_set_end_title) to
+                stringResource(Res.string.connection_lost_set_end_message, loadUnknown)
+
+        MachineSafetyHazardCause.UNKNOWN ->
+            stringResource(Res.string.connection_lost_unconfirmed_title) to
+                stringResource(Res.string.connection_lost_unconfirmed_message, loadUnknown)
+    }
+    return ConnectionLostDialogCopy(
+        title = title,
+        body = body,
+        recoveryStatus = hazard?.let { localizedRecoveryStatusCopy(it) },
+        recoveryInProgress = hazard?.phase == MachineSafetyPhase.CONNECTING,
+    )
+}
+
+@Composable
+private fun localizedRecoveryStatusCopy(hazard: MachineSafetyHazardDocument): String? = when (hazard.phase) {
+    MachineSafetyPhase.UNRESOLVED -> null
+    MachineSafetyPhase.CONNECTING -> stringResource(Res.string.connection_lost_phase_connecting)
+    MachineSafetyPhase.RELEASE_REQUEST_SENT -> stringResource(Res.string.connection_lost_phase_acknowledged)
+    MachineSafetyPhase.RELEASE_REQUEST_FAILED -> when {
+        hazard.lastConnectResult == MachineSafetyConnectResult.WRONG_TRAINER ->
+            stringResource(Res.string.connection_lost_phase_wrong_device)
+
+        hazard.lastWriteResult == MachineSafetyWriteResult.DISCONNECTED_DURING_WRITE ->
+            stringResource(Res.string.connection_lost_phase_disconnect_during_stop)
+
+        hazard.lastWriteResult == MachineSafetyWriteResult.TRANSPORT_FAIL ->
+            stringResource(Res.string.connection_lost_phase_transport_fail)
+
+        else ->
+            stringResource(Res.string.connection_lost_phase_could_not_reach)
     }
 }

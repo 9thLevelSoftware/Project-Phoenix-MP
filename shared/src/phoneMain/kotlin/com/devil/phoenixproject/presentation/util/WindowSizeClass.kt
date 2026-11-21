@@ -178,6 +178,20 @@ object ResponsiveDimensions {
     }
 
     /**
+     * Calculate max width for page-level content containers on tablets/large screens.
+     * Returns null for phones (use full width), or a max width for medium/expanded layouts.
+     */
+    @Composable
+    fun contentMaxWidth(): Dp? {
+        val windowSizeClass = LocalWindowSizeClass.current
+        return when (windowSizeClass.widthSizeClass) {
+            WindowWidthSizeClass.Compact -> null
+            WindowWidthSizeClass.Medium -> 720.dp
+            WindowWidthSizeClass.Expanded -> 840.dp
+        }
+    }
+
+    /**
      * Calculate responsive component size (for gauges, HUDs, etc.)
      */
     @Composable

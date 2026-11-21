@@ -3,6 +3,7 @@ package com.devil.phoenixproject.ui.theme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.luminance
 
 /**
@@ -18,9 +19,8 @@ import androidx.compose.ui.graphics.luminance
 private fun isDarkBackground(): Boolean = MaterialTheme.colorScheme.background.luminance() < 0.5f
 
 /**
- * Returns a vertical gradient brush for screen backgrounds.
- * Dark mode: Slate with subtle primary (orange) accent at centre — clear warm glow.
- * Light mode: White with primary tint at 15% alpha — perceptible brand warmth (gap-2-12).
+ * Returns an opaque vertical gradient brush for screen backgrounds.
+ * All stops are composited over an opaque base surface so the Activity window never bleeds through.
  *
  * Uses MaterialTheme.colorScheme to detect dark/light mode,
  * respecting the app's theme preference (not just system theme).
@@ -28,47 +28,52 @@ private fun isDarkBackground(): Boolean = MaterialTheme.colorScheme.background.l
 @Composable
 fun screenBackgroundBrush(): Brush {
     val isDark = isDarkBackground()
+    val colorScheme = MaterialTheme.colorScheme
     return if (isDark) {
+        val baseSurface = colorScheme.surfaceContainerLowest.copy(alpha = 1f)
         Brush.verticalGradient(
-            0.0f to MaterialTheme.colorScheme.surfaceContainerLowest,
-            0.5f to MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-            1.0f to MaterialTheme.colorScheme.surfaceContainerLowest,
+            0.0f to baseSurface,
+            0.5f to colorScheme.primary.copy(alpha = 0.12f).compositeOver(baseSurface),
+            1.0f to baseSurface,
         )
     } else {
+        val baseSurface = colorScheme.surfaceContainerLowest.copy(alpha = 1f)
+        val bottomSurface = colorScheme.surface.copy(alpha = 1f)
         Brush.verticalGradient(
-            0.0f to MaterialTheme.colorScheme.surfaceContainerLowest,
-            0.5f to MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
-            1.0f to MaterialTheme.colorScheme.surface,
+            0.0f to baseSurface,
+            0.5f to colorScheme.primary.copy(alpha = 0.15f).compositeOver(baseSurface),
+            1.0f to bottomSurface,
         )
     }
 }
 
 /**
- * Returns a vertical gradient brush for celebration screens (e.g. RoutineCompleteScreen).
- * Uses the flame triplet (FlameOrange / FlameYellow / FlameRed) at low alpha over the
- * surface base colour, mirroring screenBackgroundBrush()'s dark/light split.
- *
- * Dark mode: colours are slightly more opaque so the warm fire glow reads against dark slate.
- * Light mode: colours are kept very translucent so the gradient stays tasteful on white.
+ * Returns an opaque vertical gradient brush for celebration screens (e.g. RoutineCompleteScreen).
+ * Uses the flame triplet (FlameOrange / FlameYellow / FlameRed) composited over an opaque
+ * surface base colour so the Activity window never bleeds through.
  */
 @Composable
 fun celebrationBackgroundBrush(): Brush {
     val isDark = isDarkBackground()
+    val colorScheme = MaterialTheme.colorScheme
     return if (isDark) {
+        val baseSurface = colorScheme.surfaceContainerLowest.copy(alpha = 1f)
         Brush.verticalGradient(
-            0.00f to MaterialTheme.colorScheme.surfaceContainerLowest,
-            0.25f to FlameOrange.copy(alpha = 0.20f),
-            0.50f to FlameYellow.copy(alpha = 0.15f),
-            0.75f to FlameRed.copy(alpha = 0.15f),
-            1.00f to MaterialTheme.colorScheme.surfaceContainerLowest,
+            0.00f to baseSurface,
+            0.25f to FlameOrange.copy(alpha = 0.20f).compositeOver(baseSurface),
+            0.50f to FlameYellow.copy(alpha = 0.15f).compositeOver(baseSurface),
+            0.75f to FlameRed.copy(alpha = 0.15f).compositeOver(baseSurface),
+            1.00f to baseSurface,
         )
     } else {
+        val baseSurface = colorScheme.surfaceContainerLowest.copy(alpha = 1f)
+        val bottomSurface = colorScheme.surface.copy(alpha = 1f)
         Brush.verticalGradient(
-            0.00f to MaterialTheme.colorScheme.surfaceContainerLowest,
-            0.25f to FlameOrange.copy(alpha = 0.10f),
-            0.50f to FlameYellow.copy(alpha = 0.08f),
-            0.75f to FlameRed.copy(alpha = 0.08f),
-            1.00f to MaterialTheme.colorScheme.surface,
+            0.00f to baseSurface,
+            0.25f to FlameOrange.copy(alpha = 0.10f).compositeOver(baseSurface),
+            0.50f to FlameYellow.copy(alpha = 0.08f).compositeOver(baseSurface),
+            0.75f to FlameRed.copy(alpha = 0.08f).compositeOver(baseSurface),
+            1.00f to bottomSurface,
         )
     }
 }

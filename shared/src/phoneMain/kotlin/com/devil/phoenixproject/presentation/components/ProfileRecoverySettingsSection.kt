@@ -1,13 +1,16 @@
 package com.devil.phoenixproject.presentation.components
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
@@ -36,7 +39,11 @@ import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.getString
+import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
+import projectphoenix.shared.generated.resources.*
+import projectphoenix.shared.generated.resources.Res
 
 /** User-visible resolution for ambiguous startup ownership and pending cloud acknowledgement. */
 @Composable
@@ -86,7 +93,7 @@ private fun VisibleProfileRecoverySettings(
         } catch (error: CancellationException) {
             throw error
         } catch (_: Throwable) {
-            resultMessage = "Recovery could not be completed. Try again."
+            resultMessage = getString(Res.string.recovery_failed_generic)
             runCatching { recoveryRepository.refresh() }
         } finally {
             operationInProgress = false
@@ -132,15 +139,19 @@ private fun ProfileRecoveryCard(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer,
+            contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        ),
     ) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("Profile data recovery", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text(stringResource(Res.string.recovery_section_title), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Text(
-                "Choose where ambiguous local data belongs. Phoenix keeps every stable record ID and does not change its account owner.",
+                stringResource(Res.string.recovery_section_subtitle),
                 style = MaterialTheme.typography.bodyMedium,
             )
             pending.forEach { recovery ->
@@ -154,12 +165,16 @@ private fun ProfileRecoveryCard(
             }
             if (cloudPending.isNotEmpty()) {
                 Text(
-                    "${cloudPending.size} ownership transfer${if (cloudPending.size == 1) " is" else "s are"} waiting for cloud acknowledgement.",
+                    if (cloudPending.size == 1) {
+                        stringResource(Res.string.recovery_cloud_transfers_pending_one)
+                    } else {
+                        stringResource(Res.string.recovery_cloud_transfers_pending_other, cloudPending.size)
+                    },
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
                 )
                 Text(
-                    "The local recovery is complete. Sync will retry these exact IDs before ordinary uploads.",
+                    stringResource(Res.string.recovery_cloud_retry_note),
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
@@ -178,67 +193,93 @@ private fun RecoveryDecision(
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(recovery.sourceProfileName, fontWeight = FontWeight.SemiBold)
+        val nonZeroEntries = recovery.counts.tableCounts
+            .filterValues { it > 0 }
+            .entries
+            .toList()
+        val summaryText = nonZeroEntries
+            .map { (table, count) -> friendlyRecoveryTableCount(table, count) }
+            .joinToString()
         Text(
-            recovery.counts.tableCounts
-                .filterValues { it > 0 }
-                .entries
-                .joinToString { (table, count) -> "$count ${friendlyRecoveryTableName(table, count)}" },
+            summaryText,
             style = MaterialTheme.typography.bodySmall,
         )
         if (recovery.ownerUserId == null && recovery.counts.cloudOriginRowCount > 0) {
             Text(
-                "Relink the original account before moving these cloud records.",
-                color = MaterialTheme.colorScheme.error,
+                stringResource(Res.string.recovery_relink_required),
+                color = MaterialTheme.colorScheme.onErrorContainer,
+                fontWeight = FontWeight.Medium,
                 style = MaterialTheme.typography.bodySmall,
             )
         }
         Spacer(Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             OutlinedButton(
                 onClick = { onKeepDefault(recovery.recoveryId) },
                 enabled = enabled,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                ),
+                border = BorderStroke(
+                    width = 1.dp,
+                    color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.6f),
+                ),
             ) {
-                Text("Keep with Default")
+                Text(stringResource(Res.string.recovery_keep_with_default))
             }
-        }
-        profiles
-            .filter { it.id != recovery.sourceProfileId && it.id != "default" }
-            .forEach { profile ->
-                Button(
-                    onClick = { onMove(recovery.recoveryId, profile.id) },
-                    enabled = enabled,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("Move to ${profile.name}")
+            profiles
+                .filter { it.id != recovery.sourceProfileId && it.id != "default" }
+                .forEach { profile ->
+                    Button(
+                        onClick = { onMove(recovery.recoveryId, profile.id) },
+                        enabled = enabled,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error,
+                            contentColor = MaterialTheme.colorScheme.onError,
+                        ),
+                    ) {
+                        Text(stringResource(Res.string.recovery_move_to_profile, profile.name))
+                    }
                 }
-            }
+        }
     }
 }
 
-private fun friendlyRecoveryTableName(table: String, count: Long): String {
-    val singular = when (table) {
-        "WorkoutSession" -> "workout record"
-        "PersonalRecord" -> "personal record"
-        "Routine" -> "routine"
-        "RoutineGroup" -> "routine group"
-        "TrainingCycle" -> "training cycle"
-        "AssessmentResult" -> "assessment result"
-        "VelocityOneRepMaxEstimate" -> "strength estimate"
-        "ProgressionEvent" -> "progression event"
-        "EarnedBadge" -> "earned badge"
-        "ExerciseMvt" -> "exercise velocity setting"
-        "StreakHistory" -> "streak record"
-        "ProfileExerciseBaseline" -> "exercise baseline"
-        else -> "profile record"
+@Composable
+private fun friendlyRecoveryTableCount(table: String, count: Long): String {
+    val isSingle = count == 1L
+    val res = when (table) {
+        "WorkoutSession" -> if (isSingle) Res.string.recovery_table_workout_one else Res.string.recovery_table_workout_other
+        "PersonalRecord" -> if (isSingle) Res.string.recovery_table_pr_one else Res.string.recovery_table_pr_other
+        "Routine" -> if (isSingle) Res.string.recovery_table_routine_one else Res.string.recovery_table_routine_other
+        "RoutineGroup" -> if (isSingle) Res.string.recovery_table_routine_group_one else Res.string.recovery_table_routine_group_other
+        "TrainingCycle" -> if (isSingle) Res.string.recovery_table_cycle_one else Res.string.recovery_table_cycle_other
+        "AssessmentResult" -> if (isSingle) Res.string.recovery_table_assessment_one else Res.string.recovery_table_assessment_other
+        "VelocityOneRepMaxEstimate" -> if (isSingle) Res.string.recovery_table_strength_estimate_one else Res.string.recovery_table_strength_estimate_other
+        "ProgressionEvent" -> if (isSingle) Res.string.recovery_table_progression_event_one else Res.string.recovery_table_progression_event_other
+        "EarnedBadge" -> if (isSingle) Res.string.recovery_table_earned_badge_one else Res.string.recovery_table_earned_badge_other
+        "ExerciseMvt" -> if (isSingle) Res.string.recovery_table_mvt_one else Res.string.recovery_table_mvt_other
+        "StreakHistory" -> if (isSingle) Res.string.recovery_table_streak_one else Res.string.recovery_table_streak_other
+        "ProfileExerciseBaseline" -> if (isSingle) Res.string.recovery_table_baseline_one else Res.string.recovery_table_baseline_other
+        else -> if (isSingle) Res.string.recovery_table_default_one else Res.string.recovery_table_default_other
     }
-    return if (count == 1L) singular else "${singular}s"
+    return stringResource(res, count)
 }
 
-private fun resolutionMessage(result: ProfileRecoveryResolution): String = when (result) {
-    ProfileRecoveryResolution.Resolved -> "Recovery completed."
-    ProfileRecoveryResolution.Busy -> "Finish the active workout or assessment before recovering profile data."
-    ProfileRecoveryResolution.RelinkRequired -> "Relink the original account before moving these cloud records."
-    ProfileRecoveryResolution.VerificationFailed -> "Phoenix could not verify this data with the signed-in account. Check the account and try again."
-    is ProfileRecoveryResolution.AccountMismatch -> "Sign out of the other account before recovering this data."
-    ProfileRecoveryResolution.Missing -> "This recovery item is no longer pending."
+private suspend fun resolutionMessage(result: ProfileRecoveryResolution): String = when (result) {
+    ProfileRecoveryResolution.Resolved -> getString(Res.string.recovery_resolution_resolved)
+    ProfileRecoveryResolution.Busy -> getString(Res.string.recovery_resolution_busy)
+    ProfileRecoveryResolution.RelinkRequired -> getString(Res.string.recovery_relink_required)
+    ProfileRecoveryResolution.VerificationFailed -> getString(Res.string.recovery_resolution_verification_failed)
+    is ProfileRecoveryResolution.AccountMismatch -> getString(Res.string.recovery_resolution_account_mismatch)
+    ProfileRecoveryResolution.Missing -> getString(Res.string.recovery_resolution_missing)
 }

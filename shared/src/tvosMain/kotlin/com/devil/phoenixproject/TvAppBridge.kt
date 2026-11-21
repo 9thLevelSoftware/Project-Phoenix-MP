@@ -7,6 +7,8 @@ import com.devil.phoenixproject.presentation.tv.createTvMainViewModel
 import com.devil.phoenixproject.presentation.tv.TvAccountHooks
 import com.devil.phoenixproject.presentation.tv.TvActivityAdmission
 import com.devil.phoenixproject.util.ConnectivityChecker
+import com.devil.phoenixproject.util.Constants
+import com.devil.phoenixproject.util.UnitConverter
 import kotlinx.coroutines.CancellationException
 import com.devil.phoenixproject.data.sync.AccountSwitchChoice
 import com.devil.phoenixproject.data.sync.SyncState
@@ -22,6 +24,7 @@ import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineFlowState
+import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.presentation.manager.MachineSafetyUiState
 import com.devil.phoenixproject.presentation.manager.MachineTeardownState
@@ -62,7 +65,7 @@ private data class TvosAppDependencies(
 }
 
 data class TvDeviceRow(val name: String, val address: String, val rssi: Int)
-data class TvExerciseRow(val id: String, val name: String, val isBodyweight: Boolean)
+data class TvExerciseRow(val id: String, val name: String, val isBodyweight: Boolean, val muscleGroup: String = "")
 data class TvRoutineRow(val id: String, val name: String, val description: String, val exerciseCount: Int)
 data class TvRoutineExerciseRow(val name: String, val weightPerCableKg: Float, val reps: String, val setCount: Int, val isBodyweight: Boolean)
 
@@ -109,6 +112,9 @@ data class TvAppSnapshot(
     val exerciseName: String?,
     val selectedExerciseId: String?,
     val weightPerCableKg: Float,
+    val weightUnit: String,
+    val weightIncrementKg: Float,
+    val programModeName: String,
     val measuredTotalLoadKg: Float?,
     val workingReps: Int,
     val restSeconds: Int,
@@ -344,7 +350,14 @@ class TvAppBridge internal constructor(
             selectedTrainerAddress = (connection as? ConnectionState.Connected)?.deviceAddress,
             devices = main?.scannedDevices?.value.orEmpty().map { TvDeviceRow(it.name, it.address, it.rssi) },
             exercises = cachedExercises.mapNotNull { exercise ->
-                exercise.id?.let { TvExerciseRow(it, exercise.name, exercise.isBodyweight) }
+                exercise.id?.let {
+                    TvExerciseRow(
+                        id = it,
+                        name = exercise.name,
+                        isBodyweight = exercise.isBodyweight,
+                        muscleGroup = exercise.muscleGroup.ifBlank { "Other" },
+                    )
+                }
             },
             routines = main?.routines?.value.orEmpty().map { TvRoutineRow(it.id, it.name, it.description, it.exercises.size) },
             selectedRoutineId = routine?.id ?: selectedRoutineId,
@@ -381,6 +394,9 @@ class TvAppBridge internal constructor(
             exerciseName = exerciseName,
             selectedExerciseId = params?.selectedExerciseId,
             weightPerCableKg = params?.weightPerCableKg ?: 0f,
+            weightUnit = main?.weightUnit?.value?.name ?: "KG",
+            weightIncrementKg = main?.userPreferences?.value?.effectiveWeightIncrementKg?.takeIf { it > 0f } ?: 2.5f,
+            programModeName = params?.programMode?.displayName ?: "Old School",
             measuredTotalLoadKg = metric?.totalLoad,
             workingReps = (state as? WorkoutState.SetSummary)?.repCount ?: count?.workingReps ?: 0,
             restSeconds = (state as? WorkoutState.Resting)?.restSecondsRemaining ?: main?.justLiftRestCountdown?.value ?: 0,
@@ -462,11 +478,51 @@ class TvAppBridge internal constructor(
         actionError = null
     }
 
+    fun stepJustLiftWeight(deltaSteps: Int) {
+        val main = deps?.main ?: return fail("Phoenix core is unavailable.")
+        if (deltaSteps == 0) return
+        val unit = main.weightUnit.value
+        val prefs = main.userPreferences.value
+        val currentKg = main.workoutParameters.value.weightPerCableKg
+        val nextKg = if (unit == WeightUnit.LB) {
+            val stepLb = prefs.effectiveWeightIncrement.takeIf { it > 0f } ?: Constants.DEFAULT_WEIGHT_INCREMENT_LB
+            val currentLb = UnitConverter.kgToLb(currentKg)
+            val nextLb = UnitConverter.roundToIncrement((currentLb + deltaSteps * stepLb).coerceAtLeast(0f), 0.1f)
+            nextLb / UnitConverter.KG_TO_LB
+        } else {
+            val stepKg = prefs.effectiveWeightIncrement.takeIf { it > 0f } ?: Constants.DEFAULT_WEIGHT_INCREMENT_KG
+            (currentKg + deltaSteps * stepKg).coerceAtLeast(0f)
+        }
+        main.adjustWeight(nextKg, sendToMachine = false)
+        actionError = null
+    }
+
+    fun cycleJustLiftMode() {
+        val main = deps?.main ?: return fail("Phoenix core is unavailable.")
+        if (controller?.machineMayBeRunning == true) return fail("Stop the current set before changing workout mode.")
+        val params = main.workoutParameters.value
+        val next = when (params.programMode) {
+            ProgramMode.OldSchool -> ProgramMode.Pump
+            ProgramMode.Pump -> ProgramMode.TUT
+            ProgramMode.TUT -> ProgramMode.Echo
+            ProgramMode.Echo, ProgramMode.TUTBeast, ProgramMode.EccentricOnly -> ProgramMode.OldSchool
+        }
+        main.updateWorkoutParameters(params.copy(programMode = next))
+        actionError = null
+    }
+
     fun adjustJustLiftRest(seconds: Int) {
         val main = deps?.main ?: return fail("Phoenix core is unavailable.")
         val allowed = if (seconds <= 0) 0 else seconds.coerceIn(5, 300) / 5 * 5
         main.updateWorkoutParameters(main.workoutParameters.value.copy(justLiftRestSeconds = allowed))
         actionError = null
+    }
+
+    fun cycleJustLiftRestPreset() {
+        val current = deps?.main?.workoutParameters?.value?.justLiftRestSeconds ?: 0
+        val presets = listOf(0, 30, 60, 90, 120, 180)
+        val next = presets.firstOrNull { it > current } ?: presets.first()
+        adjustJustLiftRest(next)
     }
 
     fun startJustLift() {

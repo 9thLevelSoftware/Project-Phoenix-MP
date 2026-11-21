@@ -10,16 +10,23 @@ import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.SelfImprovement
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.CharacterClass
 import com.devil.phoenixproject.domain.model.RpgAttribute
 import com.devil.phoenixproject.domain.model.RpgProfile
+import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
 import com.devil.phoenixproject.ui.theme.Spacing
 import org.jetbrains.compose.resources.stringResource
 import projectphoenix.shared.generated.resources.Res
@@ -34,13 +41,7 @@ fun RpgAttributeCard(profile: RpgProfile, modifier: Modifier = Modifier) {
     // M13: Show a friendly empty state for zero-workout users instead of a card
     // with all-zero attribute bars, which is confusing and uninformative.
     if (profile == RpgProfile.EMPTY) {
-        Card(
-            modifier = modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface,
-            ),
-            shape = MaterialTheme.shapes.medium,
-        ) {
+        PhoenixSectionCard(modifier = modifier) {
             Text(
                 text = stringResource(Res.string.rpg_no_data_yet),
                 style = MaterialTheme.typography.bodyMedium,
@@ -48,100 +49,162 @@ fun RpgAttributeCard(profile: RpgProfile, modifier: Modifier = Modifier) {
                 textAlign = TextAlign.Center,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(Spacing.large),
+                    .padding(Spacing.small),
             )
         }
         return
     }
 
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface,
-        ),
-        shape = MaterialTheme.shapes.medium,
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(Spacing.medium),
+    val textMeasurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val labelStyle = MaterialTheme.typography.bodySmall
+    val valueStyle = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold)
+    val attributeEntries = RpgAttribute.entries
+    val maxLabelWidth = remember(attributeEntries, labelStyle, density) {
+        with(density) {
+            attributeEntries.maxOfOrNull { attr ->
+                textMeasurer.measure(AnnotatedString(attr.displayName), style = labelStyle).size.width.toDp()
+            } ?: 90.dp
+        }
+    }
+    val maxValueWidth = remember(valueStyle, density) {
+        with(density) {
+            textMeasurer.measure(AnnotatedString("100"), style = valueStyle).size.width.toDp()
+        }
+    }
+    val stackAttributeRows = isCompactAccessibilityLayout() || maxLabelWidth > 140.dp
+
+    PhoenixSectionCard(modifier = modifier) {
+        // Header: icon + class name + description
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Spacing.small),
         ) {
-            // Header: icon + class name + description
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(Spacing.small),
-            ) {
-                Icon(
-                    imageVector = getCharacterClassIcon(profile.characterClass),
-                    contentDescription = profile.characterClass.displayName,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(24.dp),
+            SectionHeaderIconBadge(
+                imageVector = getCharacterClassIcon(profile.characterClass),
+                contentDescription = profile.characterClass.displayName,
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = profile.characterClass.displayName,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
-                Column {
-                    Text(
-                        text = profile.characterClass.displayName,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Text(
-                        text = profile.characterClass.description,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(Spacing.small))
-
-            // Five attribute bars
-            RpgAttribute.entries.forEach { attribute ->
-                val value = when (attribute) {
-                    RpgAttribute.STRENGTH -> profile.strength
-                    RpgAttribute.POWER -> profile.power
-                    RpgAttribute.STAMINA -> profile.stamina
-                    RpgAttribute.CONSISTENCY -> profile.consistency
-                    RpgAttribute.MASTERY -> profile.mastery
-                }
-                AttributeBar(
-                    name = attribute.displayName,
-                    value = value,
+                Text(
+                    text = profile.characterClass.description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Spacer(modifier = Modifier.height(4.dp))
             }
+        }
+
+        Spacer(modifier = Modifier.height(Spacing.medium))
+
+        // Five attribute bars
+        attributeEntries.forEach { attribute ->
+            val value = when (attribute) {
+                RpgAttribute.STRENGTH -> profile.strength
+                RpgAttribute.POWER -> profile.power
+                RpgAttribute.STAMINA -> profile.stamina
+                RpgAttribute.CONSISTENCY -> profile.consistency
+                RpgAttribute.MASTERY -> profile.mastery
+            }
+            AttributeBar(
+                name = attribute.displayName,
+                value = value,
+                labelMinWidth = maxLabelWidth,
+                valueMinWidth = maxValueWidth,
+                stacked = stackAttributeRows,
+            )
+            Spacer(modifier = Modifier.height(Spacing.extraSmall))
         }
     }
 }
 
 @Composable
-private fun AttributeBar(name: String, value: Int, modifier: Modifier = Modifier) {
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = name,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.width(90.dp),
-        )
-        LinearProgressIndicator(
-            progress = { value / 100f },
-            modifier = Modifier
-                .weight(1f)
-                .height(8.dp)
-                .clip(RoundedCornerShape(4.dp)),
-            color = MaterialTheme.colorScheme.primary,
-            trackColor = MaterialTheme.colorScheme.surfaceVariant,
-        )
-        Text(
-            text = "$value",
-            style = MaterialTheme.typography.bodySmall,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface,
-            textAlign = TextAlign.End,
-            modifier = Modifier.width(30.dp),
-        )
+private fun AttributeBar(
+    name: String,
+    value: Int,
+    labelMinWidth: Dp,
+    valueMinWidth: Dp,
+    stacked: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    if (stacked) {
+        Column(
+            modifier = modifier
+                .fillMaxWidth()
+                .semantics(mergeDescendants = true) {},
+            verticalArrangement = Arrangement.spacedBy(Spacing.extraSmall),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = name,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f),
+                )
+                Spacer(modifier = Modifier.width(Spacing.small))
+                Text(
+                    text = "$value",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    softWrap = false,
+                    maxLines = 1,
+                )
+            }
+            LinearProgressIndicator(
+                progress = { (value / 100f).coerceIn(0f, 1f) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(8.dp)
+                    .clip(RoundedCornerShape(4.dp)),
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = MaterialTheme.colorScheme.surfaceVariant,
+            )
+        }
+    } else {
+        Row(
+            modifier = modifier
+                .fillMaxWidth()
+                .semantics(mergeDescendants = true) {},
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Spacing.small),
+        ) {
+            Text(
+                text = name,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                softWrap = false,
+                maxLines = 1,
+                modifier = Modifier.widthIn(min = labelMinWidth),
+            )
+            LinearProgressIndicator(
+                progress = { (value / 100f).coerceIn(0f, 1f) },
+                modifier = Modifier
+                    .weight(1f)
+                    .height(8.dp)
+                    .clip(RoundedCornerShape(4.dp)),
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = MaterialTheme.colorScheme.surfaceVariant,
+            )
+            Text(
+                text = "$value",
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                textAlign = TextAlign.End,
+                softWrap = false,
+                maxLines = 1,
+                modifier = Modifier.widthIn(min = valueMinWidth),
+            )
+        }
     }
 }
 

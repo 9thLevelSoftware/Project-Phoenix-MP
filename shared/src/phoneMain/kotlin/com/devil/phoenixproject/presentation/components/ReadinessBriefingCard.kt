@@ -164,15 +164,17 @@ private fun ReadyContent(result: ReadinessResult.Ready, weightUnit: WeightUnit) 
     // Acute vs Chronic volume comparison
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceEvenly,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         VolumeColumn(
             label = "Acute (7d)",
             valueText = SmartInsightsWeightText.volumeWithUnit(result.acuteVolumeKg, weightUnit, unitLabel),
+            modifier = Modifier.weight(1f),
         )
         VolumeColumn(
             label = "Chronic (avg/wk)",
             valueText = SmartInsightsWeightText.volumeWithUnit(result.chronicWeeklyAvgKg, weightUnit, unitLabel),
+            modifier = Modifier.weight(1f),
         )
     }
 
@@ -187,8 +189,9 @@ private fun ReadyContent(result: ReadinessResult.Ready, weightUnit: WeightUnit) 
 }
 
 @Composable
-private fun VolumeColumn(label: String, valueText: String) {
+private fun VolumeColumn(label: String, valueText: String, modifier: Modifier = Modifier) {
     Column(
+        modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(

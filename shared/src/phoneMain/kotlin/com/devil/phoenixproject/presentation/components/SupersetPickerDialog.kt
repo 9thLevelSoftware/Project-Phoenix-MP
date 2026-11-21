@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -47,20 +46,80 @@ fun SupersetPickerDialog(
     onSelectExisting: (Superset) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(Res.string.add_to_superset)) },
-        text = {
-            Column {
-                // Create New option (only when enough exercises are selected)
-                if (canCreateNew) {
+    PhoenixModalDialogFrame(
+        title = stringResource(Res.string.add_to_superset),
+        onDismiss = onDismiss,
+        actions = {
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier.heightIn(min = 48.dp),
+            ) {
+                Text(stringResource(Res.string.action_cancel))
+            }
+        },
+    ) {
+        Column {
+            // Create New option (only when enough exercises are selected)
+            if (canCreateNew) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                        .clip(MaterialTheme.shapes.extraSmall)
+                        .semantics(mergeDescendants = true) { role = Role.Button }
+                        .clickable { onCreateNew() }
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .background(
+                                MaterialTheme.colorScheme.primaryContainer,
+                                CircleShape,
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            Icons.Default.Add,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        stringResource(Res.string.superset_create_new),
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium,
+                    )
+                }
+            }
+
+            if (existingSupersets.isNotEmpty()) {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+                Text(
+                    stringResource(
+                        if (canCreateNew) {
+                            Res.string.superset_or_add_existing
+                        } else {
+                            Res.string.superset_add_existing
+                        },
+                    ),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+
+                existingSupersets.forEach { superset ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(min = 48.dp)
                             .clip(MaterialTheme.shapes.extraSmall)
                             .semantics(mergeDescendants = true) { role = Role.Button }
-                            .clickable { onCreateNew() }
+                            .clickable { onSelectExisting(superset) }
                             .padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -68,78 +127,30 @@ fun SupersetPickerDialog(
                             modifier = Modifier
                                 .size(32.dp)
                                 .background(
-                                    MaterialTheme.colorScheme.primaryContainer,
+                                    SupersetTheme.colorForIndex(superset.colorIndex),
                                     CircleShape,
                                 ),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(
-                                Icons.Default.Add,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                modifier = Modifier.size(20.dp),
-                            )
-                        }
-                        Spacer(Modifier.width(12.dp))
-                        Text(
-                            "Create New Superset",
-                            style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = FontWeight.Medium,
                         )
-                    }
-                }
-
-                if (existingSupersets.isNotEmpty()) {
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-
-                    Text(
-                        if (canCreateNew) "Or add to existing:" else "Add to existing:",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(bottom = 8.dp),
-                    )
-
-                    existingSupersets.forEach { superset ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = 48.dp)
-                                .clip(MaterialTheme.shapes.extraSmall)
-                                .semantics(mergeDescendants = true) { role = Role.Button }
-                                .clickable { onSelectExisting(superset) }
-                                .padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(32.dp)
-                                    .background(
-                                        SupersetTheme.colorForIndex(superset.colorIndex),
-                                        CircleShape,
-                                    ),
+                        Spacer(Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                superset.name,
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Medium,
                             )
-                            Spacer(Modifier.width(12.dp))
-                            Column {
-                                Text(
-                                    superset.name,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    fontWeight = FontWeight.Medium,
-                                )
-                                Text(
-                                    "${superset.exerciseCount} exercises",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
+                            Text(
+                                if (superset.exerciseCount == 1) {
+                                    stringResource(Res.string.exercise_count_one)
+                                } else {
+                                    stringResource(Res.string.exercise_count_other, superset.exerciseCount)
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
                     }
                 }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(Res.string.action_cancel))
-            }
-        },
-    )
+        }
+    }
 }

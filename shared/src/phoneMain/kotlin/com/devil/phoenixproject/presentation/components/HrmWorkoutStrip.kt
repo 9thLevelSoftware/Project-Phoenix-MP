@@ -1,26 +1,31 @@
 package com.devil.phoenixproject.presentation.components
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material3.Icon
@@ -32,11 +37,9 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -47,20 +50,19 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.devil.phoenixproject.data.ble.HrmBleManager
 import com.devil.phoenixproject.data.ble.HrmCapabilityState
 import com.devil.phoenixproject.domain.model.ConnectionState
-import com.devil.phoenixproject.domain.model.AccSample
 import com.devil.phoenixproject.domain.model.RrBeat
 import com.devil.phoenixproject.domain.model.currentTimeMillis
+import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
+import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.util.HrmTelemetryUtils
 import com.devil.phoenixproject.util.HrmTelemetryUtils.computeRollingRmssd
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
@@ -74,11 +76,12 @@ fun HrmWorkoutStrip(
     if (hrmBleManager == null) return
     val connectionState by hrmBleManager.connectionState.collectAsState()
     val isConnected = connectionState is ConnectionState.Connected
+    val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
 
     AnimatedVisibility(
         visible = isConnected,
-        enter = fadeIn() + expandVertically(),
-        exit = fadeOut() + shrinkVertically(),
+        enter = if (reduceMotion) EnterTransition.None else fadeIn() + expandVertically(),
+        exit = if (reduceMotion) ExitTransition.None else fadeOut() + shrinkVertically(),
     ) {
         HrmWorkoutStripContent(
             modifier = modifier,
@@ -87,12 +90,12 @@ fun HrmWorkoutStrip(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun HrmWorkoutStripContent(
     modifier: Modifier = Modifier,
     hrmBleManager: HrmBleManager,
 ) {
-    val scope = rememberCoroutineScope()
     val hrMeasurement by hrmBleManager.hrMeasurement.collectAsState()
     val isContactDetected by hrmBleManager.isContactDetected.collectAsState()
     val capabilities by hrmBleManager.capabilities.collectAsState()
@@ -129,7 +132,7 @@ private fun HrmWorkoutStripContent(
         }
     }
 
-    // 2. Stream collectors
+    // Stream collectors
     LaunchedEffect(Unit) {
         hrmBleManager.rrBeats.collect { beat ->
             val now = currentTimeMillis()
@@ -152,31 +155,27 @@ private fun HrmWorkoutStripContent(
         }
     }
 
+    val accessColors = AccessibilityTheme.colors
+    val colorScheme = MaterialTheme.colorScheme
+    val fontScale = LocalDensity.current.fontScale
+
     Surface(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 4.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = colorScheme.surfaceContainerHigh,
         shape = MaterialTheme.shapes.medium,
         tonalElevation = 4.dp,
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+        border = BorderStroke(1.dp, colorScheme.outlineVariant.copy(alpha = 0.5f)),
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 10.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            // Section 1: Heart Rate (BPM) + Contact Indicator
+        val heartRateSection: @Composable () -> Unit = {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(end = 8.dp),
             ) {
                 Icon(
                     Icons.Default.Favorite,
                     contentDescription = "Heart Rate",
-                    tint = if (hasContact) Color(0xFFFF1744) else Color(0xFFFF9100),
+                    tint = if (hasContact) accessColors.error else accessColors.warning,
                     modifier = Modifier.size(20.dp),
                 )
                 Spacer(modifier = Modifier.width(6.dp))
@@ -186,54 +185,46 @@ private fun HrmWorkoutStripContent(
                         text = if (hr > 0) "$hr" else "—",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.ExtraBold,
-                        color = MaterialTheme.colorScheme.onSurface,
+                        color = colorScheme.onSurface,
                     )
                     Text(
                         text = "BPM",
                         style = MaterialTheme.typography.labelSmall,
-                        fontSize = 9.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = colorScheme.onSurfaceVariant,
                     )
                 }
             }
+        }
 
-            // Section 2: RR Interval & Rolling RMSSD — only when RR intervals are
-            // actually observed (SD1: HRV is never promised; otherwise unavailable).
+        val hrvSection: @Composable () -> Unit = {
             if (capabilities.rrIntervals == HrmCapabilityState.CONFIRMED) {
-                Column(
-                    modifier = Modifier.padding(horizontal = 6.dp),
-                    horizontalAlignment = Alignment.Start,
-                ) {
+                Column(horizontalAlignment = Alignment.Start) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = "RR: ",
                             style = MaterialTheme.typography.labelSmall,
-                            fontSize = 10.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = colorScheme.onSurfaceVariant,
                         )
                         Text(
                             text = HrmTelemetryUtils.formatMs(latestRrMs),
                             style = MaterialTheme.typography.labelSmall,
-                            fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace,
-                            color = MaterialTheme.colorScheme.onSurface,
+                            color = colorScheme.onSurface,
                         )
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = "RMSSD: ",
                             style = MaterialTheme.typography.labelSmall,
-                            fontSize = 10.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = colorScheme.onSurfaceVariant,
                         )
                         Text(
                             text = HrmTelemetryUtils.formatMs(rollingRmssd),
                             style = MaterialTheme.typography.labelSmall,
-                            fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace,
-                            color = Color(0xFF00E676),
+                            color = accessColors.success,
                         )
                     }
                 }
@@ -241,105 +232,148 @@ private fun HrmWorkoutStripContent(
                 Text(
                     text = "HRV unavailable",
                     style = MaterialTheme.typography.labelSmall,
-                    fontSize = 10.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 6.dp),
+                    color = colorScheme.onSurfaceVariant,
                 )
             }
+        }
 
-            // Sections 3 & 4 (ECG waveform, chest acceleration & torso posture with
-            // 1-tap tare) exist only for sensors with CONFIRMED Polar PMD (SD2/SD3).
-            if (capabilities.polarPmd == HrmCapabilityState.CONFIRMED) {
-                // Section 3: 130 Hz Real-Time ECG Waveform Canvas
-                Box(
+        val ecgCanvasSlot: @Composable (Modifier) -> Unit = { slotModifier ->
+            Surface(
+                modifier = slotModifier
+                    .height(38.dp)
+                    .clip(MaterialTheme.shapes.small)
+                    .border(0.5.dp, colorScheme.outlineVariant, MaterialTheme.shapes.small),
+                color = colorScheme.surfaceContainerLowest,
+                shape = MaterialTheme.shapes.small,
+            ) {
+                EcgWaveformCanvas(
+                    samples = ecgSamples,
                     modifier = Modifier
-                        .weight(1f)
-                        .height(38.dp)
-                        .padding(horizontal = 6.dp)
-                        .clip(MaterialTheme.shapes.small)
-                        .background(Color(0xFF0D1B2A))
-                        .border(0.5.dp, Color(0xFF1E3A5F), MaterialTheme.shapes.small),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    EcgWaveformCanvas(
-                        samples = ecgSamples,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .fillMaxHeight()
-                            .padding(horizontal = 2.dp, vertical = 2.dp),
+                        .fillMaxWidth()
+                        .fillMaxHeight()
+                        .padding(horizontal = 4.dp, vertical = 2.dp),
+                    baselineColor = colorScheme.outlineVariant,
+                    waveformColor = accessColors.info,
+                )
+            }
+        }
+
+        val postureAndTareSection: @Composable () -> Unit = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Column(horizontalAlignment = Alignment.End) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "Hinge: ",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            text = torsoPitchDeg?.let { "${(it * 10).roundToInt() / 10.0}°" } ?: "—",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            color = if (torsoPitchDeg != null) accessColors.warning else colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "Tilt: ",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            text = torsoRollDeg?.let { "${(it * 10).roundToInt() / 10.0}°" } ?: "—",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            color = if (torsoRollDeg != null) accessColors.info else colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Text(
+                        text = dynamicAccMg?.let { "$it mG" } ?: (latestAccSample?.let { acc ->
+                            val magnitudeG = sqrt(
+                                (acc.xMg.toDouble() * acc.xMg + acc.yMg.toDouble() * acc.yMg + acc.zMg.toDouble() * acc.zMg),
+                            ) / 1000.0
+                            "${(magnitudeG * 100).roundToInt() / 100.0} G"
+                        } ?: "—"),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = colorScheme.onSurfaceVariant,
                     )
                 }
 
-                // Section 4: Live Chest Acceleration & 3D Torso Posture with 1-Tap 0° Tare
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier.padding(start = 4.dp),
+                Surface(
+                    onClick = { hrmBleManager.tareCurrentPosture() },
+                    modifier = Modifier
+                        .widthIn(min = 48.dp)
+                        .heightIn(min = 48.dp),
+                    shape = MaterialTheme.shapes.small,
+                    color = colorScheme.secondaryContainer,
+                    border = BorderStroke(0.5.dp, colorScheme.secondary.copy(alpha = 0.5f)),
                 ) {
-                    Column(
-                        horizontalAlignment = Alignment.End,
+                    Box(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        contentAlignment = Alignment.Center,
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = "Hinge: ",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontSize = 9.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            Text(
-                                text = torsoPitchDeg?.let { "${(it * 10).roundToInt() / 10.0}°" } ?: "—",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold,
-                                fontFamily = FontFamily.Monospace,
-                                color = if (torsoPitchDeg != null) Color(0xFFFF9800) else MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = "Tilt: ",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontSize = 9.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            Text(
-                                text = torsoRollDeg?.let { "${(it * 10).roundToInt() / 10.0}°" } ?: "—",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold,
-                                fontFamily = FontFamily.Monospace,
-                                color = if (torsoRollDeg != null) Color(0xFF00BCD4) else MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
                         Text(
-                            text = dynamicAccMg?.let { "$it mG" } ?: (latestAccSample?.let { acc ->
-                                val magnitudeG = sqrt((acc.xMg.toDouble() * acc.xMg + acc.yMg.toDouble() * acc.yMg + acc.zMg.toDouble() * acc.zMg)) / 1000.0
-                                "${(magnitudeG * 100).roundToInt() / 100.0} G"
-                            } ?: "—"),
-                            style = MaterialTheme.typography.labelSmall,
-                            fontSize = 8.sp,
-                            fontFamily = FontFamily.Monospace,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            text = "0° Tare",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = colorScheme.onSecondaryContainer,
                         )
                     }
+                }
+            }
+        }
 
-                    Surface(
-                        onClick = { hrmBleManager.tareCurrentPosture() },
-                        shape = MaterialTheme.shapes.small,
-                        color = MaterialTheme.colorScheme.secondaryContainer,
-                        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.5f)),
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 6.dp),
+        ) {
+            val stripWidth = maxWidth
+            val showSparkline = stripWidth >= 280.dp
+            val isCompactStrip = stripWidth < 360.dp || fontScale >= 1.3f
+            if (!isCompactStrip) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    heartRateSection()
+                    hrvSection()
+                    if (capabilities.polarPmd == HrmCapabilityState.CONFIRMED) {
+                        ecgCanvasSlot(Modifier.weight(1f))
+                        postureAndTareSection()
+                    }
+                }
+            } else {
+                // D-9: Stack gracefully on narrow widths or large font scale so nothing crushes 0° Tare
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
                     ) {
-                        Box(
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 6.dp),
-                            contentAlignment = Alignment.Center,
+                        heartRateSection()
+                        hrvSection()
+                    }
+                    if (capabilities.polarPmd == HrmCapabilityState.CONFIRMED) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = if (showSparkline) Arrangement.spacedBy(8.dp) else Arrangement.End,
                         ) {
-                            Text(
-                                text = "0° Tare",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer,
-                            )
+                            if (showSparkline) {
+                                ecgCanvasSlot(Modifier.weight(1f))
+                            }
+                            postureAndTareSection()
                         }
                     }
                 }
@@ -355,6 +389,8 @@ private fun HrmWorkoutStripContent(
 internal fun EcgWaveformCanvas(
     samples: List<Int>,
     modifier: Modifier = Modifier,
+    baselineColor: Color = MaterialTheme.colorScheme.outlineVariant,
+    waveformColor: Color = AccessibilityTheme.colors.info,
 ) {
     Canvas(modifier = modifier) {
         val width = size.width
@@ -363,7 +399,7 @@ internal fun EcgWaveformCanvas(
 
         // Draw center baseline grid line
         drawLine(
-            color = Color(0xFF1B2A4A),
+            color = baselineColor,
             start = Offset(0f, midY),
             end = Offset(width, midY),
             strokeWidth = 1f,
@@ -391,7 +427,7 @@ internal fun EcgWaveformCanvas(
 
         drawPath(
             path = path,
-            color = Color(0xFF00E5FF),
+            color = waveformColor,
             style = Stroke(
                 width = 1.5.dp.toPx(),
                 cap = StrokeCap.Round,
