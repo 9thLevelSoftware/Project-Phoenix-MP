@@ -24,10 +24,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.CycleDay
+import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import kotlin.math.roundToInt
+import org.jetbrains.compose.resources.stringResource
+import projectphoenix.shared.generated.resources.*
+import projectphoenix.shared.generated.resources.Res
 
 /**
  * CycleReviewScreen - Shows a collapsible timeline of all days before the user commits the cycle.
@@ -39,7 +43,7 @@ import kotlin.math.roundToInt
  * - [Back] -> Returns to editor
  * - [Confirm & Finish] -> Commits and navigates home
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun CycleReviewScreen(
     cycleName: String,
@@ -50,6 +54,12 @@ fun CycleReviewScreen(
 ) {
     // Track expanded state for each day by id (stable key)
     val expandedDays = remember { mutableStateMapOf<String, Boolean>() }
+    val contentMaxWidth = ResponsiveDimensions.contentMaxWidth()
+    val widthModifier = if (contentMaxWidth != null) {
+        Modifier.widthIn(max = contentMaxWidth).fillMaxWidth()
+    } else {
+        Modifier.fillMaxWidth()
+    }
 
     // Publish this cycle's name. A blank name clears the title so the shell
     // falls back to "Cycle Review".
@@ -57,54 +67,26 @@ fun CycleReviewScreen(
         viewModel?.updateTopBarTitle(cycleName)
     }
 
-    Scaffold(
-        contentWindowInsets = WindowInsets.navigationBars,
-        bottomBar = {
-            Surface(
-                tonalElevation = 3.dp,
-                shadowElevation = 8.dp,
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .navigationBarsPadding()
-                        .padding(16.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Button(
-                        onClick = onSave,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = MaterialTheme.shapes.small,
-                    ) {
-                        Text(
-                            text = "Confirm & Finish",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                        )
-                    }
-                }
-            }
-        },
-    ) { padding ->
-        Box(
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(screenBackgroundBrush()),
+    ) {
+        LazyColumn(
             modifier = Modifier
-                .fillMaxSize()
-                .background(screenBackgroundBrush()),
+                .weight(1f)
+                .fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(16.dp),
         ) {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                contentPadding = PaddingValues(vertical = 16.dp),
-            ) {
-                itemsIndexed(days, key = { _, day -> day.id }) { _, day ->
-                    val routine = day.routineId?.let { routineId ->
-                        routines.find { it.id == routineId }
-                    }
-                    val isExpanded = expandedDays[day.id] ?: false
+            itemsIndexed(days, key = { _, day -> day.id }) { _, day ->
+                val routine = day.routineId?.let { routineId ->
+                    routines.find { it.id == routineId }
+                }
+                val isExpanded = expandedDays[day.id] ?: false
 
+                Box(modifier = widthModifier) {
                     CycleReviewDayCard(
                         day = day,
                         routine = routine,
@@ -119,12 +101,38 @@ fun CycleReviewScreen(
                 }
             }
         }
+
+        Surface(
+            tonalElevation = 3.dp,
+            shadowElevation = 4.dp,
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(16.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Button(
+                    onClick = onSave,
+                    modifier = widthModifier.heightIn(min = 48.dp),
+                    shape = MaterialTheme.shapes.small,
+                ) {
+                    Text(
+                        text = stringResource(Res.string.cycle_review_confirm_finish),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
+        }
     }
 }
 
 /**
  * Individual day card with expand/collapse functionality.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun CycleReviewDayCard(day: CycleDay, routine: Routine?, isExpanded: Boolean, onToggleExpand: () -> Unit) {
     val canExpand = !day.isRestDay && routine != null && routine.exercises.isNotEmpty()
@@ -184,7 +192,7 @@ private fun CycleReviewDayCard(day: CycleDay, routine: Routine?, isExpanded: Boo
                 // Day content
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Day ${day.dayNumber}",
+                        text = stringResource(Res.string.cycles_day_numbered, day.dayNumber),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -204,7 +212,7 @@ private fun CycleReviewDayCard(day: CycleDay, routine: Routine?, isExpanded: Boo
                                 modifier = Modifier.size(20.dp),
                             )
                             Text(
-                                text = "Rest",
+                                text = stringResource(Res.string.cycles_rest_badge),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -212,7 +220,7 @@ private fun CycleReviewDayCard(day: CycleDay, routine: Routine?, isExpanded: Boo
                         }
                     } else {
                         Text(
-                            text = routine?.name ?: "No routine assigned",
+                            text = routine?.name ?: stringResource(Res.string.home_no_routine_assigned),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             maxLines = 1,
@@ -228,8 +236,9 @@ private fun CycleReviewDayCard(day: CycleDay, routine: Routine?, isExpanded: Boo
                         val badges = buildModifierBadges(day)
                         if (badges.isNotEmpty()) {
                             Spacer(Modifier.height(4.dp))
-                            Row(
+                            FlowRow(
                                 horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
                             ) {
                                 badges.forEach { badge ->
                                     ReviewModifierBadge(text = badge)
@@ -243,7 +252,7 @@ private fun CycleReviewDayCard(day: CycleDay, routine: Routine?, isExpanded: Boo
                 if (canExpand) {
                     Icon(
                         Icons.Default.ExpandMore,
-                        contentDescription = if (isExpanded) "Collapse" else "Expand",
+                        contentDescription = stringResource(if (isExpanded) Res.string.cd_collapse else Res.string.cd_expand),
                         modifier = Modifier
                             .size(24.dp)
                             .rotate(rotationAngle),
@@ -324,6 +333,7 @@ private fun ExerciseRow(routineExercise: RoutineExercise) {
  * Format sets and reps for display.
  * Examples: "3x10", "4x12", "3x8-10" for varied reps
  */
+@Composable
 private fun formatSetsReps(routineExercise: RoutineExercise): String {
     val setReps = routineExercise.setReps
     val sets = setReps.size
@@ -333,21 +343,21 @@ private fun formatSetsReps(routineExercise: RoutineExercise): String {
     // Check if all reps are the same
     val nonNullReps = setReps.filterNotNull()
     return if (nonNullReps.isEmpty()) {
-        "${sets}x AMRAP"
+        stringResource(Res.string.cycle_review_sets_amrap, sets)
     } else if (nonNullReps.distinct().size == 1 && nonNullReps.size == sets) {
         // All same reps, no AMRAP sets
-        "${sets}x${nonNullReps.first()}"
+        stringResource(Res.string.cycle_review_sets_uniform, sets, nonNullReps.first())
     } else if (nonNullReps.distinct().size == 1) {
         // Some sets are AMRAP (null reps)
-        "${nonNullReps.size}x${nonNullReps.first()} + ${sets - nonNullReps.size}x AMRAP"
+        stringResource(Res.string.cycle_review_sets_plus_amrap, nonNullReps.size, nonNullReps.first(), sets - nonNullReps.size)
     } else {
         // Different reps - show range or list
         val min = nonNullReps.minOrNull() ?: 0
         val max = nonNullReps.maxOrNull() ?: 0
         if (min != max) {
-            "${sets}x$min-$max"
+            stringResource(Res.string.cycle_review_sets_range, sets, min, max)
         } else {
-            "${sets}x$min"
+            stringResource(Res.string.cycle_review_sets_uniform, sets, min)
         }
     }
 }
@@ -355,28 +365,29 @@ private fun formatSetsReps(routineExercise: RoutineExercise): String {
 /**
  * Build list of modifier badge strings from day modifiers.
  */
+@Composable
 private fun buildModifierBadges(day: CycleDay): List<String> {
     val badges = mutableListOf<String>()
 
-    day.echoLevel?.let { badges.add("Echo:${it.displayName}") }
+    day.echoLevel?.let { badges.add(stringResource(Res.string.cycle_review_echo_badge, it.displayName)) }
     day.weightProgressionPercent?.let { pct ->
         val sign = if (pct >= 0) "+" else ""
         badges.add("${sign}${pct.roundToInt()}%")
     }
     day.eccentricLoadPercent?.let { pct ->
         if (pct != 100) {
-            badges.add("Eccentric $pct%")
+            badges.add(stringResource(Res.string.cycle_review_eccentric_badge, pct))
         }
     }
     day.repModifier?.let { mod ->
         if (mod != 0) {
             val sign = if (mod > 0) "+" else ""
-            badges.add("${sign}$mod reps")
+            badges.add(stringResource(Res.string.cycle_review_rep_mod_badge, sign, mod))
         }
     }
     day.restTimeOverrideSeconds?.let { sec ->
         // Always show rest time badge if override is set (default is 90s in config sheet)
-        badges.add("${sec}s rest")
+        badges.add(stringResource(Res.string.cycle_review_rest_badge, sec))
     }
 
     return badges

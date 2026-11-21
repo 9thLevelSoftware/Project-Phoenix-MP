@@ -1,24 +1,27 @@
 package com.devil.phoenixproject.presentation.components
 
 import androidx.compose.animation.*
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.ExerciseConfig
 import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.percentLabel
+import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
+import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
 import com.devil.phoenixproject.ui.theme.Spacing
+import com.devil.phoenixproject.util.UnitConverter
 import org.jetbrains.compose.resources.stringResource
 import projectphoenix.shared.generated.resources.*
 import projectphoenix.shared.generated.resources.Res
@@ -52,167 +55,194 @@ fun ExerciseConfigModal(
     weightStepKg: Float = 2.5f, // Issue #266: Configurable weight step in kg
     // No default: a caller that forgot it would silently get the widest (Trainer+) ceiling.
     planningMaxWeightPerCableKg: Float,
+    weightUnit: WeightUnit = WeightUnit.KG,
+    kgToDisplay: (Float, WeightUnit) -> Float = { kg, unit ->
+        WeightDisplayFormatter.toPerCableDisplayWeight(kg, unit)
+    },
+    displayToKg: (Float, WeightUnit) -> Float = { display, unit ->
+        when (unit) {
+            WeightUnit.KG -> display
+            WeightUnit.LB -> display / UnitConverter.KG_TO_LB
+        }
+    },
+    formatWeight: (Float, WeightUnit) -> String = { kg, unit ->
+        val display = kgToDisplay(kg, unit)
+        "${WeightDisplayFormatter.formatDisplayNumber(display)} ${unit.name.lowercase()}"
+    },
 ) {
     var config by remember { mutableStateOf(initialConfig) }
+    val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
 
-    Dialog(onDismissRequest = onDismiss) {
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .wrapContentHeight(),
-            shape = RoundedCornerShape(Spacing.large),
-            color = MaterialTheme.colorScheme.surfaceContainer,
-            tonalElevation = 6.dp,
-        ) {
-            Column(
+    PhoenixModalDialogFrame(
+        title = exerciseName,
+        onDismiss = onDismiss,
+        actions = {
+            OutlinedButton(
+                onClick = onDismiss,
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState()),
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .heightIn(min = 48.dp),
             ) {
-                // Header
-                ExerciseConfigHeader(
-                    exerciseName = exerciseName,
-                    templateSets = templateSets,
-                    templateReps = templateReps,
-                    oneRepMaxKg = oneRepMaxKg,
+                Text(
+                    stringResource(Res.string.action_cancel),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
+            }
 
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Button(
+                onClick = { onConfirm(config) },
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .heightIn(min = 48.dp),
+            ) {
+                Text(
+                    stringResource(Res.string.action_apply),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        },
+    ) {
+        // Template metadata banner
+        ExerciseConfigMetadataRow(
+            templateSets = templateSets,
+            templateReps = templateReps,
+            oneRepMaxKg = oneRepMaxKg,
+            weightUnit = weightUnit,
+            formatWeight = formatWeight,
+        )
 
-                // Mode selector
-                Column(modifier = Modifier.padding(Spacing.medium)) {
-                    ModeSelector(
-                        selectedMode = config.mode,
-                        onModeSelected = { newMode ->
-                            config = config.copy(mode = newMode)
-                        },
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+        // Mode selector
+        ModeSelector(
+            selectedMode = config.mode,
+            onModeSelected = { newMode ->
+                config = config.copy(mode = newMode)
+            },
+        )
+
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+        // Mode-specific config panel
+        AnimatedContent(
+            targetState = config.mode,
+            transitionSpec = {
+                if (reduceMotion) {
+                    EnterTransition.None togetherWith ExitTransition.None
+                } else {
+                    fadeIn() + slideInVertically { it / 4 } togetherWith
+                        fadeOut() + slideOutVertically { -it / 4 }
+                }
+            },
+            label = "mode_panel",
+        ) { mode ->
+            Column(
+                modifier = Modifier.padding(top = Spacing.small),
+                verticalArrangement = Arrangement.spacedBy(Spacing.medium),
+            ) {
+                // For TUT/TUTBeast, we show the same panel with Beast Mode toggle
+                val effectiveMode = if (mode == ProgramMode.TUTBeast) ProgramMode.TUT else mode
+
+                when (effectiveMode) {
+                    ProgramMode.OldSchool -> OldSchoolConfigPanel(
+                        weight = config.weightPerCableKg,
+                        onWeightChange = { config = config.copy(weightPerCableKg = it) },
+                        prWeight = prWeight,
+                        stepKg = weightStepKg,
+                        planningMaxWeightPerCableKg = planningMaxWeightPerCableKg,
+                        weightUnit = weightUnit,
+                        kgToDisplay = kgToDisplay,
+                        displayToKg = displayToKg,
+                        formatWeight = formatWeight,
                     )
-                }
 
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-                // Mode-specific config panel
-                AnimatedContent(
-                    targetState = config.mode,
-                    transitionSpec = {
-                        fadeIn() + slideInVertically { it / 4 } togetherWith
-                            fadeOut() + slideOutVertically { -it / 4 }
-                    },
-                    label = "mode_panel",
-                ) { mode ->
-                    Column(
-                        modifier = Modifier.padding(Spacing.medium),
-                        verticalArrangement = Arrangement.spacedBy(Spacing.medium),
-                    ) {
-                        // For TUT/TUTBeast, we show the same panel with Beast Mode toggle
-                        val effectiveMode = if (mode == ProgramMode.TUTBeast) ProgramMode.TUT else mode
-
-                        when (effectiveMode) {
-                            ProgramMode.OldSchool -> OldSchoolConfigPanel(
-                                weight = config.weightPerCableKg,
-                                onWeightChange = { config = config.copy(weightPerCableKg = it) },
-                                prWeight = prWeight,
-                                stepKg = weightStepKg,
-                                planningMaxWeightPerCableKg = planningMaxWeightPerCableKg,
+                    ProgramMode.TUT -> TutConfigPanel(
+                        weight = config.weightPerCableKg,
+                        onWeightChange = { config = config.copy(weightPerCableKg = it) },
+                        isBeastMode = config.mode == ProgramMode.TUTBeast,
+                        onBeastModeChange = { enabled ->
+                            config = config.copy(
+                                mode = if (enabled) ProgramMode.TUTBeast else ProgramMode.TUT,
                             )
+                        },
+                        prWeight = prWeight,
+                        stepKg = weightStepKg,
+                        planningMaxWeightPerCableKg = planningMaxWeightPerCableKg,
+                        weightUnit = weightUnit,
+                        kgToDisplay = kgToDisplay,
+                        displayToKg = displayToKg,
+                        formatWeight = formatWeight,
+                    )
 
-                            ProgramMode.TUT -> TutConfigPanel(
-                                weight = config.weightPerCableKg,
-                                onWeightChange = { config = config.copy(weightPerCableKg = it) },
-                                isBeastMode = config.mode == ProgramMode.TUTBeast,
-                                onBeastModeChange = { enabled ->
-                                    config = config.copy(
-                                        mode = if (enabled) ProgramMode.TUTBeast else ProgramMode.TUT,
-                                    )
-                                },
-                                prWeight = prWeight,
-                                stepKg = weightStepKg,
-                                planningMaxWeightPerCableKg = planningMaxWeightPerCableKg,
-                            )
+                    ProgramMode.Pump -> PumpConfigPanel(
+                        weight = config.weightPerCableKg,
+                        onWeightChange = { config = config.copy(weightPerCableKg = it) },
+                        prWeight = prWeight,
+                        stepKg = weightStepKg,
+                        planningMaxWeightPerCableKg = planningMaxWeightPerCableKg,
+                        weightUnit = weightUnit,
+                        kgToDisplay = kgToDisplay,
+                        displayToKg = displayToKg,
+                        formatWeight = formatWeight,
+                    )
 
-                            ProgramMode.Pump -> PumpConfigPanel(
-                                weight = config.weightPerCableKg,
-                                onWeightChange = { config = config.copy(weightPerCableKg = it) },
-                                prWeight = prWeight,
-                                stepKg = weightStepKg,
-                                planningMaxWeightPerCableKg = planningMaxWeightPerCableKg,
-                            )
+                    ProgramMode.EccentricOnly -> EccentricConfigPanel(
+                        weight = config.weightPerCableKg,
+                        onWeightChange = { config = config.copy(weightPerCableKg = it) },
+                        eccentricPercent = config.eccentricLoadPercent,
+                        onEccentricPercentChange = { config = config.copy(eccentricLoadPercent = it) },
+                        prWeight = prWeight,
+                        stepKg = weightStepKg,
+                        planningMaxWeightPerCableKg = planningMaxWeightPerCableKg,
+                        weightUnit = weightUnit,
+                        kgToDisplay = kgToDisplay,
+                        displayToKg = displayToKg,
+                        formatWeight = formatWeight,
+                    )
 
-                            ProgramMode.EccentricOnly -> EccentricConfigPanel(
-                                weight = config.weightPerCableKg,
-                                onWeightChange = { config = config.copy(weightPerCableKg = it) },
-                                eccentricPercent = config.eccentricLoadPercent,
-                                onEccentricPercentChange = { config = config.copy(eccentricLoadPercent = it) },
-                                prWeight = prWeight,
-                                stepKg = weightStepKg,
-                                planningMaxWeightPerCableKg = planningMaxWeightPerCableKg,
-                            )
+                    ProgramMode.Echo -> EchoConfigPanel(
+                        echoLevel = config.echoLevel,
+                        onEchoLevelChange = { config = config.copy(echoLevel = it) },
+                        eccentricPercent = config.eccentricLoadPercent,
+                        onEccentricPercentChange = { config = config.copy(eccentricLoadPercent = it) },
+                    )
 
-                            ProgramMode.Echo -> EchoConfigPanel(
-                                echoLevel = config.echoLevel,
-                                onEchoLevelChange = { config = config.copy(echoLevel = it) },
-                                eccentricPercent = config.eccentricLoadPercent,
-                                onEccentricPercentChange = { config = config.copy(eccentricLoadPercent = it) },
-                            )
-
-                            ProgramMode.TUTBeast -> Unit // Mapped to TUT at line 114; unreachable but required for exhaustiveness
-                        }
-                    }
-                }
-
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-                // Footer buttons
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(Spacing.medium),
-                    horizontalArrangement = Arrangement.spacedBy(Spacing.small),
-                ) {
-                    OutlinedButton(
-                        onClick = onDismiss,
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Text(stringResource(Res.string.action_cancel))
-                    }
-
-                    Button(
-                        onClick = { onConfirm(config) },
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Text(stringResource(Res.string.action_apply))
-                    }
+                    ProgramMode.TUTBeast -> Unit // Mapped to TUT above; unreachable but required for exhaustiveness
                 }
             }
         }
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ExerciseConfigHeader(exerciseName: String, templateSets: Int, templateReps: Int?, oneRepMaxKg: Float?) {
-    // workout-setup-17: primaryContainer tint brings in brand colour and visually separates
-    // the header from the surfaceContainer modal body. titleLarge aligns with other modal
-    // headers (CompletedCard).
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f))
-            .padding(Spacing.medium),
+private fun ExerciseConfigMetadataRow(
+    templateSets: Int,
+    templateReps: Int?,
+    oneRepMaxKg: Float?,
+    weightUnit: WeightUnit,
+    formatWeight: (Float, WeightUnit) -> String,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(Spacing.small),
+        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
     ) {
-        Text(
-            text = exerciseName,
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-
-        Spacer(modifier = Modifier.height(Spacing.extraSmall))
-
-        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.medium)) {
+        FlowRow(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = Spacing.small, vertical = Spacing.small),
+            horizontalArrangement = Arrangement.spacedBy(Spacing.medium),
+            verticalArrangement = Arrangement.spacedBy(Spacing.extraSmall),
+        ) {
             MetaChip(label = stringResource(Res.string.config_meta_sets), value = templateSets.toString())
             MetaChip(label = stringResource(Res.string.config_meta_reps), value = templateReps?.toString() ?: "AMRAP")
             oneRepMaxKg?.let {
-                MetaChip(label = stringResource(Res.string.config_meta_1rm), value = "${it.toInt()}kg")
+                MetaChip(label = stringResource(Res.string.config_meta_1rm), value = formatWeight(it, weightUnit))
             }
         }
     }
@@ -247,6 +277,10 @@ private fun OldSchoolConfigPanel(
     planningMaxWeightPerCableKg: Float,
     prWeight: Float? = null,
     stepKg: Float = 2.5f,
+    weightUnit: WeightUnit,
+    kgToDisplay: (Float, WeightUnit) -> Float,
+    displayToKg: (Float, WeightUnit) -> Float,
+    formatWeight: (Float, WeightUnit) -> String,
 ) {
     WeightStepper(
         weight = weight,
@@ -255,6 +289,10 @@ private fun OldSchoolConfigPanel(
         prWeight = prWeight,
         step = stepKg,
         maxWeight = planningMaxWeightPerCableKg,
+        weightUnit = weightUnit,
+        kgToDisplay = kgToDisplay,
+        displayToKg = displayToKg,
+        formatWeight = formatWeight,
     )
     ModeInfoCard(
         title = stringResource(Res.string.mode_old_school),
@@ -271,6 +309,10 @@ private fun TutConfigPanel(
     planningMaxWeightPerCableKg: Float,
     prWeight: Float? = null,
     stepKg: Float = 2.5f,
+    weightUnit: WeightUnit,
+    kgToDisplay: (Float, WeightUnit) -> Float,
+    displayToKg: (Float, WeightUnit) -> Float,
+    formatWeight: (Float, WeightUnit) -> String,
 ) {
     WeightStepper(
         weight = weight,
@@ -279,15 +321,30 @@ private fun TutConfigPanel(
         prWeight = prWeight,
         step = stepKg,
         maxWeight = planningMaxWeightPerCableKg,
+        weightUnit = weightUnit,
+        kgToDisplay = kgToDisplay,
+        displayToKg = displayToKg,
+        formatWeight = formatWeight,
     )
 
     // Beast Mode Toggle
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .toggleable(
+                value = isBeastMode,
+                role = Role.Switch,
+                onValueChange = onBeastModeChange,
+            ),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(end = Spacing.small),
+        ) {
             Text(
                 text = stringResource(Res.string.config_beast_mode),
                 style = MaterialTheme.typography.labelSmall,
@@ -303,12 +360,12 @@ private fun TutConfigPanel(
                     stringResource(Res.string.config_standard_tut)
                 },
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         Switch(
             checked = isBeastMode,
-            onCheckedChange = onBeastModeChange,
+            onCheckedChange = null,
             colors = SwitchDefaults.colors(
                 checkedThumbColor = MaterialTheme.colorScheme.primary,
                 checkedTrackColor = MaterialTheme.colorScheme.primaryContainer,
@@ -341,6 +398,10 @@ private fun PumpConfigPanel(
     planningMaxWeightPerCableKg: Float,
     prWeight: Float? = null,
     stepKg: Float = 2.5f,
+    weightUnit: WeightUnit,
+    kgToDisplay: (Float, WeightUnit) -> Float,
+    displayToKg: (Float, WeightUnit) -> Float,
+    formatWeight: (Float, WeightUnit) -> String,
 ) {
     WeightStepper(
         weight = weight,
@@ -349,6 +410,10 @@ private fun PumpConfigPanel(
         prWeight = prWeight,
         step = stepKg,
         maxWeight = planningMaxWeightPerCableKg,
+        weightUnit = weightUnit,
+        kgToDisplay = kgToDisplay,
+        displayToKg = displayToKg,
+        formatWeight = formatWeight,
     )
     ModeInfoCard(
         title = stringResource(Res.string.config_mode_pump_title),
@@ -365,6 +430,10 @@ private fun EccentricConfigPanel(
     planningMaxWeightPerCableKg: Float,
     prWeight: Float? = null,
     stepKg: Float = 2.5f,
+    weightUnit: WeightUnit,
+    kgToDisplay: (Float, WeightUnit) -> Float,
+    displayToKg: (Float, WeightUnit) -> Float,
+    formatWeight: (Float, WeightUnit) -> String,
 ) {
     WeightStepper(
         weight = weight,
@@ -373,6 +442,10 @@ private fun EccentricConfigPanel(
         prWeight = prWeight,
         step = stepKg,
         maxWeight = planningMaxWeightPerCableKg,
+        weightUnit = weightUnit,
+        kgToDisplay = kgToDisplay,
+        displayToKg = displayToKg,
+        formatWeight = formatWeight,
     )
     EccentricSlider(
         percent = eccentricPercent,

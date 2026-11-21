@@ -56,7 +56,7 @@ actual fun CompactNumberPicker(
     val wheelHeight = if (applySelectorScale) {
         scaledWeightWheelHeightDp(baseWheelHeightDp, effectiveScale).dp
     } else {
-        baseWheelHeightDp.dp
+        scaledWeightWheelHeightDp(baseWheelHeightDp, fontScale.coerceAtLeast(1f)).dp
     }
     val selectorTextSizePx: Float? = if (applySelectorScale) {
         val baseSp = if (compactWheel) 18f else 20f
@@ -65,7 +65,7 @@ actual fun CompactNumberPicker(
     } else {
         null
     }
-    val baseButtonSizeDp = if (compactWheel) 40f else 48f
+    val baseButtonSizeDp = 48f
     val buttonSize = if (applySelectorScale) {
         scaledSelectorButtonSizeDp(baseButtonSizeDp, effectiveScale).dp
     } else {

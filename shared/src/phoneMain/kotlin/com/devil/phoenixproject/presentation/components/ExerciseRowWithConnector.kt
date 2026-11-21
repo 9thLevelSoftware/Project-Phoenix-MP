@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DragHandle
@@ -131,18 +132,17 @@ fun ExerciseRowWithConnector(
             )
         }
 
-        // Drag handle
+        // Drag handle (48dp touch target)
         Box(
             modifier = Modifier
-                .width(40.dp)
-                .padding(vertical = 12.dp),
+                .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                .then(dragModifier),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
                 Icons.Default.DragHandle,
                 contentDescription = stringResource(Res.string.cd_drag),
                 tint = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
-                modifier = dragModifier,
             )
         }
 

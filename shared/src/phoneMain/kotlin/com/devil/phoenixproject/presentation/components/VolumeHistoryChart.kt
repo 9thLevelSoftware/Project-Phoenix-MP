@@ -1,23 +1,28 @@
 package com.devil.phoenixproject.presentation.components
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.ui.theme.DataColors
+import com.devil.phoenixproject.util.UnitConverter
+import kotlin.math.roundToInt
 
 data class VolumePoint(
     val label: String, // e.g., "Mon", "Tue" or Date
@@ -25,59 +30,85 @@ data class VolumePoint(
 )
 
 /**
- * Volume history bar chart with labels.
- * Uses BoxWithConstraints for KMP-compatible text label positioning.
+ * Volume history bar chart with density-safe stacked date labels.
  */
 @Composable
-fun VolumeHistoryChart(data: List<VolumePoint>, modifier: Modifier = Modifier.height(200.dp), barColor: Color = DataColors.Volume) {
+fun VolumeHistoryChart(
+    data: List<VolumePoint>,
+    modifier: Modifier = Modifier.height(200.dp),
+    barColor: Color = DataColors.Volume,
+    weightUnit: WeightUnit = WeightUnit.KG,
+) {
     if (data.isEmpty()) return
 
-    val maxVolume = data.maxOfOrNull { it.volume } ?: 1f
+    val displayValues = remember(data, weightUnit) {
+        data.map { point ->
+            val raw = if (point.volume.isFinite() && point.volume > 0f) point.volume else 0f
+            if (weightUnit == WeightUnit.LB) UnitConverter.kgToLb(raw) else raw
+        }
+    }
+    val maxVolume = (displayValues.maxOrNull() ?: 1f).let {
+        if (it.isFinite() && it > 0f) it else 1f
+    }
+    val unitLabel = if (weightUnit == WeightUnit.LB) "lbs" else "kg"
+    val maxLabel = if (maxVolume >= 1000f) "${(maxVolume / 1000f).roundToInt()}k $unitLabel" else "${maxVolume.roundToInt()} $unitLabel"
     val labelStyle = MaterialTheme.typography.labelSmall
     val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
-    val density = LocalDensity.current
 
-    BoxWithConstraints(modifier = modifier) {
-        val boxWidth = with(density) { maxWidth.toPx() }
-        val boxHeight = with(density) { maxHeight.toPx() }
-        val barWidth = boxWidth / (data.size * 2f)
-        val spaceWidth = boxWidth / (data.size * 2f)
-        val labelHeight = 20.dp
-        val chartHeight = boxHeight - with(density) { labelHeight.toPx() }
+    Column(modifier = modifier) {
+        Text(
+            text = maxLabel,
+            style = labelStyle,
+            color = labelColor,
+            maxLines = 1,
+            modifier = Modifier.padding(bottom = 2.dp),
+        )
 
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            data.forEachIndexed { index, point ->
-                val volumeHeight = (point.volume / maxVolume) * chartHeight
-                val x = index * (barWidth + spaceWidth) + (spaceWidth / 2)
-                val y = chartHeight - volumeHeight
+        Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+        ) {
+            val slotWidth = size.width / displayValues.size.coerceAtLeast(1)
+            val barWidth = slotWidth * 0.55f
+            val sideInset = (slotWidth - barWidth) / 2f
+            val corner = CornerRadius(3.dp.toPx(), 3.dp.toPx())
 
-                drawRect(
-                    color = barColor,
-                    topLeft = Offset(x, y),
-                    size = Size(barWidth, volumeHeight),
-                )
+            displayValues.forEachIndexed { index, volume ->
+                val fraction = (volume / maxVolume).coerceIn(0f, 1f)
+                val barHeight = fraction * size.height
+                val x = index * slotWidth + sideInset
+                val y = size.height - barHeight
+
+                if (barHeight > 0f) {
+                    drawRoundRect(
+                        color = barColor,
+                        topLeft = Offset(x, y),
+                        size = Size(barWidth, barHeight),
+                        cornerRadius = corner,
+                    )
+                }
             }
         }
 
-        // Draw text labels below bars using Compose Text
-        data.forEachIndexed { index, point ->
-            val x = index * (barWidth + spaceWidth) + (spaceWidth / 2)
-            val labelWidth = barWidth + spaceWidth
-
-            Text(
-                text = point.label,
-                style = labelStyle,
-                color = labelColor,
-                textAlign = TextAlign.Center,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier
-                    .offset(
-                        x = with(density) { x.toDp() },
-                        y = maxHeight - labelHeight,
-                    )
-                    .width(with(density) { labelWidth.toDp() }),
-            )
+        // Stacked X-axis Row automatically expands height at 1.3x–2.0x font scale without clipping
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 4.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+        ) {
+            data.forEach { point ->
+                Text(
+                    text = point.label,
+                    style = labelStyle,
+                    color = labelColor,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+            }
         }
     }
 }

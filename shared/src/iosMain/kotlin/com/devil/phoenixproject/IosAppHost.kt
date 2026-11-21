@@ -2,6 +2,7 @@ package com.devil.phoenixproject
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -17,6 +18,7 @@ import com.devil.phoenixproject.presentation.components.RequireBlePermissions
 import com.devil.phoenixproject.presentation.viewmodel.EulaViewModel
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.presentation.viewmodel.ThemeViewModel
+import com.devil.phoenixproject.ui.theme.applyPlatformNightMode
 import kotlinx.coroutines.Dispatchers
 import org.koin.mp.KoinPlatform
 
@@ -81,14 +83,23 @@ internal fun IosAppHost() {
         }
 
         is StartupDependencyResolution.Ready -> {
+            val dependencies = current.dependencies
+            val themeMode by dependencies.themeViewModel.themeMode.collectAsState()
+            val dynamicColorEnabled by dependencies.themeViewModel.dynamicColorEnabled.collectAsState()
+            LaunchedEffect(themeMode) {
+                applyPlatformNightMode(themeMode)
+            }
             // Issue #1164 iOS exit-capture seam: launch-argument gated runtime harness.
             // Rendered outside RequireBlePermissions (BLE permission is unrelated to the
             // completion-screen exit under verification).
             if (isRoutineCompleteExitVerificationLaunch()) {
-                IosRoutineCompleteExitVerificationHost(current.dependencies.mainViewModel)
+                IosRoutineCompleteExitVerificationHost(dependencies.mainViewModel)
             } else {
-                RequireBlePermissions {
-                    IosAppContent(current.dependencies)
+                RequireBlePermissions(
+                    themeMode = themeMode,
+                    dynamicColorEnabled = dynamicColorEnabled,
+                ) {
+                    IosAppContent(dependencies)
                 }
             }
         }

@@ -12,16 +12,20 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -74,6 +78,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import co.touchlab.kermit.Logger
@@ -102,6 +107,8 @@ import com.devil.phoenixproject.presentation.components.cycle.TemplatePreviewEdi
 import com.devil.phoenixproject.presentation.components.cycle.UnifiedCycleCreationSheet
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
+import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
+import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.presentation.viewmodel.RoutineResumeEntryPoint
 import com.devil.phoenixproject.ui.theme.ExpressiveMotion
@@ -111,35 +118,11 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
+import projectphoenix.shared.generated.resources.*
 import projectphoenix.shared.generated.resources.Res
-import projectphoenix.shared.generated.resources.action_delete
-import projectphoenix.shared.generated.resources.action_edit
-import projectphoenix.shared.generated.resources.action_ok
-import projectphoenix.shared.generated.resources.assign_routine
-import projectphoenix.shared.generated.resources.cd_create_cycle
-import projectphoenix.shared.generated.resources.cd_expand
-import projectphoenix.shared.generated.resources.create_cycle
-import projectphoenix.shared.generated.resources.cycle_training_max_missing_action
-import projectphoenix.shared.generated.resources.cycle_training_max_missing_body
-import projectphoenix.shared.generated.resources.cycle_training_max_missing_title
-import projectphoenix.shared.generated.resources.delete_cycle_message
-import projectphoenix.shared.generated.resources.delete_cycle_title
-import projectphoenix.shared.generated.resources.edit_cycle
-import projectphoenix.shared.generated.resources.empty_no_cycles_message
-import projectphoenix.shared.generated.resources.empty_no_cycles_title
-import projectphoenix.shared.generated.resources.exercises_not_found
-import projectphoenix.shared.generated.resources.jump_to_day
-import projectphoenix.shared.generated.resources.label_error
-import projectphoenix.shared.generated.resources.skip_rest_day
-import projectphoenix.shared.generated.resources.start_workout
-
-// Shared failure copy for the fresh-start and restart workout paths (issue #620:
-// failures must always be surfaced, never silent).
-private const val WORKOUT_LOAD_FAILED_MESSAGE =
-    "Couldn't load this workout — routine data is missing. Try editing the cycle."
-private const val CONNECTION_FAILED_MESSAGE = "Machine connection failed — workout not started."
 
 /** Stable exercise-library IDs keyed by template exercise name, for ID-first lookups. */
 private fun CycleTemplate.exerciseIdsByName(): Map<String, String?> = days.flatMap { it.routine?.exercises ?: emptyList() }
@@ -283,13 +266,13 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel)
         completionEvent?.let { event ->
             val message = if (event.isRotationComplete) {
                 when {
-                    event.tmBumped -> "Deload complete! Week 1 begins with increased training max."
-                    event.newWeekNumber != null -> "Rotation complete! Advancing to Week ${event.newWeekNumber}."
-                    else -> "Cycle complete! Starting rotation ${event.rotationCount + 1}"
+                    event.tmBumped -> getString(Res.string.cycles_deload_complete)
+                    event.newWeekNumber != null -> getString(Res.string.cycles_rotation_complete_week, event.newWeekNumber)
+                    else -> getString(Res.string.cycles_cycle_complete_rotation, event.rotationCount + 1)
                 }
             } else {
-                val dayLabel = event.dayName ?: "Day ${event.dayNumber}"
-                "$dayLabel completed!"
+                val dayLabel = event.dayName ?: getString(Res.string.cycles_day_numbered, event.dayNumber)
+                getString(Res.string.cycles_day_completed, dayLabel)
             }
             snackbarHostState.showSnackbar(message)
             viewModel.clearCycleDayCompletionEvent()
@@ -364,8 +347,9 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel)
     }
 
     // Set title
-    LaunchedEffect(Unit) {
-        viewModel.updateTopBarTitle("Training Cycles")
+    val cyclesTitle = stringResource(Res.string.cycles_title)
+    LaunchedEffect(cyclesTitle) {
+        viewModel.updateTopBarTitle(cyclesTitle)
     }
 
     val backgroundGradient = screenBackgroundBrush()
@@ -390,86 +374,95 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel)
                 )
             }
         } else {
+            val contentMaxWidth = ResponsiveDimensions.contentMaxWidth()
+            val widthModifier = if (contentMaxWidth != null) {
+                Modifier.widthIn(max = contentMaxWidth).fillMaxWidth()
+            } else {
+                Modifier.fillMaxWidth()
+            }
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 88.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 // Active Cycle Section
                 if (activeCycle != null) {
                     item {
-                        ActiveCycleCard(
-                            cycle = activeCycle!!,
-                            progress = cycleProgress[activeCycle!!.id],
-                            routines = allRoutines,
-                            missingTrainingMaxes = missingTrainingMaxes,
-                            onSetTrainingMaxes = {
-                                activeCycle?.let { cycle ->
-                                    val missing = missingTrainingMaxes
-                                    scope.launch {
-                                        trainingMaxRepair = TrainingMaxRepair(
-                                            profileId = cycle.profileId,
-                                            exerciseByName = missing.associate { lift ->
-                                                lift.exerciseName to exerciseRepository.findByIdOrName(lift.exerciseId, lift.exerciseName)
-                                            },
+                        Box(modifier = widthModifier) {
+                            ActiveCycleCard(
+                                cycle = activeCycle!!,
+                                progress = cycleProgress[activeCycle!!.id],
+                                routines = allRoutines,
+                                missingTrainingMaxes = missingTrainingMaxes,
+                                onSetTrainingMaxes = {
+                                    activeCycle?.let { cycle ->
+                                        val missing = missingTrainingMaxes
+                                        scope.launch {
+                                            trainingMaxRepair = TrainingMaxRepair(
+                                                profileId = cycle.profileId,
+                                                exerciseByName = missing.associate { lift ->
+                                                    lift.exerciseName to exerciseRepository.findByIdOrName(lift.exerciseId, lift.exerciseName)
+                                                },
+                                            )
+                                        }
+                                    }
+                                },
+                                selectedDayNumber = selectedDayNumber,
+                                onDaySelected = { dayNumber ->
+                                    selectedDayNumber = dayNumber
+                                },
+                                onStartWorkout = { routineId, cycleId, dayNumber ->
+                                    routineId?.let { rid ->
+                                        val routine = allRoutines.find { it.id == rid } ?: return@let
+                                        routineResume.launchCycleRoutine(
+                                            routine = routine,
+                                            cycleId = cycleId,
+                                            dayNumber = dayNumber,
                                         )
                                     }
-                                }
-                            },
-                            selectedDayNumber = selectedDayNumber,
-                            onDaySelected = { dayNumber ->
-                                selectedDayNumber = dayNumber
-                            },
-                            onStartWorkout = { routineId, cycleId, dayNumber ->
-                                routineId?.let { rid ->
-                                    val routine = allRoutines.find { it.id == rid } ?: return@let
-                                    routineResume.launchCycleRoutine(
-                                        routine = routine,
-                                        cycleId = cycleId,
-                                        dayNumber = dayNumber,
-                                    )
-                                }
-                            },
-                            onAdvanceDay = {
-                                scope.launch {
-                                    val activeId = activeCycle!!.id
-                                    cycleRepository.advanceToNextDay(activeId)
-                                    cycleRepository.getCycleProgress(activeId)?.let { updated ->
-                                        cycleProgress = cycleProgress.toMutableMap().apply {
-                                            this[activeId] = updated
+                                },
+                                onAdvanceDay = {
+                                    scope.launch {
+                                        val activeId = activeCycle!!.id
+                                        cycleRepository.advanceToNextDay(activeId)
+                                        cycleRepository.getCycleProgress(activeId)?.let { updated ->
+                                            cycleProgress = cycleProgress.toMutableMap().apply {
+                                                this[activeId] = updated
+                                            }
+                                            selectedDayNumber = updated.currentDayNumber
                                         }
-                                        selectedDayNumber = updated.currentDayNumber
                                     }
-                                }
-                            },
-                            onJumpToDay = { dayNumber ->
-                                scope.launch {
-                                    val activeId = activeCycle!!.id
-                                    cycleRepository.jumpToDay(activeId, dayNumber)
-                                    cycleRepository.getCycleProgress(activeId)?.let { updated ->
-                                        cycleProgress = cycleProgress.toMutableMap().apply {
-                                            this[activeId] = updated
+                                },
+                                onJumpToDay = { dayNumber ->
+                                    scope.launch {
+                                        val activeId = activeCycle!!.id
+                                        cycleRepository.jumpToDay(activeId, dayNumber)
+                                        cycleRepository.getCycleProgress(activeId)?.let { updated ->
+                                            cycleProgress = cycleProgress.toMutableMap().apply {
+                                                this[activeId] = updated
+                                            }
+                                            selectedDayNumber = updated.currentDayNumber
                                         }
-                                        selectedDayNumber = updated.currentDayNumber
                                     }
-                                }
-                            },
-                            onEditCycle = {
-                                navController.navigate(NavigationRoutes.CycleEditor.createRoute(activeCycle!!.id))
-                            },
-                        )
+                                },
+                                onEditCycle = {
+                                    navController.navigate(NavigationRoutes.CycleEditor.createRoute(activeCycle!!.id))
+                                },
+                            )
+                        }
                     }
                 }
 
                 // All Cycles Header
                 item {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = widthModifier,
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            text = "All Cycles",
+                            text = stringResource(Res.string.cycles_all_cycles),
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface,
@@ -488,28 +481,30 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel)
 
                 // Cycle List
                 items(cycles, key = { it.id }) { cycle ->
-                    CycleListItem(
-                        cycle = cycle,
-                        progress = cycleProgress[cycle.id],
-                        routines = allRoutines,
-                        isActive = cycle.id == activeCycle?.id,
-                        onActivate = {
-                            scope.launch {
-                                cycleRepository.setActiveCycle(cycle.id, profileId)
-                            }
-                        },
-                        onDeactivate = {
-                            scope.launch {
-                                cycleRepository.clearActiveCycle(profileId)
-                            }
-                        },
-                        onEdit = {
-                            navController.navigate(NavigationRoutes.CycleEditor.createRoute(cycle.id))
-                        },
-                        onDelete = {
-                            showDeleteConfirmDialog = cycle
-                        },
-                    )
+                    Box(modifier = widthModifier) {
+                        CycleListItem(
+                            cycle = cycle,
+                            progress = cycleProgress[cycle.id],
+                            routines = allRoutines,
+                            isActive = cycle.id == activeCycle?.id,
+                            onActivate = {
+                                scope.launch {
+                                    cycleRepository.setActiveCycle(cycle.id, profileId)
+                                }
+                            },
+                            onDeactivate = {
+                                scope.launch {
+                                    cycleRepository.clearActiveCycle(profileId)
+                                }
+                            },
+                            onEdit = {
+                                navController.navigate(NavigationRoutes.CycleEditor.createRoute(cycle.id))
+                            },
+                            onDelete = {
+                                showDeleteConfirmDialog = cycle
+                            },
+                        )
+                    }
                 }
             }
         }
@@ -576,9 +571,10 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel)
                             )
                         ) {
                             is CycleOneRepMaxNormalization.Invalid -> {
-                                showErrorDialog =
-                                    "Validation failed: Couldn't save 1RM for ${normalization.exerciseName}. " +
-                                        "Exercise cable metadata is unavailable; review the value and try again."
+                                showErrorDialog = getString(
+                                    Res.string.cycles_validation_failed,
+                                    normalization.exerciseName,
+                                )
                             }
 
                             is CycleOneRepMaxNormalization.Valid -> {
@@ -600,7 +596,10 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel)
                     } catch (e: CancellationException) {
                         throw e
                     } catch (failure: Exception) {
-                        showErrorDialog = "Failed to save 1RM: ${failure.message ?: "An unexpected error occurred."}"
+                        showErrorDialog = getString(
+                            Res.string.cycles_save_1rm_failed,
+                            failure.message ?: getString(Res.string.cycles_unexpected_error),
+                        )
                     }
                 }
             },
@@ -742,9 +741,10 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel)
                                         // Keep the user on the input page and reject the entire
                                         // submission rather than persisting a partial baseline map.
                                         if (creationSubmissionGate.isCurrent(submissionToken)) {
-                                            showErrorDialog =
-                                                "Validation failed: Couldn't save 1RM for ${normalization.exerciseName}. " +
-                                                    "Exercise cable metadata is unavailable; review the value and try again."
+                                            showErrorDialog = getString(
+                                                Res.string.cycles_validation_failed,
+                                                normalization.exerciseName,
+                                            )
                                         }
                                     }
 
@@ -773,8 +773,10 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel)
                                 return@launch
                             } catch (failure: Exception) {
                                 if (creationSubmissionGate.isCurrent(submissionToken)) {
-                                    showErrorDialog =
-                                        "Failed to save 1RM: ${failure.message ?: "An unexpected error occurred."}"
+                                    showErrorDialog = getString(
+                                        Res.string.cycles_save_1rm_failed,
+                                        failure.message ?: getString(Res.string.cycles_unexpected_error),
+                                    )
                                 }
                             }
                             finally {
@@ -839,7 +841,10 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel)
                         } catch (e: Exception) {
                             Logger.e(e) { "Failed to create cycle from template" }
                             creationState = CycleCreationState.Idle
-                            showErrorDialog = "Failed to create training cycle: ${e.message ?: "An unexpected error occurred."}"
+                            showErrorDialog = getString(
+                                Res.string.cycles_create_failed,
+                                e.message ?: getString(Res.string.cycles_unexpected_error),
+                            )
                         }
                     }
                 },
@@ -881,12 +886,9 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel)
                     tint = MaterialTheme.colorScheme.tertiary,
                 )
             },
-            title = { Text("Cycle changed on another device") },
+            title = { Text(stringResource(Res.string.cycles_conflict_title)) },
             text = {
-                Text(
-                    "The server version of “${draft.cycle.name}” was newer. " +
-                        "Your local version is preserved and can be saved as a separate inactive cycle.",
-                )
+                Text(stringResource(Res.string.cycles_conflict_message, draft.cycle.name))
             },
             confirmButton = {
                 TextButton(
@@ -897,7 +899,7 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel)
                         }
                     },
                 ) {
-                    Text("Save local copy")
+                    Text(stringResource(Res.string.cycles_save_local_copy))
                 }
             },
             dismissButton = {
@@ -909,7 +911,7 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel)
                         }
                     },
                 ) {
-                    Text("Keep server version")
+                    Text(stringResource(Res.string.cycles_keep_server_version))
                 }
             },
         )
@@ -930,7 +932,7 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel)
             text = {
                 Column {
                     Text(
-                        "The cycle was created, but the following exercises weren't found in your library:",
+                        stringResource(Res.string.cycles_warnings_header),
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     Spacer(modifier = Modifier.height(8.dp))
@@ -943,7 +945,7 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel)
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        "You may need to add these exercises or update the routines manually.",
+                        stringResource(Res.string.cycles_warnings_footer),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -994,8 +996,8 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel)
         onNavigateSetReady = {
             navController.navigate(NavigationRoutes.SetReady.route)
         },
-        onConnectionFailed = { snackbarHostState.showSnackbar(CONNECTION_FAILED_MESSAGE) },
-        onWorkoutLoadFailed = { snackbarHostState.showSnackbar(WORKOUT_LOAD_FAILED_MESSAGE) },
+        onConnectionFailed = { snackbarHostState.showSnackbar(getString(Res.string.cycles_connection_failed_message)) },
+        onWorkoutLoadFailed = { snackbarHostState.showSnackbar(getString(Res.string.cycles_missing_routine_message)) },
     )
 }
 
@@ -1114,7 +1116,9 @@ private fun ActiveCycleCard(
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        if (isViewingCurrentDay) "UP NEXT" else "PREVIEWING",
+                        stringResource(
+                            if (isViewingCurrentDay) Res.string.cycles_up_next else Res.string.cycles_previewing,
+                        ),
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary,
@@ -1126,7 +1130,7 @@ private fun ActiveCycleCard(
                     shape = MaterialTheme.shapes.extraSmall,
                 ) {
                     Text(
-                        "Day $displayedDayNumber of ${cycle.days.size}",
+                        stringResource(Res.string.cycles_day_of, displayedDayNumber, cycle.days.size),
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -1138,7 +1142,7 @@ private fun ActiveCycleCard(
 
             // Day name and routine
             Text(
-                displayedCycleDay?.name ?: "Day $displayedDayNumber",
+                displayedCycleDay?.name ?: stringResource(Res.string.cycles_day_numbered, displayedDayNumber),
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
@@ -1155,7 +1159,7 @@ private fun ActiveCycleCard(
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        "Rest Day - Take it easy!",
+                        stringResource(Res.string.cycles_rest_day_message),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -1168,10 +1172,11 @@ private fun ActiveCycleCard(
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
                 )
                 Text(
-                    routine.exercises.joinToString(", ") { it.exercise.name }.take(50) +
-                        if (routine.exercises.size > 3) "..." else "",
+                    text = routine.exercises.joinToString(", ") { it.exercise.name },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                 )
             } else if (isUnassignedWorkout) {
                 Spacer(Modifier.height(8.dp))
@@ -1184,7 +1189,7 @@ private fun ActiveCycleCard(
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        "No routine assigned",
+                        stringResource(Res.string.home_no_routine_assigned),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -1202,7 +1207,7 @@ private fun ActiveCycleCard(
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        "Routine data missing — edit the cycle to reassign it",
+                        stringResource(Res.string.cycles_routine_data_missing),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.error,
                     )
@@ -1371,7 +1376,7 @@ private fun CycleListItem(
                                 shape = RoundedCornerShape(4.dp),
                             ) {
                                 Text(
-                                    "ACTIVE",
+                                    stringResource(Res.string.cycles_active_badge),
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onPrimary,
@@ -1382,9 +1387,15 @@ private fun CycleListItem(
 
                     Spacer(Modifier.height(4.dp))
 
+                    val dayCountLabel = if (cycle.days.size == 1) {
+                        stringResource(Res.string.day_count_one)
+                    } else {
+                        stringResource(Res.string.day_count_other, cycle.days.size)
+                    }
                     Text(
-                        "${cycle.days.size} days" +
-                            (progress?.let { " - Day ${it.currentDayNumber}" } ?: ""),
+                        progress?.let {
+                            stringResource(Res.string.cycles_day_progress_suffix, dayCountLabel, it.currentDayNumber)
+                        } ?: dayCountLabel,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -1441,7 +1452,7 @@ private fun CycleListItem(
                                 Spacer(Modifier.width(12.dp))
                                 Column {
                                     Text(
-                                        day.name ?: "Day ${day.dayNumber}",
+                                        day.name ?: stringResource(Res.string.cycles_day_numbered, day.dayNumber),
                                         style = MaterialTheme.typography.bodyMedium,
                                         fontWeight = FontWeight.Medium,
                                     )
@@ -1453,7 +1464,7 @@ private fun CycleListItem(
                                         )
                                     } else if (day.isRestDay) {
                                         Text(
-                                            "Rest",
+                                            stringResource(Res.string.cycles_rest_badge),
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
@@ -1467,73 +1478,155 @@ private fun CycleListItem(
                     HorizontalDivider()
                     Spacer(Modifier.height(12.dp))
 
-                    // Action buttons - use filled tonal for visibility
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        // Show Activate or Deactivate based on current state
-                        FilledTonalButton(
-                            onClick = if (isActive) onDeactivate else onActivate,
-                            modifier = Modifier.weight(1f),
-                            shape = MaterialTheme.shapes.extraSmall,
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
-                            colors = ButtonDefaults.filledTonalButtonColors(
-                                containerColor = if (isActive) {
-                                    MaterialTheme.colorScheme.surfaceVariant
-                                } else {
-                                    MaterialTheme.colorScheme.primaryContainer
-                                },
-                                contentColor = if (isActive) {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                } else {
-                                    MaterialTheme.colorScheme.onPrimaryContainer
-                                },
-                            ),
+                    // Action buttons - use FlowRow when compact/scaled so text never clips
+                    val compactActions = isCompactAccessibilityLayout()
+                    @OptIn(ExperimentalLayoutApi::class)
+                    if (compactActions) {
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            Icon(
-                                if (isActive) Icons.Default.Cancel else Icons.Default.CheckCircle,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                            )
-                            Spacer(Modifier.width(4.dp))
-                            Text(if (isActive) "Deactivate" else "Activate", maxLines = 1)
+                            FilledTonalButton(
+                                onClick = if (isActive) onDeactivate else onActivate,
+                                modifier = Modifier.heightIn(min = 48.dp),
+                                shape = MaterialTheme.shapes.extraSmall,
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = if (isActive) {
+                                        MaterialTheme.colorScheme.surfaceVariant
+                                    } else {
+                                        MaterialTheme.colorScheme.primaryContainer
+                                    },
+                                    contentColor = if (isActive) {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    } else {
+                                        MaterialTheme.colorScheme.onPrimaryContainer
+                                    },
+                                ),
+                            ) {
+                                Icon(
+                                    if (isActive) Icons.Default.Cancel else Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    stringResource(
+                                        if (isActive) Res.string.cycles_deactivate else Res.string.cycles_activate,
+                                    ),
+                                )
+                            }
+                            FilledTonalButton(
+                                onClick = onEdit,
+                                modifier = Modifier.heightIn(min = 48.dp),
+                                shape = MaterialTheme.shapes.extraSmall,
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                ),
+                            ) {
+                                Icon(
+                                    Icons.Default.Edit,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(stringResource(Res.string.action_edit))
+                            }
+                            FilledTonalButton(
+                                onClick = onDelete,
+                                modifier = Modifier.heightIn(min = 48.dp),
+                                shape = MaterialTheme.shapes.extraSmall,
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                                ),
+                            ) {
+                                Icon(
+                                    Icons.Default.Delete,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(stringResource(Res.string.action_delete))
+                            }
                         }
-                        FilledTonalButton(
-                            onClick = onEdit,
-                            modifier = Modifier.weight(1f),
-                            shape = MaterialTheme.shapes.extraSmall,
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
-                            colors = ButtonDefaults.filledTonalButtonColors(
-                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                            ),
+                    } else {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            Icon(
-                                Icons.Default.Edit,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                            )
-                            Spacer(Modifier.width(4.dp))
-                            Text(stringResource(Res.string.action_edit), maxLines = 1)
-                        }
-                        FilledTonalButton(
-                            onClick = onDelete,
-                            modifier = Modifier.weight(1f),
-                            shape = MaterialTheme.shapes.extraSmall,
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
-                            colors = ButtonDefaults.filledTonalButtonColors(
-                                containerColor = MaterialTheme.colorScheme.errorContainer,
-                                contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                            ),
-                        ) {
-                            Icon(
-                                Icons.Default.Delete,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                            )
-                            Spacer(Modifier.width(4.dp))
-                            Text(stringResource(Res.string.action_delete), maxLines = 1)
+                            // Show Activate or Deactivate based on current state
+                            FilledTonalButton(
+                                onClick = if (isActive) onDeactivate else onActivate,
+                                modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                                shape = MaterialTheme.shapes.extraSmall,
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = if (isActive) {
+                                        MaterialTheme.colorScheme.surfaceVariant
+                                    } else {
+                                        MaterialTheme.colorScheme.primaryContainer
+                                    },
+                                    contentColor = if (isActive) {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    } else {
+                                        MaterialTheme.colorScheme.onPrimaryContainer
+                                    },
+                                ),
+                            ) {
+                                Icon(
+                                    if (isActive) Icons.Default.Cancel else Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    stringResource(
+                                        if (isActive) Res.string.cycles_deactivate else Res.string.cycles_activate,
+                                    ),
+                                    maxLines = 1,
+                                )
+                            }
+                            FilledTonalButton(
+                                onClick = onEdit,
+                                modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                                shape = MaterialTheme.shapes.extraSmall,
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                ),
+                            ) {
+                                Icon(
+                                    Icons.Default.Edit,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(stringResource(Res.string.action_edit), maxLines = 1)
+                            }
+                            FilledTonalButton(
+                                onClick = onDelete,
+                                modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                                shape = MaterialTheme.shapes.extraSmall,
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                                ),
+                            ) {
+                                Icon(
+                                    Icons.Default.Delete,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(stringResource(Res.string.action_delete), maxLines = 1)
+                            }
                         }
                     }
                 }

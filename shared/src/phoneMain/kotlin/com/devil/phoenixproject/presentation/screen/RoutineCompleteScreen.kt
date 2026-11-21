@@ -18,7 +18,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
+import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
 import com.devil.phoenixproject.ui.theme.ExpressiveMotion
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.celebrationBackgroundBrush
@@ -124,7 +126,16 @@ fun RoutineCompleteScreen(
         // Max-height column with exactly one weighted vertical-scroll sibling for
         // the celebration body plus a sibling footer. No requiredHeight, no fixed
         // spacers to "make room", no text shrinking, no animation-delay tweaks.
-        Column(modifier = Modifier.fillMaxSize()) {
+        val contentMaxWidth = ResponsiveDimensions.contentMaxWidth()
+        val widthConstraint = if (contentMaxWidth != null) {
+            Modifier.widthIn(max = contentMaxWidth)
+        } else {
+            Modifier
+        }
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
             // Celebration/stats body: the sole scroll region. Content may wrap and
             // scroll on short/narrow roots; it can never take height from the footer.
             Column(
@@ -155,7 +166,7 @@ fun RoutineCompleteScreen(
                     ) {
                         Icon(
                             Icons.Default.EmojiEvents,
-                            "Trophy",
+                            stringResource(Res.string.cd_trophy),
                             modifier = Modifier.size(80.dp),
                             tint = MaterialTheme.colorScheme.onPrimary,
                         )
@@ -168,18 +179,23 @@ fun RoutineCompleteScreen(
                     enter = if (reduceMotion) EnterTransition.None
                             else scaleIn(animationSpec = ExpressiveMotion.SpringBouncy) + fadeIn(),
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Column(
+                        modifier = widthConstraint.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
                         Text(
-                            "ROUTINE COMPLETE!",
+                            stringResource(Res.string.routine_complete_banner),
                             style = MaterialTheme.typography.headlineLarge,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary,
+                            textAlign = TextAlign.Center,
                         )
                         Spacer(Modifier.height(Spacing.small))
                         Text(
                             completeState.routineName,
                             style = MaterialTheme.typography.titleLarge,
                             color = MaterialTheme.colorScheme.onSurface,
+                            textAlign = TextAlign.Center,
                         )
                     }
                 }
@@ -191,7 +207,7 @@ fun RoutineCompleteScreen(
                             else scaleIn(animationSpec = ExpressiveMotion.SpringBouncy) + fadeIn(),
                 ) {
                     Card(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = widthConstraint.fillMaxWidth(),
                         shape = MaterialTheme.shapes.medium,
                         colors = CardDefaults.cardColors(
                             containerColor = MaterialTheme.colorScheme.surface,
@@ -215,19 +231,19 @@ fun RoutineCompleteScreen(
                                     StatItem(
                                         icon = Icons.Default.FitnessCenter,
                                         value = "${completeState.totalExercises}",
-                                        label = "Exercises",
+                                        label = stringResource(Res.string.routine_complete_exercises_label),
                                         modifier = Modifier.fillMaxWidth(),
                                     )
                                     StatItem(
                                         icon = Icons.Default.Repeat,
                                         value = "${completeState.totalSets}",
-                                        label = "Sets",
+                                        label = stringResource(Res.string.insights_col_sets),
                                         modifier = Modifier.fillMaxWidth(),
                                     )
                                     StatItem(
                                         icon = Icons.Default.Timer,
                                         value = durationFormatted,
-                                        label = "Duration",
+                                        label = stringResource(Res.string.label_duration),
                                         modifier = Modifier.fillMaxWidth(),
                                     )
                                 }
@@ -239,19 +255,19 @@ fun RoutineCompleteScreen(
                                     StatItem(
                                         icon = Icons.Default.FitnessCenter,
                                         value = "${completeState.totalExercises}",
-                                        label = "Exercises",
+                                        label = stringResource(Res.string.routine_complete_exercises_label),
                                         modifier = Modifier.weight(1f),
                                     )
                                     StatItem(
                                         icon = Icons.Default.Repeat,
                                         value = "${completeState.totalSets}",
-                                        label = "Sets",
+                                        label = stringResource(Res.string.insights_col_sets),
                                         modifier = Modifier.weight(1f),
                                     )
                                     StatItem(
                                         icon = Icons.Default.Timer,
                                         value = durationFormatted,
-                                        label = "Duration",
+                                        label = stringResource(Res.string.label_duration),
                                         modifier = Modifier.weight(1f),
                                     )
                                 }
@@ -269,7 +285,7 @@ fun RoutineCompleteScreen(
                 SessionHeartRateCard(
                     sessionId = lastRecordedSessionId,
                     session = latestCompletedSession,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = widthConstraint.fillMaxWidth(),
                     hrmBleManager = hrmBleManager,
                     workoutRepository = viewModel.workoutRepository,
                 )
@@ -286,11 +302,11 @@ fun RoutineCompleteScreen(
                     viewModel.exitRoutineFlow()
                     navController.safePopOrNavigate(dest)
                 },
-                modifier = Modifier
+                modifier = widthConstraint
                     .fillMaxWidth()
                     .padding(horizontal = Spacing.extraLarge)
                     .padding(top = Spacing.medium, bottom = Spacing.extraLarge)
-                    .height(56.dp),
+                    .defaultMinSize(minHeight = 56.dp),
                 shape = MaterialTheme.shapes.medium,
             ) {
                 Text(stringResource(Res.string.label_done), fontWeight = FontWeight.Bold)

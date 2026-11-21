@@ -18,7 +18,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -35,7 +34,9 @@ import com.devil.phoenixproject.domain.usecase.estimatedOneRepMaxPerCableOrNull
 import com.devil.phoenixproject.presentation.components.charts.ProgressionLineChart
 import com.devil.phoenixproject.presentation.components.charts.VolumeTrendChart
 import com.devil.phoenixproject.presentation.util.DurationFormatter
+import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
 import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
+import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.Spacing
@@ -214,11 +215,18 @@ fun ExerciseDetailScreen(
             .fillMaxSize()
             .background(backgroundGradient),
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
+        val contentMaxWidth = ResponsiveDimensions.contentMaxWidth()
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.TopCenter,
+        ) {
             LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = Spacing.medium),
+                modifier = if (contentMaxWidth != null) {
+                    Modifier.widthIn(max = contentMaxWidth).fillMaxSize()
+                } else {
+                    Modifier.fillMaxSize()
+                },
+                contentPadding = PaddingValues(horizontal = Spacing.medium, vertical = Spacing.medium),
                 verticalArrangement = Arrangement.spacedBy(Spacing.medium),
             ) {
                 // Exercise name hero title — shimmer while resolving from repository
@@ -376,9 +384,8 @@ private fun OneRepMaxCard(
     }
 
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .shadow(8.dp, MaterialTheme.shapes.medium),
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.primaryContainer,
         ),
@@ -528,17 +535,35 @@ private fun ProgressionChartCard(data: List<Pair<Long, Float>>, weightUnit: Weig
             Spacer(Modifier.height(12.dp))
 
             // Time range selector
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                TimeRange.entries.forEach { range ->
-                    FilterChip(
-                        selected = selectedTimeRange == range,
-                        onClick = { selectedTimeRange = range },
-                        label = { Text(range.label) },
-                        modifier = Modifier.weight(1f),
-                    )
+            val useCompact = isCompactAccessibilityLayout()
+            if (useCompact) {
+                @OptIn(ExperimentalLayoutApi::class)
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    TimeRange.entries.forEach { range ->
+                        FilterChip(
+                            selected = selectedTimeRange == range,
+                            onClick = { selectedTimeRange = range },
+                            label = { Text(range.label) },
+                        )
+                    }
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    TimeRange.entries.forEach { range ->
+                        FilterChip(
+                            selected = selectedTimeRange == range,
+                            onClick = { selectedTimeRange = range },
+                            label = { Text(range.label) },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
                 }
             }
         }
@@ -698,6 +723,7 @@ private fun ExerciseHistoryTable(
                     .fillMaxWidth()
                     .horizontalScroll(scrollState),
             ) {
+                val weightUnitLabel = if (weightUnit == WeightUnit.LB) "lbs" else "kg"
                 // Header row
                 Row(
                     modifier = Modifier
@@ -709,10 +735,10 @@ private fun ExerciseHistoryTable(
                         .padding(horizontal = 12.dp, vertical = 10.dp),
                 ) {
                     TableHeaderCell("Date", Modifier.weight(1.5f))
-                    TableHeaderCell("Weight", Modifier.weight(1f))
+                    TableHeaderCell("Weight ($weightUnitLabel)", Modifier.weight(1f))
                     TableHeaderCell("Reps", Modifier.weight(0.7f))
-                    TableHeaderCell("Volume", Modifier.weight(1f))
-                    TableHeaderCell("1RM", Modifier.weight(1f))
+                    TableHeaderCell("Volume ($weightUnitLabel)", Modifier.weight(1f))
+                    TableHeaderCell("1RM ($weightUnitLabel)", Modifier.weight(1f))
                     TableHeaderCell("Mode", Modifier.weight(1f))
                 }
 

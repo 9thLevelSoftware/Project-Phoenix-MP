@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -26,6 +27,7 @@ import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.presentation.components.*
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
+import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
 import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
 import com.devil.phoenixproject.presentation.util.WindowHeightSizeClass
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
@@ -66,42 +68,60 @@ private fun ProgressTab(
     var pendingDelete by remember { mutableStateOf<PersonalRecord?>(null) }
     var deletingRecord by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val contentMaxWidth = ResponsiveDimensions.contentMaxWidth()
+    val widthModifier = if (contentMaxWidth != null) {
+        Modifier.widthIn(max = contentMaxWidth).fillMaxWidth()
+    } else {
+        Modifier.fillMaxWidth()
+    }
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(Spacing.medium),
+            .background(MaterialTheme.colorScheme.background),
+        contentPadding = PaddingValues(
+            start = Spacing.medium,
+            end = Spacing.medium,
+            top = Spacing.medium,
+            bottom = 96.dp, // Clear floating Share FAB
+        ),
+        horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(Spacing.medium),
     ) {
         item {
-            Text(
-                stringResource(Res.string.analytics_progress),
-                style = MaterialTheme.typography.headlineLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-                fontWeight = FontWeight.Bold,
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = stringResource(Res.string.analytics_progress_subtitle),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Column(modifier = widthModifier) {
+                Text(
+                    stringResource(Res.string.analytics_progress),
+                    style = MaterialTheme.typography.headlineLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.Bold,
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = stringResource(Res.string.analytics_progress_subtitle),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
 
         // Lifetime Stats Card at the top
         item {
-            LifetimeStatsCard(
-                workoutSessions = workoutSessions,
-                exerciseRepository = exerciseRepository,
-                weightUnit = weightUnit,
-            )
+            Box(modifier = widthModifier) {
+                LifetimeStatsCard(
+                    workoutSessions = workoutSessions,
+                    exerciseRepository = exerciseRepository,
+                    weightUnit = weightUnit,
+                )
+            }
         }
 
         // Workout Mode Distribution Card
         item {
-            WorkoutModeDistributionCard(
-                workoutSessions = workoutSessions,
-            )
+            Box(modifier = widthModifier) {
+                WorkoutModeDistributionCard(
+                    workoutSessions = workoutSessions,
+                )
+            }
         }
 
         // Strength Assessment entry point
@@ -109,7 +129,7 @@ private fun ProgressTab(
             ExpressiveCard(
                 onClick = onNavigateToStrengthAssessment,
                 enabled = assessmentEnabled,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = widthModifier,
             ) {
                 Row(
                     modifier = Modifier
@@ -152,16 +172,19 @@ private fun ProgressTab(
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onSurface,
                 fontWeight = FontWeight.Bold,
+                modifier = widthModifier,
             )
         }
 
         if (personalRecords.isEmpty()) {
             item {
-                EmptyState(
-                    icon = Icons.AutoMirrored.Filled.TrendingUp,
-                    title = stringResource(Res.string.analytics_no_prs_title),
-                    message = stringResource(Res.string.analytics_no_prs_message),
-                )
+                Box(modifier = widthModifier) {
+                    EmptyState(
+                        icon = Icons.AutoMirrored.Filled.TrendingUp,
+                        title = stringResource(Res.string.analytics_no_prs_title),
+                        message = stringResource(Res.string.analytics_no_prs_message),
+                    )
+                }
             }
         } else {
             // Group PRs by workout mode for organized display
@@ -176,9 +199,7 @@ private fun ProgressTab(
                 // Mode header
                 item(key = "mode_header_$mode") {
                     Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 8.dp),
+                        modifier = widthModifier.padding(top = 8.dp),
                         color = MaterialTheme.colorScheme.primaryContainer,
                         shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp),
                     ) {
@@ -192,9 +213,10 @@ private fun ProgressTab(
                     }
                 }
 
-                // PRs for this mode
-                items(modePRs, key = { it.id }) { pr ->
+                // PRs for this mode (round bottom corners on the last card in each group)
+                itemsIndexed(modePRs, key = { _, pr -> pr.id }) { index, pr ->
                     var exerciseName by remember(pr.exerciseId) { mutableStateOf("Loading...") }
+                    val isLastInGroup = index == modePRs.lastIndex
 
                     LaunchedEffect(pr.exerciseId) {
                         val exercise = exerciseRepository.getExerciseById(pr.exerciseId)
@@ -202,13 +224,15 @@ private fun ProgressTab(
                     }
 
                     Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onNavigateToExerciseDetail(pr.exerciseId) },
+                        modifier = widthModifier.clickable { onNavigateToExerciseDetail(pr.exerciseId) },
                         colors = CardDefaults.cardColors(
                             containerColor = MaterialTheme.colorScheme.surfaceContainer,
                         ),
-                        shape = RoundedCornerShape(0.dp), // Flat edges for grouped look
+                        shape = if (isLastInGroup) {
+                            RoundedCornerShape(bottomStart = 12.dp, bottomEnd = 12.dp)
+                        } else {
+                            RoundedCornerShape(0.dp)
+                        },
                     ) {
                         Row(
                             modifier = Modifier
@@ -250,6 +274,7 @@ private fun ProgressTab(
                             IconButton(
                                 onClick = { pendingDelete = pr },
                                 enabled = !deletingRecord,
+                                modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Delete,
@@ -265,11 +290,6 @@ private fun ProgressTab(
                     Spacer(modifier = Modifier.height(8.dp))
                 }
             }
-        }
-
-        // Bottom padding for FAB
-        item {
-            Spacer(modifier = Modifier.height(80.dp))
         }
     }
 
@@ -607,6 +627,22 @@ fun AnalyticsScreen(
                 modifier = Modifier.size(fabIconSize), // Material 3 Expressive: Responsive icon size
             )
         }
+
+        // Export result snackbar anchored inside the root container
+        exportMessage?.let { message ->
+            Snackbar(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(horizontal = 16.dp, vertical = 16.dp),
+                action = {
+                    TextButton(onClick = { exportMessage = null }) {
+                        Text(stringResource(Res.string.action_dismiss))
+                    }
+                },
+            ) {
+                Text(message)
+            }
+        }
     }
 
     // Hoist format templates for use in coroutine callbacks (not composable scope).
@@ -785,21 +821,6 @@ fun AnalyticsScreen(
                 }
             },
         )
-    }
-
-    // Export result snackbar
-    exportMessage?.let { message ->
-        Snackbar(
-            modifier = Modifier
-                .padding(16.dp),
-            action = {
-                TextButton(onClick = { exportMessage = null }) {
-                    Text(stringResource(Res.string.action_dismiss))
-                }
-            },
-        ) {
-            Text(message)
-        }
     }
 
     // CSV file picker for import

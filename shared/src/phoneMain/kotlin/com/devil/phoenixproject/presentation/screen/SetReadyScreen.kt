@@ -4,12 +4,15 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -60,6 +63,7 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.devil.phoenixproject.data.repository.ExerciseImageEntity
@@ -96,24 +100,8 @@ import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import com.devil.phoenixproject.util.CommandLimits
 import com.devil.phoenixproject.util.UnitConverter
 import org.jetbrains.compose.resources.stringResource
+import projectphoenix.shared.generated.resources.*
 import projectphoenix.shared.generated.resources.Res
-import projectphoenix.shared.generated.resources.action_cancel
-import projectphoenix.shared.generated.resources.action_exit
-import projectphoenix.shared.generated.resources.bodyweight_effective_load_includes
-import projectphoenix.shared.generated.resources.bodyweight_effective_load_more
-import projectphoenix.shared.generated.resources.cd_next
-import projectphoenix.shared.generated.resources.cd_previous
-import projectphoenix.shared.generated.resources.cd_stop
-import projectphoenix.shared.generated.resources.equipment_rack_save_override_confirm
-import projectphoenix.shared.generated.resources.equipment_rack_save_override_dismiss
-import projectphoenix.shared.generated.resources.equipment_rack_save_override_message
-import projectphoenix.shared.generated.resources.equipment_rack_save_override_title
-import projectphoenix.shared.generated.resources.exit_routine_message
-import projectphoenix.shared.generated.resources.exit_routine_title
-import projectphoenix.shared.generated.resources.set_type_warmup
-import projectphoenix.shared.generated.resources.set_type_working
-import projectphoenix.shared.generated.resources.target_reps
-import projectphoenix.shared.generated.resources.workout_teardown_finishing
 
 /**
  * Set Ready Screen - Focused view for a single exercise/set.
@@ -269,22 +257,57 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                 color = MaterialTheme.colorScheme.surfaceContainer,
                 tonalElevation = 3.dp,
             ) {
-                Column {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
                     WorkoutStartGateNotice(
                         state = machineTeardownState,
                         onRetry = { viewModel.retryWorkoutTeardown() },
                         onReconnect = { viewModel.reconnectWorkoutTeardown() },
-                        modifier = Modifier.padding(start = 16.dp, top = 12.dp, end = 16.dp),
                     )
-                    Row(
+                    // D-2: Dedicated full-width primary CTA so START / teardown status never crushes
+                    Button(
+                        onClick = {
+                            if (!startGate.startEnabled) return@Button
+                            viewModel.ensureConnection(
+                                onConnected = { viewModel.startSetFromReady() },
+                                onFailed = {},
+                            )
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .navigationBarsPadding()
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                            .heightIn(min = 52.dp),
+                        enabled = connectionState is ConnectionState.Connected && !bodyweightPromptPending &&
+                            startGate.startEnabled,
+                        shape = MaterialTheme.shapes.small,
+                    ) {
+                        Icon(
+                            Icons.Default.PlayArrow,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            if (startGate.label == StartGateLabel.FINISHING_PREVIOUS_WORKOUT) {
+                                stringResource(Res.string.workout_teardown_finishing)
+                            } else {
+                                stringResource(Res.string.set_ready_start)
+                            },
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    // D-2: Separated secondary bar — PREV/NEXT grouped on left, destructive STOP isolated on right
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        // PREV button - compact icon button
                         FilledTonalIconButton(
                             onClick = { viewModel.setReadyPrev() },
                             enabled = canGoPrev,
@@ -296,40 +319,6 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                             )
                         }
 
-                        // START SET button - primary action, takes most space
-                        Button(
-                            onClick = {
-                                if (!startGate.startEnabled) return@Button
-                                viewModel.ensureConnection(
-                                    onConnected = { viewModel.startSetFromReady() },
-                                    onFailed = {},
-                                )
-                            },
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(48.dp),
-                            enabled = connectionState is ConnectionState.Connected && !bodyweightPromptPending &&
-                                startGate.startEnabled,
-                            shape = MaterialTheme.shapes.small,
-                        ) {
-                            Icon(
-                                Icons.Default.PlayArrow,
-                                contentDescription = null,
-                                modifier = Modifier.size(20.dp),
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                if (startGate.label == StartGateLabel.FINISHING_PREVIOUS_WORKOUT) {
-                                    stringResource(Res.string.workout_teardown_finishing)
-                                } else {
-                                    "START"
-                                },
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1,
-                            )
-                        }
-
-                        // NEXT button - compact icon button
                         FilledTonalIconButton(
                             onClick = { viewModel.setReadySkip() },
                             enabled = canSkip,
@@ -341,7 +330,8 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                             )
                         }
 
-                        // STOP button - destructive action
+                        Spacer(Modifier.weight(1f))
+
                         FilledTonalIconButton(
                             onClick = { showStopConfirmation = true },
                             modifier = Modifier.size(48.dp),
@@ -372,7 +362,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                 .padding(padding)
                 .background(screenBackgroundBrush())
                 .verticalScroll(setReadyScrollState)
-                .padding(horizontal = 16.dp),
+                .padding(start = 16.dp, end = 16.dp, top = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             // Compact header - exercise, set picker, and mode/bodyweight context.
@@ -386,7 +376,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     // Issue #142: Display exercise name prominently
@@ -398,14 +388,22 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                         textAlign = TextAlign.Center,
                     )
                     Spacer(Modifier.height(4.dp))
-                    Row(
+                    @OptIn(ExperimentalLayoutApi::class)
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-                        verticalAlignment = Alignment.CenterVertically,
+                        verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
                     ) {
                         // Issue #541: Make "Set X of Y" a tappable set picker. The label is the
                         // dropdown anchor; tapping it opens a menu of every set index in the current
                         // exercise. Selecting an entry calls viewModel.enterSetReady(ex, pickedSet) which
                         // the engine layer already supports. Keep Role.DropdownList and descriptions.
+                        val setSelectorCd = stringResource(
+                            Res.string.set_ready_set_selector_cd,
+                            setReadyState.setIndex + 1,
+                            currentExercise.setReps.size,
+                        )
+                        val tapChooseSetDesc = stringResource(Res.string.set_ready_tap_choose_set)
                         ExposedDropdownMenuBox(
                             expanded = setPickerExpanded && currentExercise.setReps.size > 1,
                             onExpandedChange = { requested ->
@@ -417,8 +415,11 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                             },
                         ) {
                             Text(
-                                text = "Set ${setReadyState.setIndex + 1} of ${currentExercise.setReps.size}" +
-                                    if (currentExercise.setReps.size > 1) "  \u25BE" else "",
+                                text = stringResource(
+                                    Res.string.rest_set_of,
+                                    setReadyState.setIndex + 1,
+                                    currentExercise.setReps.size,
+                                ) + if (currentExercise.setReps.size > 1) "  \u25BE" else "",
                                 style = MaterialTheme.typography.labelLarge,
                                 fontWeight = FontWeight.Medium,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.9f),
@@ -426,11 +427,9 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                                     .menuAnchor()
                                     .semantics {
                                         role = Role.DropdownList
-                                        contentDescription = "Set selector, currently set " +
-                                            "${setReadyState.setIndex + 1} of " +
-                                            "${currentExercise.setReps.size}"
+                                        contentDescription = setSelectorCd
                                         if (currentExercise.setReps.size > 1) {
-                                            stateDescription = "Tap to choose a different set"
+                                            stateDescription = tapChooseSetDesc
                                         }
                                     },
                             )
@@ -442,8 +441,11 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                                     DropdownMenuItem(
                                         text = {
                                             Text(
-                                                "Set ${setIdx + 1}" +
-                                                    if (setIdx == setReadyState.setIndex) "  (current)" else "",
+                                                if (setIdx == setReadyState.setIndex) {
+                                                    stringResource(Res.string.set_ready_set_numbered_current, setIdx + 1)
+                                                } else {
+                                                    stringResource(Res.string.set_ready_set_numbered, setIdx + 1)
+                                                },
                                                 style = MaterialTheme.typography.bodyMedium,
                                             )
                                         },
@@ -462,8 +464,9 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                         }
                         Text(
                             text = if (isBodyweight) {
-                                val durationText = currentExercise.duration?.let { "${it}s" } ?: "Timed"
-                                "Bodyweight • $durationText"
+                                val durationText = currentExercise.duration?.let { "${it}s" }
+                                    ?: stringResource(Res.string.set_ready_timed)
+                                stringResource(Res.string.set_ready_bodyweight_header, durationText)
                             } else {
                                 currentExercise.programMode.displayName
                             },
@@ -533,7 +536,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                                 .padding(Spacing.medium),
                         ) {
                             Text(
-                                "Exercise Variant",
+                                stringResource(Res.string.set_ready_exercise_variant),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -560,7 +563,11 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                                         DropdownMenuItem(
                                             text = {
                                                 Text(
-                                                    "${variant.label} (${(variant.percentage * 100).toInt()}%)",
+                                                    stringResource(
+                                                        Res.string.bodyweight_variant_percent,
+                                                        variant.label,
+                                                        (variant.percentage * 100).toInt(),
+                                                    ),
                                                     style = MaterialTheme.typography.bodyMedium,
                                                 )
                                             },
@@ -580,9 +587,9 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                                     counterweightKg = currentRackLoadAdjustment.counterweightKg,
                                 )
                                 val displayWeight = if (weightUnit == WeightUnit.KG) {
-                                    "${com.devil.phoenixproject.util.UnitConverter.formatDecimal(effectiveKg)} kg"
+                                    "${com.devil.phoenixproject.util.UnitConverter.formatDecimal(effectiveKg)} ${stringResource(Res.string.label_kg)}"
                                 } else {
-                                    "${com.devil.phoenixproject.util.UnitConverter.formatDecimal(com.devil.phoenixproject.util.UnitConverter.kgToLb(effectiveKg))} lb"
+                                    "${com.devil.phoenixproject.util.UnitConverter.formatDecimal(com.devil.phoenixproject.util.UnitConverter.kgToLb(effectiveKg))} ${stringResource(Res.string.label_lb)}"
                                 }
                                 val rackLoadContributionSummary = formatRackLoadContributionSummary(
                                     contributions = currentRackLoadAdjustment.loadContributions,
@@ -592,7 +599,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                                 )
                                 Spacer(Modifier.height(4.dp))
                                 Text(
-                                    "Effective load: $displayWeight",
+                                    stringResource(Res.string.bodyweight_effective_load, displayWeight),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.primary,
                                 )
@@ -677,7 +684,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                                     },
                                     valueRange = 1f..50f,
                                     step = 1f,
-                                    label = "Target Reps",
+                                    label = stringResource(Res.string.target_reps),
                                     formatValue = { it.toInt().toString() },
                                 )
                             } else {
@@ -686,9 +693,13 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    Text(stringResource(Res.string.target_reps), style = MaterialTheme.typography.bodyLarge)
                                     Text(
-                                        "AMRAP",
+                                        stringResource(Res.string.target_reps),
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    Text(
+                                        stringResource(Res.string.label_amrap),
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.primary,
@@ -696,7 +707,38 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                                 }
                             }
                         } else {
-                            // Standard mode: Weight + Reps using SliderWithButtons
+                            // Standard mode: Reps -> Weight per cable (aligned with RoutineOverviewScreen & RestTimerCard)
+                            if (!isAMRAP) {
+                                SliderWithButtons(
+                                    value = setReadyState.adjustedReps.toFloat(),
+                                    onValueChange = { newValue ->
+                                        viewModel.updateSetReadyReps(newValue.toInt().coerceIn(1, 50))
+                                    },
+                                    valueRange = 1f..50f,
+                                    step = 1f,
+                                    label = stringResource(Res.string.target_reps),
+                                    formatValue = { it.toInt().toString() },
+                                )
+                            } else {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        stringResource(Res.string.target_reps),
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    Text(
+                                        stringResource(Res.string.label_amrap),
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary,
+                                    )
+                                }
+                            }
+
                             // Delta from routine baseline
                             val baselineWeightKg = currentExercise.setWeightsPerCableKg.getOrNull(setReadyState.setIndex)
                                 ?: currentExercise.weightPerCableKg
@@ -716,39 +758,12 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                                 },
                                 valueRange = 0f..maxWeightKg,
                                 step = weightStepKg,
-                                label = "Weight per cable",
+                                label = stringResource(Res.string.rest_weight_per_cable),
                                 formatValue = { viewModel.formatWeight(it, weightUnit) },
                                 deltaText = deltaText,
                                 isDeltaPositive = deltaKg >= 0f,
                                 isWeightValue = true,
                             )
-
-                            if (!isAMRAP) {
-                                SliderWithButtons(
-                                    value = setReadyState.adjustedReps.toFloat(),
-                                    onValueChange = { newValue ->
-                                        viewModel.updateSetReadyReps(newValue.toInt().coerceIn(1, 50))
-                                    },
-                                    valueRange = 1f..50f,
-                                    step = 1f,
-                                    label = "Target Reps",
-                                    formatValue = { it.toInt().toString() },
-                                )
-                            } else {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Text(stringResource(Res.string.target_reps), style = MaterialTheme.typography.bodyLarge)
-                                    Text(
-                                        "AMRAP",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.primary,
-                                    )
-                                }
-                            }
 
                             WeightChangePerRepControl(
                                 valueKg = setReadyState.adjustedProgressionKg,
@@ -817,14 +832,22 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
             onDismissRequest = { showSessionBodyweightEditor = false },
             title = { Text("Edit current bodyweight") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(Spacing.small)) {
-                    Text("Used only for this workout unless saved to your profile.")
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.small),
+                ) {
+                    Text(stringResource(Res.string.set_ready_bodyweight_dialog_note))
                     OutlinedTextField(
                         value = sessionBodyweightInput,
                         onValueChange = { value ->
                             sessionBodyweightInput = value.filter { it.isDigit() || it == '.' || it == ',' }
                         },
-                        label = { Text("Current bodyweight (${if (weightUnit == WeightUnit.KG) "kg" else "lb"})") },
+                        label = {
+                            val unit = stringResource(
+                                if (weightUnit == WeightUnit.KG) Res.string.label_kg else Res.string.label_lb,
+                            )
+                            Text(stringResource(Res.string.set_ready_bodyweight_unit_label, unit))
+                        },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         modifier = Modifier.fillMaxWidth(),
@@ -832,6 +855,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .heightIn(min = 48.dp)
                             .clickable { saveSessionBodyweightToProfile = !saveSessionBodyweightToProfile },
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -861,7 +885,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
             },
             dismissButton = {
                 TextButton(onClick = { showSessionBodyweightEditor = false }) {
-                    Text("Cancel")
+                    Text(stringResource(Res.string.action_cancel))
                 }
             },
         )
@@ -978,22 +1002,35 @@ private fun CurrentBodyweightPromptCard(
                     fontWeight = FontWeight.SemiBold,
                 )
             }
-            Row(
+            @OptIn(ExperimentalLayoutApi::class)
+            FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(Spacing.small),
-                verticalAlignment = Alignment.CenterVertically,
+                verticalArrangement = Arrangement.spacedBy(Spacing.small),
             ) {
                 if (hasSavedBodyweight) {
-                    Button(onClick = onConfirmStored) {
+                    Button(
+                        onClick = onConfirmStored,
+                        modifier = Modifier.heightIn(min = 48.dp),
+                    ) {
                         Text("Use for this session")
                     }
-                    TextButton(onClick = onEdit) {
-                        Text("Edit")
+                    TextButton(
+                        onClick = onEdit,
+                        modifier = Modifier.heightIn(min = 48.dp),
+                    ) {
+                        Text(stringResource(Res.string.action_edit))
                     }
                 } else {
-                    Button(onClick = onEdit) {
+                    Button(
+                        onClick = onEdit,
+                        modifier = Modifier.heightIn(min = 48.dp),
+                    ) {
                         Text("Save for session")
                     }
-                    TextButton(onClick = onSkip) {
+                    TextButton(
+                        onClick = onSkip,
+                        modifier = Modifier.heightIn(min = 48.dp),
+                    ) {
                         Text("Not now")
                     }
                 }
@@ -1032,13 +1069,16 @@ private fun HandledSessionBodyweightCard(
                     if (resolvedBodyWeightKg > 0f) {
                         formatBodyWeightForUnit(resolvedBodyWeightKg, weightUnit)
                     } else {
-                        "Not set for this session"
+                        stringResource(Res.string.set_ready_not_set_session)
                     },
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
                 )
             }
-            TextButton(onClick = onEdit) {
+            TextButton(
+                onClick = onEdit,
+                modifier = Modifier.heightIn(min = 48.dp),
+            ) {
                 Text("Edit current bodyweight")
             }
         }
@@ -1053,11 +1093,14 @@ private fun formatBodyWeightNumberForUnit(weightKg: Float, weightUnit: WeightUni
     return UnitConverter.formatDecimal(displayValue)
 }
 
+@Composable
 private fun formatBodyWeightForUnit(weightKg: Float, weightUnit: WeightUnit): String {
-    val suffix = when (weightUnit) {
-        WeightUnit.KG -> "kg"
-        WeightUnit.LB -> "lb"
-    }
+    val suffix = stringResource(
+        when (weightUnit) {
+            WeightUnit.KG -> Res.string.label_kg
+            WeightUnit.LB -> Res.string.label_lb
+        },
+    )
     return "${formatBodyWeightNumberForUnit(weightKg, weightUnit)} $suffix"
 }
 

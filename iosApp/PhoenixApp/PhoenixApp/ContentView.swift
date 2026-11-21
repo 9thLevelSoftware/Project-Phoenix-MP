@@ -5,7 +5,7 @@ import shared
 struct ContentView: View {
     var body: some View {
         ComposeView()
-            .ignoresSafeArea(.all)
+            .ignoresSafeArea(.container)
     }
 }
 

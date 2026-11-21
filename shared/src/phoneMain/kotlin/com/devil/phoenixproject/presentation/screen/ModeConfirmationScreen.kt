@@ -11,14 +11,18 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.CycleTemplate
 import com.devil.phoenixproject.domain.model.ExerciseConfig
 import com.devil.phoenixproject.domain.model.TemplateExercise
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.presentation.components.ExerciseConfigModal
+import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
+import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
 import com.devil.phoenixproject.presentation.util.programModeShortLabel
 import com.devil.phoenixproject.ui.theme.Spacing
+import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import com.devil.phoenixproject.util.UnitConverter
 import com.devil.phoenixproject.util.format
 import org.jetbrains.compose.resources.stringResource
@@ -58,6 +62,13 @@ fun ModeConfirmationScreen(
     // CommandLimits.planningMaxWeightPerCableKg(userPreferences.lastConnectedModel).
     // No default, so a new caller cannot fall back to the widest (Trainer+) ceiling.
     planningMaxWeightPerCableKg: Float,
+    displayToKg: (Float, WeightUnit) -> Float = { display, unit ->
+        if (unit == WeightUnit.LB) display / UnitConverter.KG_TO_LB else display
+    },
+    formatWeight: (Float, WeightUnit) -> String = { kg, unit ->
+        val display = kgToDisplay(kg, unit)
+        "${WeightDisplayFormatter.formatDisplayNumber(display)} ${unit.name.lowercase()}"
+    },
 ) {
     // State: Map of exercise name to ExerciseConfig
     // Note: Bodyweight exercises (null suggestedMode) are excluded - they don't use cables
@@ -81,19 +92,28 @@ fun ModeConfirmationScreen(
         }
     }
 
-    // Use Box with bottom bar instead of Scaffold to avoid double TopAppBar
-    Box(
+    val contentMaxWidth = ResponsiveDimensions.contentMaxWidth()
+    val widthConstraintModifier = if (contentMaxWidth != null) {
+        Modifier.widthIn(max = contentMaxWidth).fillMaxWidth()
+    } else {
+        Modifier.fillMaxWidth()
+    }
+
+    // D-12: Column split replaces fixed 100.dp bottom padding so the scrollable list and
+    // pinned bottom bar never overlap regardless of font scaling.
+    Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
+            .background(screenBackgroundBrush()),
     ) {
         // Main content - scrollable list
         LazyColumn(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(bottom = 100.dp), // Space for bottom bar
+                .weight(1f)
+                .fillMaxWidth(),
             contentPadding = PaddingValues(Spacing.medium),
             verticalArrangement = Arrangement.spacedBy(Spacing.medium),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             // Header with title
             item(key = "title") {
@@ -102,14 +122,14 @@ fun ModeConfirmationScreen(
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onBackground,
-                    modifier = Modifier.padding(bottom = Spacing.small),
+                    modifier = widthConstraintModifier.padding(bottom = Spacing.small),
                 )
             }
 
             // Template name and description header
             item(key = "header") {
                 Column(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = widthConstraintModifier,
                     verticalArrangement = Arrangement.spacedBy(Spacing.extraSmall),
                 ) {
                     Text(
@@ -137,7 +157,7 @@ fun ModeConfirmationScreen(
                 // Day header
                 item(key = "day_header_${day.dayNumber}") {
                     Card(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = widthConstraintModifier,
                         shape = MaterialTheme.shapes.medium,
                         colors = CardDefaults.cardColors(
                             containerColor = MaterialTheme.colorScheme.primaryContainer,
@@ -159,13 +179,13 @@ fun ModeConfirmationScreen(
                                 Text(
                                     text = "Rest Day",
                                     style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
                                 )
                             } else {
                                 Text(
                                     text = day.routine.name,
                                     style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
                                 )
                             }
                         }
@@ -199,6 +219,8 @@ fun ModeConfirmationScreen(
                             prWeight = prWeightValues[exercise.exerciseName],
                             weightUnit = weightUnit,
                             kgToDisplay = kgToDisplay,
+                            displayToKg = displayToKg,
+                            formatWeight = formatWeight,
                             onConfigUpdated = { newConfig ->
                                 // Mark the weight as user-edited only when it actually changed
                                 // from what the card showed — auto-filled 1RM defaults must not
@@ -210,6 +232,7 @@ fun ModeConfirmationScreen(
                             },
                             weightStepKg = weightStepKg,
                             planningMaxWeightPerCableKg = planningMaxWeightPerCableKg,
+                            modifier = widthConstraintModifier,
                         )
                     }
                 }
@@ -223,52 +246,68 @@ fun ModeConfirmationScreen(
 
         // Bottom action bar
         Surface(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth(),
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 3.dp,
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .padding(Spacing.medium),
-                horizontalArrangement = Arrangement.spacedBy(Spacing.small),
+            Box(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.Center,
             ) {
-                OutlinedButton(
-                    onClick = onCancel,
-                    modifier = Modifier.weight(1f).height(56.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    ),
+                Row(
+                    modifier = widthConstraintModifier
+                        .height(IntrinsicSize.Max)
+                        .navigationBarsPadding()
+                        .padding(Spacing.medium),
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.small),
                 ) {
-                    Text(stringResource(Res.string.action_cancel))
-                }
+                    OutlinedButton(
+                        onClick = onCancel,
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .heightIn(min = 56.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
+                    ) {
+                        Text(
+                            stringResource(Res.string.action_cancel),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
 
-                Button(
-                    onClick = { onConfirm(exerciseConfigs.toMap()) },
-                    modifier = Modifier.weight(1f).height(56.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                    ),
-                    shape = MaterialTheme.shapes.medium,
-                ) {
-                    Text(
-                        "Create Cycle",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                    )
+                    Button(
+                        onClick = { onConfirm(exerciseConfigs.toMap()) },
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .heightIn(min = 56.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                        ),
+                        shape = MaterialTheme.shapes.medium,
+                    ) {
+                        Text(
+                            "Create Cycle",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             }
         }
-    } // End Box
+    } // End Column
 }
 
 /**
  * Tappable card showing exercise info with mode and weight badges.
  * Tapping opens the ExerciseConfigModal for detailed configuration.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ConfigurableExerciseCard(
     exercise: TemplateExercise,
@@ -279,15 +318,23 @@ private fun ConfigurableExerciseCard(
     kgToDisplay: (Float, WeightUnit) -> Float = { kg, unit ->
         if (unit == WeightUnit.LB) UnitConverter.kgToLb(kg) else kg
     },
+    displayToKg: (Float, WeightUnit) -> Float = { display, unit ->
+        if (unit == WeightUnit.LB) display / UnitConverter.KG_TO_LB else display
+    },
+    formatWeight: (Float, WeightUnit) -> String = { kg, unit ->
+        val display = kgToDisplay(kg, unit)
+        "${WeightDisplayFormatter.formatDisplayNumber(display)} ${unit.name.lowercase()}"
+    },
     onConfigUpdated: (ExerciseConfig) -> Unit,
     weightStepKg: Float = 2.5f, // Issue #266
     planningMaxWeightPerCableKg: Float,
+    modifier: Modifier = Modifier,
 ) {
     var showConfigModal by remember { mutableStateOf(false) }
 
     ExpressiveCard(
         onClick = { showConfigModal = true },
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier,
         shape = MaterialTheme.shapes.small,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainer,
@@ -297,7 +344,7 @@ private fun ConfigurableExerciseCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(Spacing.medium),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.spacedBy(Spacing.small),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f)) {
@@ -323,7 +370,10 @@ private fun ConfigurableExerciseCard(
             }
 
             // Mode + Weight badges
-            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.extraSmall)) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(Spacing.extraSmall, Alignment.End),
+                verticalArrangement = Arrangement.spacedBy(Spacing.extraSmall),
+            ) {
                 // Mode badge
                 Surface(
                     shape = RoundedCornerShape(Spacing.small),
@@ -380,6 +430,10 @@ private fun ConfigurableExerciseCard(
             onDismiss = { showConfigModal = false },
             weightStepKg = weightStepKg,
             planningMaxWeightPerCableKg = planningMaxWeightPerCableKg,
+            weightUnit = weightUnit,
+            kgToDisplay = kgToDisplay,
+            displayToKg = displayToKg,
+            formatWeight = formatWeight,
         )
     }
 }

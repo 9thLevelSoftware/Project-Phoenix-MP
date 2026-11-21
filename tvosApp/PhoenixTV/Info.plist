@@ -23,7 +23,7 @@
     <key>ITSAppUsesNonExemptEncryption</key>
     <false/>
     <key>NSBluetoothAlwaysUsageDescription</key>
-    <string>Phoenix uses Bluetooth to connect to your selected Vitruvian trainer and read workout telemetry.</string>
+    <string>Phoenix uses Bluetooth to connect to your selected Phoenix trainer and read workout telemetry.</string>
     <key>SUPABASE_URL</key>
     <string>$(SUPABASE_URL)</string>
     <key>SUPABASE_ANON_KEY</key>

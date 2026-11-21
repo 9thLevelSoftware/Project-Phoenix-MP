@@ -44,8 +44,9 @@ class ProfileScreenContractTest {
     fun profileScaffoldLeavesInsetsToTheOuterAppAndKeepsTwelveDpCardSpacing() {
         val screen = source(screenPath)
 
-        assertContains(screen, "contentWindowInsets = WindowInsets(0, 0, 0, 0)")
-        assertContains(screen, "padding.calculateTopPadding() + 12.dp")
+        assertFalse(screen.contains("Scaffold("))
+        assertContains(screen, "top = 12.dp")
+        assertContains(screen, "Arrangement.spacedBy(12.dp)")
     }
 
     @Test

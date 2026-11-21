@@ -41,6 +41,10 @@ import com.devil.phoenixproject.domain.model.HrmBeatSample
 import com.devil.phoenixproject.domain.model.PolarEcgSegment
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
+import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
+import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
+import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.Spacing
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -58,6 +62,7 @@ import kotlin.math.roundToInt
  * 2. 3D Torso Biomechanics vs. Rep Cable Position
  * 3. Saved 130 Hz ECG Waveform Scrubber
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SessionHeartRateCard(
     sessionId: String? = null,
@@ -195,6 +200,9 @@ fun SessionHeartRateCard(
                 .padding(Spacing.medium),
             verticalArrangement = Arrangement.spacedBy(Spacing.medium),
         ) {
+            val accessColors = AccessibilityTheme.colors
+            val colorScheme = MaterialTheme.colorScheme
+
             // Header Row
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -204,42 +212,28 @@ fun SessionHeartRateCard(
                 Row(
                     modifier = Modifier.weight(1f).padding(end = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(32.dp)
-                            .clip(CircleShape)
-                            .background(
-                                Brush.linearGradient(
-                                    listOf(Color(0xFFE91E63), Color(0xFFFF5252))
-                                )
-                            ),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Favorite,
-                            contentDescription = "Heart Rate Sensor",
-                            tint = MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier.size(18.dp),
-                        )
-                    }
+                    SectionHeaderIconBadge(
+                        imageVector = Icons.Default.Favorite,
+                        contentDescription = "Heart Rate Sensor",
+                        containerColor = colorScheme.errorContainer,
+                        contentColor = colorScheme.onErrorContainer,
+                    )
                     Column {
                         Text(
                             text = "HEART RATE ANALYTICS",
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary,
+                            color = colorScheme.primary,
                             letterSpacing = 1.sp,
-                            softWrap = false,
-                            maxLines = 1,
                         )
                         Text(
                             text = if (isCooldownActive) "Recovery Cooldown Active" else "Cardiac & Biomechanics Summary",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1,
+                            color = colorScheme.onSurface,
+                            maxLines = 2,
                         )
                     }
                 }
@@ -247,9 +241,9 @@ fun SessionHeartRateCard(
                 Surface(
                     shape = MaterialTheme.shapes.small,
                     color = if (isConnected) {
-                        MaterialTheme.colorScheme.primaryContainer
+                        colorScheme.primaryContainer
                     } else {
-                        MaterialTheme.colorScheme.surfaceVariant
+                        colorScheme.surfaceVariant
                     },
                 ) {
                     Text(
@@ -257,11 +251,10 @@ fun SessionHeartRateCard(
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Medium,
                         color = if (isConnected) {
-                            MaterialTheme.colorScheme.onPrimaryContainer
+                            colorScheme.onPrimaryContainer
                         } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
+                            colorScheme.onSurfaceVariant
                         },
-                        softWrap = false,
                         maxLines = 1,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                     )
@@ -280,7 +273,7 @@ fun SessionHeartRateCard(
                             value = "$avg",
                             unit = "bpm",
                             icon = Icons.Default.Favorite,
-                            tint = Color(0xFFE91E63),
+                            tint = colorScheme.error,
                             modifier = Modifier.weight(1f),
                         )
                     }
@@ -290,7 +283,7 @@ fun SessionHeartRateCard(
                             value = "$max",
                             unit = "bpm",
                             icon = Icons.Default.TrendingUp,
-                            tint = Color(0xFFFF5722),
+                            tint = accessColors.warning,
                             modifier = Modifier.weight(1f),
                         )
                     }
@@ -300,7 +293,7 @@ fun SessionHeartRateCard(
                             value = "$min",
                             unit = "bpm",
                             icon = Icons.Default.TrendingDown,
-                            tint = Color(0xFF2196F3),
+                            tint = accessColors.info,
                             modifier = Modifier.weight(1f),
                         )
                     }
@@ -322,20 +315,20 @@ fun SessionHeartRateCard(
                             unit = "ms",
                             subtext = "Successive R-R variation",
                             icon = Icons.Default.Speed,
-                            tint = Color(0xFF4CAF50),
+                            tint = accessColors.success,
                             modifier = Modifier.weight(1f),
                         )
                     } ?: run {
                         Surface(
                             modifier = Modifier.weight(1f),
                             shape = MaterialTheme.shapes.medium,
-                            color = MaterialTheme.colorScheme.surfaceContainer,
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
+                            color = colorScheme.surfaceContainer,
+                            border = BorderStroke(1.dp, colorScheme.outlineVariant.copy(alpha = 0.3f)),
                         ) {
                             Text(
                                 text = "HRV unavailable",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(10.dp),
                             )
                         }
@@ -346,7 +339,7 @@ fun SessionHeartRateCard(
                             value = "${rr.roundToInt()}",
                             unit = "ms",
                             icon = Icons.Default.Timer,
-                            tint = Color(0xFF9C27B0),
+                            tint = colorScheme.secondary,
                             modifier = Modifier.weight(1f),
                         )
                     }
@@ -366,7 +359,7 @@ fun SessionHeartRateCard(
                             unit = "pitch",
                             subtext = "Sagittal forward bend",
                             icon = Icons.Default.Accessibility,
-                            tint = Color(0xFFFF9800),
+                            tint = accessColors.warning,
                             modifier = Modifier.weight(1f),
                         )
                     }
@@ -377,7 +370,7 @@ fun SessionHeartRateCard(
                             unit = "roll",
                             subtext = "Coronal asymmetry",
                             icon = Icons.Default.CompareArrows,
-                            tint = Color(0xFF00BCD4),
+                            tint = accessColors.info,
                             modifier = Modifier.weight(1f),
                         )
                     }
@@ -526,25 +519,51 @@ fun SessionHeartRateCard(
                             val hrr300 = summary?.hrr300Bpm
 
                             if (hrr60 != null || hrr300 != null) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                ) {
-                                    hrr60?.let { drop60 ->
-                                        RecoveryChip(
-                                            label = "1-Min Recovery (HRR-60)",
-                                            drop = drop60,
-                                            rating = "Change after 60 seconds",
-                                            modifier = Modifier.weight(1f),
-                                        )
+                                val stackChips = isCompactAccessibilityLayout() ||
+                                    LocalWindowSizeClass.current.widthSizeClass == WindowWidthSizeClass.Compact
+                                if (stackChips) {
+                                    Column(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        hrr60?.let { drop60 ->
+                                            RecoveryChip(
+                                                label = "1-Min Recovery (HRR-60)",
+                                                drop = drop60,
+                                                rating = "Change after 60 seconds",
+                                                modifier = Modifier.fillMaxWidth(),
+                                            )
+                                        }
+                                        hrr300?.let { drop300 ->
+                                            RecoveryChip(
+                                                label = "5-Min Recovery (HRR-300)",
+                                                drop = drop300,
+                                                rating = "Change after 300 seconds",
+                                                modifier = Modifier.fillMaxWidth(),
+                                            )
+                                        }
                                     }
-                                    hrr300?.let { drop300 ->
-                                        RecoveryChip(
-                                            label = "5-Min Recovery (HRR-300)",
-                                            drop = drop300,
-                                            rating = "Change after 300 seconds",
-                                            modifier = Modifier.weight(1f),
-                                        )
+                                } else {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        hrr60?.let { drop60 ->
+                                            RecoveryChip(
+                                                label = "1-Min Recovery (HRR-60)",
+                                                drop = drop60,
+                                                rating = "Change after 60 seconds",
+                                                modifier = Modifier.weight(1f),
+                                            )
+                                        }
+                                        hrr300?.let { drop300 ->
+                                            RecoveryChip(
+                                                label = "5-Min Recovery (HRR-300)",
+                                                drop = drop300,
+                                                rating = "Change after 300 seconds",
+                                                modifier = Modifier.weight(1f),
+                                            )
+                                        }
                                     }
                                 }
                                 if (isConnected) {
@@ -607,8 +626,7 @@ fun SessionHeartRateCard(
                                             "Start Cooldown",
                                             style = MaterialTheme.typography.labelMedium,
                                             fontWeight = FontWeight.Bold,
-                                            softWrap = false,
-                                            maxLines = 1,
+                                            maxLines = 2,
                                         )
                                     }
                                 }
@@ -723,17 +741,19 @@ private fun RecoveryChip(
         color = tint.copy(alpha = 0.12f),
         border = BorderStroke(1.dp, tint.copy(alpha = 0.35f)),
     ) {
-        Column(modifier = Modifier.padding(8.dp)) {
+        Column(
+            modifier = Modifier.padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                softWrap = false,
-                maxLines = 1,
+                maxLines = 2,
             )
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Text(
                     text = "-$drop bpm",
@@ -745,8 +765,8 @@ private fun RecoveryChip(
                     text = "($rating)",
                     style = MaterialTheme.typography.labelSmall,
                     color = tint,
-                    softWrap = false,
-                    maxLines = 1,
+                    maxLines = 2,
+                    modifier = Modifier.weight(1f, fill = false),
                 )
             }
         }
@@ -757,6 +777,7 @@ private fun RecoveryChip(
  * Chart 1 — Continuous HR & Recovery Timeline (`HrmBeatSample`).
  * Plots BPM and RMSSD over time with color-coded phase bands and interactive scrubber.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ContinuousHeartRateTimelineChart(
     samples: List<HrmBeatSample>,
@@ -766,6 +787,17 @@ private fun ContinuousHeartRateTimelineChart(
         samples.filter { it.hrBpm > 0 }
     }
     if (validSamples.size < 2) return
+
+    val accessColors = AccessibilityTheme.colors
+    val colorScheme = MaterialTheme.colorScheme
+    val hrColor = colorScheme.error
+    val hrvColor = accessColors.connectedGreen
+    val warmupColor = accessColors.warning
+    val workingColor = colorScheme.error
+    val restColor = accessColors.info
+    val cooldownColor = accessColors.success
+    val plotBackground = colorScheme.surfaceContainerLowest
+    val gridLineColor = colorScheme.outlineVariant.copy(alpha = 0.45f)
 
     val minTs = validSamples.first().timestampMs
     val maxTs = validSamples.last().timestampMs
@@ -787,8 +819,8 @@ private fun ContinuousHeartRateTimelineChart(
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
+        colors = CardDefaults.cardColors(containerColor = colorScheme.surfaceContainer),
+        border = BorderStroke(1.dp, colorScheme.outlineVariant.copy(alpha = 0.3f)),
     ) {
         Column(
             modifier = Modifier.padding(12.dp),
@@ -807,14 +839,14 @@ private fun ContinuousHeartRateTimelineChart(
                     Icon(
                         imageVector = Icons.Default.ShowChart,
                         contentDescription = null,
-                        tint = Color(0xFFFF5252),
+                        tint = hrColor,
                         modifier = Modifier.size(16.dp),
                     )
                     Text(
                         text = "CONTINUOUS HR & RECOVERY TIMELINE",
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary,
+                        color = colorScheme.primary,
                         letterSpacing = 0.5.sp,
                     )
                 }
@@ -822,25 +854,23 @@ private fun ContinuousHeartRateTimelineChart(
                 Text(
                     text = "${(durationMs / 60000)}m ${(durationMs % 60000) / 1000}s",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = colorScheme.onSurfaceVariant,
                     fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                    softWrap = false,
                     maxLines = 1,
                 )
             }
 
-            // Legend Row
-            Row(
+            // Legend Row (wrapped cleanly in FlowRow for narrow screens & large fonts)
+            FlowRow(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                PhaseLegendDot(color = Color(0xFFFFA726), label = "Warmup")
-                PhaseLegendDot(color = Color(0xFFEF5350), label = "Working")
-                PhaseLegendDot(color = Color(0xFF42A5F5), label = "Rest")
-                PhaseLegendDot(color = Color(0xFF26A69A), label = "Cooldown")
-                Spacer(Modifier.weight(1f))
-                PhaseLegendDot(color = Color(0xFF00E676), label = "HRV", isLine = true)
+                PhaseLegendDot(color = warmupColor, label = "Warmup")
+                PhaseLegendDot(color = workingColor, label = "Working")
+                PhaseLegendDot(color = restColor, label = "Rest")
+                PhaseLegendDot(color = cooldownColor, label = "Cooldown")
+                PhaseLegendDot(color = hrvColor, label = "HRV", isLine = true)
             }
 
             // Scrub Info Bar
@@ -848,48 +878,36 @@ private fun ContinuousHeartRateTimelineChart(
                 val elapsedSec = ((selectedSample.timestampMs - minTs) / 1000).coerceAtLeast(0)
                 Surface(
                     shape = MaterialTheme.shapes.small,
-                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    color = colorScheme.surfaceContainerHighest,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Row(
+                    FlowRow(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
                     ) {
                         Text(
                             text = "${elapsedSec / 60}m ${elapsedSec % 60}s [${selectedSample.phase}]",
                             style = MaterialTheme.typography.labelSmall,
                             fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            softWrap = false,
-                            maxLines = 1,
-                            modifier = Modifier.weight(1f, fill = false).padding(end = 6.dp),
+                            color = colorScheme.onSurface,
                         )
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
+                        Text(
+                            text = "HR: ${selectedSample.hrBpm} bpm",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = hrColor,
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                        )
+                        selectedSample.rmssdMs?.let { rmssd ->
                             Text(
-                                text = "HR: ${selectedSample.hrBpm} bpm",
+                                text = "RMSSD: ${rmssd.roundToInt()} ms",
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFFFF5252),
+                                color = hrvColor,
                                 fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                                softWrap = false,
-                                maxLines = 1,
                             )
-                            selectedSample.rmssdMs?.let { rmssd ->
-                                Text(
-                                    text = "RMSSD: ${rmssd.roundToInt()} ms",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF00E676),
-                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                                    softWrap = false,
-                                    maxLines = 1,
-                                )
-                            }
                         }
                     }
                 }
@@ -901,7 +919,8 @@ private fun ContinuousHeartRateTimelineChart(
                     .fillMaxWidth()
                     .height(150.dp)
                     .clip(MaterialTheme.shapes.small)
-                    .background(Color(0xFF0F172A))
+                    .background(plotBackground)
+                    .border(0.5.dp, colorScheme.outlineVariant, MaterialTheme.shapes.small)
                     .pointerInput(Unit) {
                         detectTapGestures(
                             onPress = { offset ->
@@ -924,8 +943,8 @@ private fun ContinuousHeartRateTimelineChart(
                         )
                     },
             ) {
-                val scrubberLineColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)
-                val scrubberDotColor = MaterialTheme.colorScheme.surface
+                val scrubberLineColor = colorScheme.onSurface.copy(alpha = 0.7f)
+                val scrubberDotColor = colorScheme.surface
                 Canvas(modifier = Modifier.fillMaxSize()) {
                     val w = size.width
                     val h = size.height
@@ -947,10 +966,10 @@ private fun ContinuousHeartRateTimelineChart(
                         val x0 = ((span.second - minTs).toFloat() / durationMs) * w
                         val x1 = ((span.third - minTs).toFloat() / durationMs) * w
                         val bandColor = when (span.first) {
-                            "WARMUP" -> Color(0xFFFFA726).copy(alpha = 0.14f)
-                            "WORKING_SET" -> Color(0xFFEF5350).copy(alpha = 0.20f)
-                            "REST" -> Color(0xFF42A5F5).copy(alpha = 0.14f)
-                            "POST_WORKOUT_COOLDOWN" -> Color(0xFF26A69A).copy(alpha = 0.22f)
+                            "WARMUP" -> warmupColor.copy(alpha = 0.14f)
+                            "WORKING_SET" -> workingColor.copy(alpha = 0.18f)
+                            "REST" -> restColor.copy(alpha = 0.14f)
+                            "POST_WORKOUT_COOLDOWN" -> cooldownColor.copy(alpha = 0.20f)
                             else -> Color.Transparent
                         }
                         drawRect(color = bandColor, topLeft = Offset(x0, 0f), size = Size((x1 - x0).coerceAtLeast(1f), h))
@@ -961,7 +980,7 @@ private fun ContinuousHeartRateTimelineChart(
                         if (bpm in minHr..maxHr) {
                             val y = h - ((bpm - minHr) / hrRange) * h
                             drawLine(
-                                color = Color(0xFF334155).copy(alpha = 0.6f),
+                                color = gridLineColor,
                                 start = Offset(0f, y),
                                 end = Offset(w, y),
                                 strokeWidth = 1f,
@@ -988,7 +1007,7 @@ private fun ContinuousHeartRateTimelineChart(
                     if (rmssdStarted) {
                         drawPath(
                             path = rmssdPath,
-                            color = Color(0xFF00E676).copy(alpha = 0.5f),
+                            color = hrvColor.copy(alpha = 0.7f),
                             style = Stroke(width = 1.2.dp.toPx()),
                         )
                     }
@@ -1018,7 +1037,7 @@ private fun ContinuousHeartRateTimelineChart(
                         drawPath(
                             path = hrFillPath,
                             brush = Brush.verticalGradient(
-                                colors = listOf(Color(0xFFFF5252).copy(alpha = 0.25f), Color.Transparent),
+                                colors = listOf(hrColor.copy(alpha = 0.25f), Color.Transparent),
                                 startY = 0f,
                                 endY = h,
                             ),
@@ -1026,7 +1045,7 @@ private fun ContinuousHeartRateTimelineChart(
 
                         drawPath(
                             path = hrPath,
-                            color = Color(0xFFFF5252),
+                            color = hrColor,
                             style = Stroke(
                                 width = 2.dp.toPx(),
                                 cap = StrokeCap.Round,
@@ -1047,7 +1066,7 @@ private fun ContinuousHeartRateTimelineChart(
                         selectedSample?.hrBpm?.let { hr ->
                             val dotY = h - ((hr.toInt() - minHr) / hrRange) * h
                             drawCircle(color = scrubberDotColor, radius = 4.dp.toPx(), center = Offset(scrubX, dotY))
-                            drawCircle(color = Color(0xFFFF5252), radius = 2.5.dp.toPx(), center = Offset(scrubX, dotY))
+                            drawCircle(color = hrColor, radius = 2.5.dp.toPx(), center = Offset(scrubX, dotY))
                         }
                     }
                 }
@@ -1109,11 +1128,20 @@ private fun TorsoBiomechanicsVsCableChart(
     val maxPos = rawMaxPos + posSpan * 0.05f
     val posRange = (maxPos - minPos).coerceAtLeast(0.01f)
 
+    val accessColors = AccessibilityTheme.colors
+    val colorScheme = MaterialTheme.colorScheme
+    val pitchColor = accessColors.warning
+    val rollColor = accessColors.info
+    val cableColor = colorScheme.tertiary
+    val plotBackground = colorScheme.surfaceContainerLowest
+    val zeroLineColor = colorScheme.outlineVariant
+    val tickColor = colorScheme.outline
+
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
+        colors = CardDefaults.cardColors(containerColor = colorScheme.surfaceContainer),
+        border = BorderStroke(1.dp, colorScheme.outlineVariant.copy(alpha = 0.3f)),
     ) {
         Column(
             modifier = Modifier.padding(12.dp),
@@ -1132,14 +1160,14 @@ private fun TorsoBiomechanicsVsCableChart(
                     Icon(
                         imageVector = Icons.Default.Accessibility,
                         contentDescription = null,
-                        tint = Color(0xFFFF9800),
+                        tint = pitchColor,
                         modifier = Modifier.size(16.dp),
                     )
                     Text(
                         text = "3D TORSO BIOMECHANICS & CABLE POSITION",
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary,
+                        color = colorScheme.primary,
                         letterSpacing = 0.5.sp,
                     )
                 }
@@ -1147,31 +1175,26 @@ private fun TorsoBiomechanicsVsCableChart(
                 Text(
                     text = "$sampleCount reps/pts",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = colorScheme.onSurfaceVariant,
                     fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                    softWrap = false,
                     maxLines = 1,
                 )
             }
 
-            // Legend & Dynamic Axis Info Row
-            Row(
+            // Legend & Dynamic Axis Info Row (wrapped cleanly in FlowRow)
+            FlowRow(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                PhaseLegendDot(color = Color(0xFFFF9800), label = "Hinge (Pitch°)")
-                PhaseLegendDot(color = Color(0xFF00BCD4), label = "Tilt (Roll°)")
-                PhaseLegendDot(color = Color(0xFFAB47BC), label = "Cable Pos", isLine = true)
-                Spacer(Modifier.weight(1f))
+                PhaseLegendDot(color = pitchColor, label = "Hinge (Pitch°)")
+                PhaseLegendDot(color = rollColor, label = "Tilt (Roll°)")
+                PhaseLegendDot(color = cableColor, label = "Cable Pos", isLine = true)
                 Text(
                     text = "0° ref | ${minAngle.roundToInt()}°..${maxAngle.roundToInt()}°",
                     style = MaterialTheme.typography.labelSmall,
-                    fontSize = 9.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = colorScheme.onSurfaceVariant,
                     fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                    softWrap = false,
-                    maxLines = 1,
                 )
             }
 
@@ -1184,27 +1207,27 @@ private fun TorsoBiomechanicsVsCableChart(
                 }
                 Surface(
                     shape = MaterialTheme.shapes.small,
-                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    color = colorScheme.surfaceContainerHighest,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
                     ) {
                         Text(
                             text = "Hinge: ${selectedSample.torsoPitchDeg?.let { "${(it * 10).roundToInt() / 10.0}°" } ?: "—"}",
                             style = MaterialTheme.typography.labelSmall,
                             fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFFFF9800),
+                            color = pitchColor,
                         )
                         Text(
                             text = "Tilt: ${selectedSample.torsoRollDeg?.let { "${(it * 10).roundToInt() / 10.0}°" } ?: "—"}",
                             style = MaterialTheme.typography.labelSmall,
                             fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFF00BCD4),
+                            color = rollColor,
                         )
                         cablePos?.let { pos ->
                             val romPercent = ((pos - minPos) / posRange * 100f).roundToInt().coerceIn(0, 100)
@@ -1213,9 +1236,7 @@ private fun TorsoBiomechanicsVsCableChart(
                                 style = MaterialTheme.typography.labelSmall,
                                 fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFFAB47BC),
-                                softWrap = false,
-                                maxLines = 1,
+                                color = cableColor,
                             )
                         }
                     }
@@ -1228,7 +1249,8 @@ private fun TorsoBiomechanicsVsCableChart(
                     .fillMaxWidth()
                     .height(150.dp)
                     .clip(MaterialTheme.shapes.small)
-                    .background(Color(0xFF0D1B2A))
+                    .background(plotBackground)
+                    .border(0.5.dp, colorScheme.outlineVariant, MaterialTheme.shapes.small)
                     .pointerInput(Unit) {
                         detectTapGestures(
                             onPress = { offset ->
@@ -1251,8 +1273,8 @@ private fun TorsoBiomechanicsVsCableChart(
                         )
                     },
             ) {
-                val scrubberLineColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)
-                val scrubberDotColor = MaterialTheme.colorScheme.surface
+                val scrubberLineColor = colorScheme.onSurface.copy(alpha = 0.7f)
+                val scrubberDotColor = colorScheme.surface
                 Canvas(modifier = Modifier.fillMaxSize()) {
                     val w = size.width
                     val h = size.height
@@ -1264,7 +1286,7 @@ private fun TorsoBiomechanicsVsCableChart(
                     // Center 0° baseline for posture reference
                     val zeroY = padTop + (1f - (0f - minAngle) / angleRange) * plotH
                     drawLine(
-                        color = Color(0xFF1E3A5F),
+                        color = zeroLineColor,
                         start = Offset(0f, zeroY),
                         end = Offset(w, zeroY),
                         strokeWidth = 1.2f,
@@ -1272,7 +1294,7 @@ private fun TorsoBiomechanicsVsCableChart(
 
                     // Degree tick marker on left edge
                     drawLine(
-                        color = Color(0xFF4A7DA5),
+                        color = tickColor,
                         start = Offset(0f, zeroY),
                         end = Offset(10.dp.toPx(), zeroY),
                         strokeWidth = 2f,
@@ -1280,7 +1302,7 @@ private fun TorsoBiomechanicsVsCableChart(
 
                     val stepX = w / (sampleCount - 1).coerceAtLeast(1).toFloat()
 
-                    // 1. Cable Position (Purple line scaled independently across full height)
+                    // 1. Cable Position (Tertiary line scaled independently across full height)
                     val cablePath = Path()
                     var cableStarted = false
                     biomechSamples.forEachIndexed { i, s ->
@@ -1303,7 +1325,7 @@ private fun TorsoBiomechanicsVsCableChart(
                     if (cableStarted) {
                         drawPath(
                             path = cablePath,
-                            color = Color(0xFFAB47BC).copy(alpha = 0.75f),
+                            color = cableColor.copy(alpha = 0.75f),
                             style = Stroke(
                                 width = 1.8.dp.toPx(),
                                 cap = StrokeCap.Round,
@@ -1312,7 +1334,7 @@ private fun TorsoBiomechanicsVsCableChart(
                         )
                     }
 
-                    // 2. Torso Pitch (Hip Hinge, orange line scaled across angle range)
+                    // 2. Torso Pitch (Hip Hinge, warning line scaled across angle range)
                     val pitchPath = Path()
                     var pitchStarted = false
                     biomechSamples.forEachIndexed { i, s ->
@@ -1330,7 +1352,7 @@ private fun TorsoBiomechanicsVsCableChart(
                     if (pitchStarted) {
                         drawPath(
                             path = pitchPath,
-                            color = Color(0xFFFF9800),
+                            color = pitchColor,
                             style = Stroke(
                                 width = 2.dp.toPx(),
                                 cap = StrokeCap.Round,
@@ -1339,7 +1361,7 @@ private fun TorsoBiomechanicsVsCableChart(
                         )
                     }
 
-                    // 3. Torso Roll (Lateral Tilt, cyan line scaled across angle range)
+                    // 3. Torso Roll (Lateral Tilt, info line scaled across angle range)
                     val rollPath = Path()
                     var rollStarted = false
                     biomechSamples.forEachIndexed { i, s ->
@@ -1357,7 +1379,7 @@ private fun TorsoBiomechanicsVsCableChart(
                     if (rollStarted) {
                         drawPath(
                             path = rollPath,
-                            color = Color(0xFF00BCD4),
+                            color = rollColor,
                             style = Stroke(
                                 width = 1.5.dp.toPx(),
                                 cap = StrokeCap.Round,
@@ -1378,7 +1400,7 @@ private fun TorsoBiomechanicsVsCableChart(
                         selectedSample?.torsoPitchDeg?.let { pitch ->
                             val pitchY = padTop + (1f - (pitch.toFloat() - minAngle) / angleRange) * plotH
                             drawCircle(color = scrubberDotColor, radius = 4.dp.toPx(), center = Offset(scrubX, pitchY))
-                            drawCircle(color = Color(0xFFFF9800), radius = 2.5.dp.toPx(), center = Offset(scrubX, pitchY))
+                            drawCircle(color = pitchColor, radius = 2.5.dp.toPx(), center = Offset(scrubX, pitchY))
                         }
                         val selCablePos = if (selectedSample?.position != null && selectedSample?.positionB != null) {
                             (selectedSample.position!!.toFloat() + selectedSample.positionB!!.toFloat()) / 2f
@@ -1388,7 +1410,7 @@ private fun TorsoBiomechanicsVsCableChart(
                         selCablePos?.let { pos ->
                             val cableY = padTop + (1f - (pos - minPos) / posRange) * plotH
                             drawCircle(color = scrubberDotColor, radius = 4.dp.toPx(), center = Offset(scrubX, cableY))
-                            drawCircle(color = Color(0xFFAB47BC), radius = 2.5.dp.toPx(), center = Offset(scrubX, cableY))
+                            drawCircle(color = cableColor, radius = 2.5.dp.toPx(), center = Offset(scrubX, cableY))
                         }
                     }
                 }
@@ -1432,11 +1454,19 @@ private fun SavedEcgWaveformScrubber(
         phase
     }
 
+    val colorScheme = MaterialTheme.colorScheme
+    val ecgTraceColor = colorScheme.primary
+    val ecgBgColor = colorScheme.surfaceContainerLowest
+    val ecgBorderColor = colorScheme.outlineVariant
+    val ecgMinorGridColor = colorScheme.outlineVariant.copy(alpha = 0.25f)
+    val ecgMajorGridColor = colorScheme.outlineVariant.copy(alpha = 0.55f)
+    val ecgBaselineColor = colorScheme.outline
+
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
+        colors = CardDefaults.cardColors(containerColor = colorScheme.surfaceContainer),
+        border = BorderStroke(1.dp, colorScheme.outlineVariant.copy(alpha = 0.3f)),
     ) {
         Column(
             modifier = Modifier.padding(12.dp),
@@ -1455,30 +1485,27 @@ private fun SavedEcgWaveformScrubber(
                     Icon(
                         imageVector = Icons.Default.Favorite,
                         contentDescription = null,
-                        tint = Color(0xFF00E5FF),
+                        tint = ecgTraceColor,
                         modifier = Modifier.size(16.dp),
                     )
                     Text(
                         text = "SAVED 130 HZ ECG WAVEFORM SCRUBBER",
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary,
+                        color = colorScheme.primary,
                         letterSpacing = 0.5.sp,
                     )
                 }
 
                 Surface(
                     shape = MaterialTheme.shapes.extraSmall,
-                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
+                    color = colorScheme.primaryContainer.copy(alpha = 0.4f),
                 ) {
                     Text(
                         text = currentPhase.replace("_", " "),
                         style = MaterialTheme.typography.labelSmall,
-                        fontSize = 9.sp,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary,
-                        softWrap = false,
-                        maxLines = 1,
+                        color = colorScheme.primary,
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                     )
                 }
@@ -1497,17 +1524,15 @@ private fun SavedEcgWaveformScrubber(
                 Text(
                     text = "Time: ${startSec}s - ${endSec}s / ${totalSec}s",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = colorScheme.onSurfaceVariant,
                     fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                     modifier = Modifier.weight(1f).padding(end = 8.dp),
                 )
                 Text(
                     text = "$totalSamples samples @ 130 Hz",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = colorScheme.onSurfaceVariant,
                     fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                    softWrap = false,
-                    maxLines = 1,
                 )
             }
 
@@ -1518,7 +1543,7 @@ private fun SavedEcgWaveformScrubber(
                     valueRange = 0f..maxStart.toFloat(),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(24.dp),
+                        .heightIn(min = 48.dp),
                 )
             }
 
@@ -1528,8 +1553,8 @@ private fun SavedEcgWaveformScrubber(
                     .fillMaxWidth()
                     .height(140.dp)
                     .clip(MaterialTheme.shapes.small)
-                    .background(Color(0xFF081422))
-                    .border(0.5.dp, Color(0xFF1B3A5A), MaterialTheme.shapes.small),
+                    .background(ecgBgColor)
+                    .border(0.5.dp, ecgBorderColor, MaterialTheme.shapes.small),
             ) {
                 val windowSlice by produceState<List<Int>>(
                     initialValue = emptyList(),
@@ -1569,28 +1594,28 @@ private fun SavedEcgWaveformScrubber(
                     val minorStep = 10.dp.toPx()
                     var gx = 0f
                     while (gx < w) {
-                        drawLine(color = Color(0xFF0E2238), start = Offset(gx, 0f), end = Offset(gx, h), strokeWidth = 0.5f)
+                        drawLine(color = ecgMinorGridColor, start = Offset(gx, 0f), end = Offset(gx, h), strokeWidth = 0.5f)
                         gx += minorStep
                     }
                     var gy = 0f
                     while (gy < h) {
-                        drawLine(color = Color(0xFF0E2238), start = Offset(0f, gy), end = Offset(w, gy), strokeWidth = 0.5f)
+                        drawLine(color = ecgMinorGridColor, start = Offset(0f, gy), end = Offset(w, gy), strokeWidth = 0.5f)
                         gy += minorStep
                     }
                     val majorStep = 40.dp.toPx()
                     gx = 0f
                     while (gx < w) {
-                        drawLine(color = Color(0xFF1B3A5A), start = Offset(gx, 0f), end = Offset(gx, h), strokeWidth = 1f)
+                        drawLine(color = ecgMajorGridColor, start = Offset(gx, 0f), end = Offset(gx, h), strokeWidth = 1f)
                         gx += majorStep
                     }
                     gy = 0f
                     while (gy < h) {
-                        drawLine(color = Color(0xFF1B3A5A), start = Offset(0f, gy), end = Offset(w, gy), strokeWidth = 1f)
+                        drawLine(color = ecgMajorGridColor, start = Offset(0f, gy), end = Offset(w, gy), strokeWidth = 1f)
                         gy += majorStep
                     }
 
                     // Zero baseline center line
-                    drawLine(color = Color(0xFF2A5580), start = Offset(0f, midY), end = Offset(w, midY), strokeWidth = 1.5f)
+                    drawLine(color = ecgBaselineColor, start = Offset(0f, midY), end = Offset(w, midY), strokeWidth = 1.5f)
 
                     if (windowSlice.size < 2) return@Canvas
 
@@ -1609,7 +1634,7 @@ private fun SavedEcgWaveformScrubber(
 
                     drawPath(
                         path = path,
-                        color = Color(0xFF00E5FF),
+                        color = ecgTraceColor,
                         style = Stroke(
                             width = 1.8.dp.toPx(),
                             cap = StrokeCap.Round,
@@ -1650,7 +1675,6 @@ private fun PhaseLegendDot(
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
-            fontSize = 9.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }

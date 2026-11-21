@@ -10,7 +10,9 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -29,6 +31,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
@@ -39,6 +42,7 @@ import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
  * Displays countdown before workout begins in autoplay mode.
  * Shows animated countdown with exercise preparation info.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun CountdownCard(
     countdownSecondsRemaining: Int,
@@ -68,30 +72,45 @@ fun CountdownCard(
         WindowWidthSizeClass.Medium -> 88.sp
         WindowWidthSizeClass.Compact -> 76.sp
     }
+    val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
 
-    // Pulsing animation
-    val infinite = rememberInfiniteTransition(label = "countdown-pulse")
-    val pulse by infinite.animateFloat(
-        initialValue = 1f,
-        targetValue = 1.06f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1000, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "pulse",
-    )
+    // Pulsing animation (disabled when reduceMotion is active)
+    val pulse = if (reduceMotion) {
+        1f
+    } else {
+        val infinite = rememberInfiniteTransition(label = "countdown-pulse")
+        val animatedPulse by infinite.animateFloat(
+            initialValue = 1f,
+            targetValue = 1.06f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 1000, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "pulse",
+        )
+        animatedPulse
+    }
 
-    // Background gradient
-    Box(
+    // Host insets are consumed once by ActiveWorkoutScreen/WorkoutTab; BoxWithConstraints
+    // guards verticalScroll so CountdownCard never crashes under WorkoutTab's unbounded scroll.
+    BoxWithConstraints(
         modifier = modifier
-            .fillMaxSize()
-            .background(screenBackgroundBrush())
-            .systemBarsPadding()
-            .padding(horizontal = 24.dp, vertical = 16.dp),
+            .fillMaxWidth()
+            .background(screenBackgroundBrush()),
     ) {
+        val scrollModifier = if (constraints.hasBoundedHeight) {
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .heightIn(min = maxHeight)
+        } else {
+            Modifier.fillMaxWidth()
+        }
+
         Column(
-            modifier = Modifier.fillMaxSize(),
+            modifier = scrollModifier.padding(horizontal = 4.dp, vertical = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(20.dp, Alignment.CenterVertically),
         ) {
             // Top section: Exercise info
             Column(
@@ -124,17 +143,15 @@ fun CountdownCard(
                     textAlign = TextAlign.Center,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(horizontal = 16.dp),
+                    modifier = Modifier.padding(horizontal = 8.dp),
                 )
             }
-
-            Spacer(modifier = Modifier.weight(0.5f))
 
             // Center section: Countdown circle
             // Issue #237: Animate motion-start hold progress for smooth ring-fill
             val animatedHoldProgress by animateFloatAsState(
                 targetValue = motionStartHoldProgress ?: 0f,
-                animationSpec = tween(durationMillis = 100),
+                animationSpec = tween(durationMillis = if (reduceMotion) 0 else 100),
                 label = "motion-start-hold",
             )
             val motionStartArcColor = MaterialTheme.colorScheme.tertiary
@@ -190,6 +207,8 @@ fun CountdownCard(
                         text = countdownText,
                         fontSize = countdownFontSize,
                         fontWeight = FontWeight.Black,
+                        maxLines = 1,
+                        softWrap = false,
                         color = if (countdownSecondsRemaining == 0) {
                             MaterialTheme.colorScheme.tertiary
                         } else {
@@ -198,8 +217,6 @@ fun CountdownCard(
                     )
                 }
             }
-
-            Spacer(modifier = Modifier.weight(0.3f))
 
             // Parameters section
             if (nextExerciseWeight != null || nextExerciseReps != null ||
@@ -212,8 +229,8 @@ fun CountdownCard(
                     tonalElevation = 2.dp,
                 ) {
                     Column(
-                        modifier = Modifier.padding(20.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         // Section header
                         Text(
@@ -224,10 +241,11 @@ fun CountdownCard(
                             letterSpacing = 1.sp,
                         )
 
-                        // Parameters in a clean grid
-                        Row(
+                        // Parameters wrap gracefully on narrow or scaled viewports
+                        FlowRow(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceEvenly,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
                             // Echo mode shows "Adaptive" instead of weight
                             if (isEchoMode) {
@@ -235,14 +253,14 @@ fun CountdownCard(
                                     icon = Icons.Default.FitnessCenter,
                                     label = "Weight",
                                     value = "Adaptive",
-                                    modifier = Modifier.weight(1f),
+                                    modifier = Modifier.widthIn(min = 84.dp),
                                 )
                             } else if (nextExerciseWeight != null && formatWeight != null) {
                                 CountdownParamChip(
                                     icon = Icons.Default.FitnessCenter,
                                     label = "Weight",
                                     value = formatWeight(nextExerciseWeight),
-                                    modifier = Modifier.weight(1f),
+                                    modifier = Modifier.widthIn(min = 84.dp),
                                 )
                             }
                             if (nextExerciseReps != null) {
@@ -250,7 +268,7 @@ fun CountdownCard(
                                     icon = Icons.Default.Repeat,
                                     label = "Reps",
                                     value = nextExerciseReps.toString(),
-                                    modifier = Modifier.weight(1f),
+                                    modifier = Modifier.widthIn(min = 84.dp),
                                 )
                             }
                             if (nextExerciseMode != null) {
@@ -258,15 +276,13 @@ fun CountdownCard(
                                     icon = Icons.Default.Speed,
                                     label = "Mode",
                                     value = nextExerciseMode,
-                                    modifier = Modifier.weight(1f),
+                                    modifier = Modifier.widthIn(min = 84.dp),
                                 )
                             }
                         }
                     }
                 }
             }
-
-            Spacer(modifier = Modifier.weight(0.3f))
 
             // Bottom section: Action buttons
             Column(
@@ -280,7 +296,7 @@ fun CountdownCard(
                     onClick = onSkipCountdown,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(56.dp),
+                        .heightIn(min = 56.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.primary,
                     ),
@@ -296,6 +312,8 @@ fun CountdownCard(
                         text = "Start Now",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
 
@@ -304,7 +322,7 @@ fun CountdownCard(
                     onClick = onEndWorkout,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(48.dp),
+                        .heightIn(min = 48.dp),
                 ) {
                     Icon(
                         Icons.Default.Close,

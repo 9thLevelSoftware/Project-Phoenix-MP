@@ -3,11 +3,14 @@ package com.devil.phoenixproject.presentation.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -146,22 +149,25 @@ fun RoutineRecoveryHost(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .navigationBarsPadding()
                     .padding(horizontal = 20.dp, vertical = 8.dp),
             ) {
-                Text(
-                    "Recover deleted routines",
-                    style = MaterialTheme.typography.titleLarge,
+                PhoenixSheetHeader(
+                    title = "Recover deleted routines",
+                    onClose = { sheetOpen = false },
                 )
                 Text(
                     "These routines were removed by a duplicate cleanup or a server-side " +
                         "deletion and can be restored as copies. The preview includes the " +
                         "conflicting programming that was dropped, such as planned-set slots.",
                     style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
+                    modifier = Modifier.padding(top = 8.dp, bottom = 12.dp),
                 )
                 LazyColumn(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f, fill = false),
                 ) {
                     items(items, key = { "${it.recoveryId}#${it.graphIndex}" }) { item ->
                         val key = "${item.recoveryId}#${item.graphIndex}"
@@ -179,19 +185,26 @@ fun RoutineRecoveryHost(
                                     },
                                     style = MaterialTheme.typography.bodySmall,
                                 )
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.fillMaxWidth(),
+                                @OptIn(ExperimentalLayoutApi::class)
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = 8.dp),
                                 ) {
-                                    TextButton(onClick = {
-                                        expandedKey = if (expandedKey == key) null else key
-                                    }) {
+                                    TextButton(
+                                        onClick = {
+                                            expandedKey = if (expandedKey == key) null else key
+                                        },
+                                        modifier = Modifier.heightIn(min = 48.dp),
+                                    ) {
                                         Text(if (expandedKey == key) "Hide preview" else "Preview")
                                     }
-                                    Spacer(modifier = Modifier.width(8.dp))
                                     val restored = key in restoredKeys
                                     Button(
                                         enabled = !restored,
+                                        modifier = Modifier.heightIn(min = 48.dp),
                                         onClick = {
                                             val targetProfileId = profileId
                                             val targetAuthId = authId

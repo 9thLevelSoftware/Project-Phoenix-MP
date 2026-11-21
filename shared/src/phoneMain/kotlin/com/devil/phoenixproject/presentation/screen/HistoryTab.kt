@@ -9,18 +9,24 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
@@ -48,8 +54,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.ble.HrmBleManager
@@ -72,10 +78,10 @@ import com.devil.phoenixproject.presentation.util.AchievedLoadPresentation
 import com.devil.phoenixproject.presentation.util.formatRackItemLine
 import com.devil.phoenixproject.presentation.components.BiomechanicsHistorySummary
 import com.devil.phoenixproject.presentation.components.ClearExerciseLabelDialog
-import com.devil.phoenixproject.presentation.components.ExpressiveCard
 import com.devil.phoenixproject.presentation.components.DestructiveConfirmDialog
 import com.devil.phoenixproject.presentation.components.EmptyState
 import com.devil.phoenixproject.presentation.components.MiniExercisePickerDialog
+import com.devil.phoenixproject.presentation.components.PhoenixSectionCard
 import com.devil.phoenixproject.presentation.components.WorkoutHistoryCardSkeleton
 import com.devil.phoenixproject.presentation.components.SessionHeartRateCard
 import com.devil.phoenixproject.presentation.components.RepBiomechanicsDetail
@@ -84,7 +90,9 @@ import com.devil.phoenixproject.presentation.components.charts.HistoryTimePeriod
 import com.devil.phoenixproject.presentation.manager.HistoryItem
 import com.devil.phoenixproject.presentation.manager.lazyColumnKey
 import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
+import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
 import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
+import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
 import com.devil.phoenixproject.ui.theme.ExpressiveMotion
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.KmpUtils
@@ -165,16 +173,23 @@ fun HistoryTab(
         }
     }
 
+    val contentMaxWidth = ResponsiveDimensions.contentMaxWidth()
+    val widthModifier = if (contentMaxWidth != null) {
+        Modifier.widthIn(max = contentMaxWidth).fillMaxWidth()
+    } else {
+        Modifier.fillMaxWidth()
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .padding(Spacing.medium),
+            .padding(horizontal = Spacing.medium, vertical = Spacing.medium),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         // Time period filter chips — scrollable for Bold Text accessibility
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
+            modifier = widthModifier
                 .horizontalScroll(rememberScrollState())
                 .padding(bottom = Spacing.small),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -195,25 +210,31 @@ fun HistoryTab(
 
         if (isLoading) {
             LazyColumn(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(Spacing.small),
                 contentPadding = PaddingValues(bottom = 96.dp),
             ) {
                 items(3) {
-                    WorkoutHistoryCardSkeleton(modifier = Modifier.fillMaxWidth())
+                    WorkoutHistoryCardSkeleton(modifier = widthModifier)
                 }
             }
         } else if (filteredHistory.isEmpty()) {
-            EmptyState(
-                icon = Icons.Default.History,
-                title = stringResource(Res.string.empty_no_history_title),
-                message = if (selectedPeriod == HistoryTimePeriod.ALL) {
-                    stringResource(Res.string.empty_no_history_all)
-                } else {
-                    stringResource(Res.string.empty_no_history_period, selectedPeriod.label.lowercase())
-                },
-            )
+            Box(modifier = widthModifier) {
+                EmptyState(
+                    icon = Icons.Default.History,
+                    title = stringResource(Res.string.empty_no_history_title),
+                    message = if (selectedPeriod == HistoryTimePeriod.ALL) {
+                        stringResource(Res.string.empty_no_history_all)
+                    } else {
+                        stringResource(Res.string.empty_no_history_period, selectedPeriod.label.lowercase())
+                    },
+                )
+            }
         } else {
             LazyColumn(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(Spacing.small),
                 contentPadding = PaddingValues(bottom = 96.dp),
             ) {
@@ -313,17 +334,14 @@ private fun WorkoutHistoryCard(
     val canEditJustLiftLabel = session.isJustLift
     val isLabeled = !session.exerciseId.isNullOrBlank() || !session.exerciseName.isNullOrBlank()
 
-    ExpressiveCard(
-        onClick = { isExpanded = !isExpanded },
+    PhoenixSectionCard(
         modifier = Modifier
-            .fillMaxWidth()
-            .shadow(8.dp, MaterialTheme.shapes.medium),
-        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
+            .clip(MaterialTheme.shapes.medium)
+            .clickable { isExpanded = !isExpanded },
+        maxWidth = ResponsiveDimensions.contentMaxWidth(),
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(Spacing.medium),
+            modifier = Modifier.fillMaxWidth(),
         ) {
             // Header: "Single Exercise" with chevron
             Row(
@@ -373,7 +391,7 @@ private fun WorkoutHistoryCard(
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
-                if (canEditJustLiftLabel) {
+                if (canEditJustLiftLabel && !isCompactAccessibilityLayout()) {
                     JustLiftLabelControls(
                         isLabeled = isLabeled,
                         compact = false,
@@ -381,6 +399,15 @@ private fun WorkoutHistoryCard(
                         onClear = { showClearLabelConfirm = true },
                     )
                 }
+            }
+            if (canEditJustLiftLabel && isCompactAccessibilityLayout()) {
+                Spacer(modifier = Modifier.height(Spacing.extraSmall))
+                JustLiftLabelControls(
+                    isLabeled = isLabeled,
+                    compact = false,
+                    onChange = { showExerciseTagPicker = true },
+                    onClear = { showClearLabelConfirm = true },
+                )
             }
 
             // Date and Time (no label, just the timestamp)
@@ -446,10 +473,7 @@ private fun WorkoutHistoryCard(
                     if (session.mode.contains("Echo", ignoreCase = true)) {
                         "Adaptive"
                     } else {
-                        WeightDisplayFormatter.formatDisplayWeight(
-                            session.effectiveHeaviestKgPerCable(),
-                            weightUnit,
-                        ) + " ${if (weightUnit == WeightUnit.LB) "lbs" else "kg"}"
+                        formatWeight(session.effectiveHeaviestKgPerCable(), weightUnit)
                     },
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.Bold,
@@ -603,7 +627,7 @@ private fun WorkoutHistoryCard(
             ) {
                 TextButton(
                     onClick = { showDeleteDialog = true },
-                    modifier = Modifier.height(48.dp), // Material 3 Expressive: Taller button
+                    modifier = Modifier.heightIn(min = 48.dp), // Material 3 Expressive: Taller button
                     shape = MaterialTheme.shapes.medium, // Material 3 Expressive: More rounded (was 16dp)
                     colors = ButtonDefaults.textButtonColors(
                         contentColor = MaterialTheme.colorScheme.error,
@@ -896,17 +920,14 @@ private fun GroupedRoutineCard(
             }
     }
 
-    ExpressiveCard(
-        onClick = { isExpanded = !isExpanded },
+    PhoenixSectionCard(
         modifier = Modifier
-            .fillMaxWidth()
-            .shadow(8.dp, MaterialTheme.shapes.medium),
-        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
+            .clip(MaterialTheme.shapes.medium)
+            .clickable { isExpanded = !isExpanded },
+        maxWidth = ResponsiveDimensions.contentMaxWidth(),
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(Spacing.medium),
+            modifier = Modifier.fillMaxWidth(),
         ) {
             // Header: "Daily Routine" with chevron
             Row(
@@ -1024,10 +1045,7 @@ private fun GroupedRoutineCard(
                         if (exerciseGroup.mode.contains("Echo", ignoreCase = true)) {
                             "Adaptive"
                         } else {
-                            WeightDisplayFormatter.formatDisplayWeight(
-                                exerciseGroup.highestWeightPerCableKg,
-                                weightUnit,
-                            ) + " ${if (weightUnit == WeightUnit.LB) "lbs" else "kg"}"
+                            formatWeight(exerciseGroup.highestWeightPerCableKg, weightUnit)
                         },
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Bold,
@@ -1103,7 +1121,7 @@ private fun GroupedRoutineCard(
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary,
                             )
-                            if (canEditJustLiftLabel) {
+                            if (canEditJustLiftLabel && !isCompactAccessibilityLayout()) {
                                 // Compact tier: same controls as the single-session
                                 // card header, sized down for the dense row.
                                 JustLiftLabelControls(
@@ -1113,6 +1131,15 @@ private fun GroupedRoutineCard(
                                     onClear = { clearingSessionId = session.id },
                                 )
                             }
+                        }
+                        if (canEditJustLiftLabel && isCompactAccessibilityLayout()) {
+                            Spacer(modifier = Modifier.height(Spacing.extraSmall))
+                            JustLiftLabelControls(
+                                isLabeled = isLabeled,
+                                compact = true,
+                                onChange = { taggingSessionId = session.id },
+                                onClear = { clearingSessionId = session.id },
+                            )
                         }
                         Spacer(modifier = Modifier.height(Spacing.small))
 
@@ -1215,12 +1242,13 @@ private fun GroupedRoutineCard(
                         .lastOrNull()
 
                     if (polarSession != null) {
+                        val polarExerciseName = polarSession.exerciseName ?: "Just Lift"
                         Spacer(modifier = Modifier.height(Spacing.medium))
                         Text(
                             text = if (polarSession.hrr60Bpm != null || polarSession.hrr300Bpm != null) {
-                                "Latest set with recovery data: ${polarSession.exerciseName}"
+                                "Latest set with recovery data: $polarExerciseName"
                             } else {
-                                "Most recent set with sensor data: ${polarSession.exerciseName}"
+                                "Most recent set with sensor data: $polarExerciseName"
                             },
                             style = MaterialTheme.typography.labelMedium,
                         )
@@ -1253,7 +1281,7 @@ private fun GroupedRoutineCard(
             ) {
                 TextButton(
                     onClick = { showDeleteDialog = true },
-                    modifier = Modifier.height(48.dp), // Material 3 Expressive: Taller button
+                    modifier = Modifier.heightIn(min = 48.dp), // Material 3 Expressive: Taller button
                     shape = MaterialTheme.shapes.medium, // Material 3 Expressive: More rounded (was 16dp)
                     colors = ButtonDefaults.textButtonColors(
                         contentColor = MaterialTheme.colorScheme.error,
@@ -1455,6 +1483,7 @@ private fun BiomechanicsSection(session: WorkoutSession) {
  * dense per-session row (36.dp / labelMedium), the default is the card header
  * (40.dp / labelLarge).
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun JustLiftLabelControls(
     isLabeled: Boolean,
@@ -1462,46 +1491,50 @@ private fun JustLiftLabelControls(
     onChange: () -> Unit,
     onClear: () -> Unit,
 ) {
-    val controlHeight = if (compact) 36.dp else 40.dp
     val labelStyle = if (compact) {
         MaterialTheme.typography.labelMedium
     } else {
         MaterialTheme.typography.labelLarge
     }
-    if (isLabeled) {
-        TextButton(
-            onClick = onChange,
-            modifier = Modifier.height(controlHeight),
-        ) {
-            Text(
-                stringResource(Res.string.action_change),
-                style = labelStyle,
-                fontWeight = FontWeight.Bold,
-            )
-        }
-        TextButton(
-            onClick = onClear,
-            modifier = Modifier.height(controlHeight),
-            colors = ButtonDefaults.textButtonColors(
-                contentColor = MaterialTheme.colorScheme.error,
-            ),
-        ) {
-            Text(
-                stringResource(Res.string.action_clear_label),
-                style = labelStyle,
-                fontWeight = FontWeight.Bold,
-            )
-        }
-    } else {
-        FilledTonalButton(
-            onClick = onChange,
-            modifier = Modifier.height(controlHeight),
-        ) {
-            Text(
-                stringResource(Res.string.action_tag),
-                style = labelStyle,
-                fontWeight = FontWeight.Bold,
-            )
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(Spacing.extraSmall),
+        verticalArrangement = Arrangement.spacedBy(Spacing.extraSmall),
+    ) {
+        if (isLabeled) {
+            TextButton(
+                onClick = onChange,
+                modifier = Modifier.heightIn(min = 48.dp),
+            ) {
+                Text(
+                    stringResource(Res.string.action_change),
+                    style = labelStyle,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+            TextButton(
+                onClick = onClear,
+                modifier = Modifier.heightIn(min = 48.dp),
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = MaterialTheme.colorScheme.error,
+                ),
+            ) {
+                Text(
+                    stringResource(Res.string.action_clear_label),
+                    style = labelStyle,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        } else {
+            FilledTonalButton(
+                onClick = onChange,
+                modifier = Modifier.heightIn(min = 48.dp),
+            ) {
+                Text(
+                    stringResource(Res.string.action_tag),
+                    style = labelStyle,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
         }
     }
 }

@@ -1,5 +1,8 @@
 package com.devil.phoenixproject.domain.model
 
+import com.devil.phoenixproject.util.UnitConverter
+import kotlin.math.roundToLong
+
 /**
  * Gamification domain models for badges and streaks
  */
@@ -115,7 +118,10 @@ data class Badge(
     /**
      * Get progress description for this badge
      */
-    fun getProgressDescription(currentValue: Int): String = when (val req = requirement) {
+    fun getProgressDescription(
+        currentValue: Int,
+        weightUnit: WeightUnit = WeightUnit.KG,
+    ): String = when (val req = requirement) {
         is BadgeRequirement.StreakDays -> "$currentValue/${req.days} days"
         is BadgeRequirement.TotalWorkouts -> "$currentValue/${req.count} workouts"
         is BadgeRequirement.TotalReps -> "$currentValue/${req.count} reps"
@@ -123,8 +129,8 @@ data class Badge(
         is BadgeRequirement.UniqueExercises -> "$currentValue/${req.count} exercises"
         is BadgeRequirement.WorkoutsInWeek -> "$currentValue/${req.count} this week"
         is BadgeRequirement.ConsecutiveWeeks -> "$currentValue/${req.weeks} weeks"
-        is BadgeRequirement.TotalVolume -> "$currentValue/${req.kgLifted} kg"
-        is BadgeRequirement.SingleWorkoutVolume -> "$currentValue/${req.kgLifted} kg"
+        is BadgeRequirement.TotalVolume -> formatVolumeProgress(currentValue.toLong(), req.kgLifted, weightUnit)
+        is BadgeRequirement.SingleWorkoutVolume -> formatVolumeProgress(currentValue.toLong(), req.kgLifted.toLong(), weightUnit)
         is BadgeRequirement.WorkoutAtTime -> if (currentValue > 0) "Completed!" else "Pending"
         is BadgeRequirement.WorkoutsAtTimeCount -> "$currentValue/${req.count} workouts"
         is BadgeRequirement.WorkoutModeCount -> "$currentValue/${req.count} workouts"
@@ -139,6 +145,19 @@ data class Badge(
         is BadgeRequirement.RoutinesCreated -> "$currentValue/${req.count} routines"
         is BadgeRequirement.QualityStreak -> "$currentValue/${req.sets} sets (>${req.minScore})"
         is BadgeRequirement.VelocityOneRepMaxImprovements -> "$currentValue/${req.count} velocity 1RMs"
+    }
+
+    private fun formatVolumeProgress(
+        currentKg: Long,
+        targetKg: Long,
+        weightUnit: WeightUnit,
+    ): String = when (weightUnit) {
+        WeightUnit.KG -> "$currentKg/$targetKg kg"
+        WeightUnit.LB -> {
+            val currentLb = (currentKg.toDouble() * UnitConverter.KG_TO_LB).roundToLong()
+            val targetLb = (targetKg.toDouble() * UnitConverter.KG_TO_LB).roundToLong()
+            "$currentLb/$targetLb lbs"
+        }
     }
 
     /**

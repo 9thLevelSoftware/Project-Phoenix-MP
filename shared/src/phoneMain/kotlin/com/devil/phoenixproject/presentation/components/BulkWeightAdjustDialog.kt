@@ -2,6 +2,7 @@ package com.devil.phoenixproject.presentation.components
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -15,15 +16,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -43,9 +41,8 @@ import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.util.Constants
 import com.devil.phoenixproject.util.UnitConverter
 import org.jetbrains.compose.resources.stringResource
+import projectphoenix.shared.generated.resources.*
 import projectphoenix.shared.generated.resources.Res
-import projectphoenix.shared.generated.resources.bulk_adjust_hint_pr_scaled
-import projectphoenix.shared.generated.resources.bulk_weight_adjust_select_hint
 
 // ── Data types ──────────────────────────────────────────────────────
 
@@ -191,117 +188,108 @@ fun BulkWeightAdjustDialog(
         }
     }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Adjust All Weights") },
-        text = {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                // Tab row: Percentage | Absolute
-                TabRow(
-                    selectedTabIndex = selectedTab,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Tab(
-                        selected = selectedTab == 0,
-                        onClick = { selectedTab = 0 },
-                        text = { Text("Percentage") },
-                    )
-                    Tab(
-                        selected = selectedTab == 1,
-                        onClick = { selectedTab = 1 },
-                        text = { Text("Absolute") },
-                    )
-                }
+    PhoenixModalDialogFrame(
+        title = stringResource(Res.string.routine_editor_adjust_all_weights),
+        onDismiss = onDismiss,
+        confirmLabel = if (changeCount > 0) {
+            stringResource(Res.string.bulk_adjust_apply_count, changeCount)
+        } else {
+            stringResource(Res.string.action_apply)
+        },
+        onConfirm = { preview?.let { onApply(it) } },
+        dismissLabel = stringResource(Res.string.action_cancel),
+        confirmEnabled = changeCount > 0,
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            // Tab row: Percentage | Absolute
+            PrimaryTabRow(
+                selectedTabIndex = selectedTab,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Tab(
+                    selected = selectedTab == 0,
+                    onClick = { selectedTab = 0 },
+                    text = { Text(stringResource(Res.string.bulk_adjust_percentage)) },
+                )
+                Tab(
+                    selected = selectedTab == 1,
+                    onClick = { selectedTab = 1 },
+                    text = { Text(stringResource(Res.string.bulk_adjust_absolute)) },
+                )
+            }
 
-                Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(12.dp))
 
-                // Mode-specific input
-                when (selectedTab) {
-                    0 -> PercentageModeContent(
-                        percentValue = percentValue,
-                        selectedPreset = selectedPreset,
-                        onPresetSelected = { preset ->
-                            selectedPreset = preset
-                            percentValue = ""
-                        },
-                        onCustomValueChange = { value ->
-                            percentValue = value
-                            selectedPreset = null
-                        },
-                    )
-
-                    1 -> AbsoluteModeContent(
-                        absoluteValue = absoluteValue,
-                        onValueChange = { absoluteValue = it },
-                        unitLabel = if (weightUnit == WeightUnit.LB) "lbs" else "kg",
-                    )
-                }
-
-                // Show affordance hint whenever Apply is disabled (changeCount == 0).
-                // Two cases: no mode selected yet, or a mode is set but all exercises are PR-scaled.
-                if (changeCount == 0) {
-                    val hintText = if (currentMode == null) {
-                        stringResource(Res.string.bulk_weight_adjust_select_hint)
-                    } else {
-                        // currentMode is set but nothing changed — all adjustable exercises are
-                        // PR-scaled (changeCount counts only non-PR exercises that actually moved).
-                        stringResource(Res.string.bulk_adjust_hint_pr_scaled)
-                    }
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = hintText,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-
-                Spacer(Modifier.height(12.dp))
-                HorizontalDivider()
-                Spacer(Modifier.height(8.dp))
-
-                // Preview header
-                Text(
-                    text = "Preview",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
+            // Mode-specific input
+            when (selectedTab) {
+                0 -> PercentageModeContent(
+                    percentValue = percentValue,
+                    selectedPreset = selectedPreset,
+                    onPresetSelected = { preset ->
+                        selectedPreset = preset
+                        percentValue = ""
+                    },
+                    onCustomValueChange = { value ->
+                        percentValue = value
+                        selectedPreset = null
+                    },
                 )
 
-                Spacer(Modifier.height(4.dp))
+                1 -> AbsoluteModeContent(
+                    absoluteValue = absoluteValue,
+                    onValueChange = { absoluteValue = it },
+                    unitLabel = stringResource(if (weightUnit == WeightUnit.LB) Res.string.label_lbs else Res.string.label_kg),
+                )
+            }
 
-                // Preview list
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 240.dp),
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
-                ) {
-                    items(exercises.indices.toList()) { index ->
-                        val original = exercises[index]
-                        val adjusted = preview?.getOrNull(index)
-                        PreviewRow(
-                            exercise = original,
-                            newWeight = adjusted?.weightPerCableKg,
-                            weightUnit = weightUnit,
-                            formatWeight = formatWeight,
-                        )
-                    }
+            // Show affordance hint whenever Apply is disabled (changeCount == 0).
+            if (changeCount == 0) {
+                val hintText = if (currentMode == null) {
+                    stringResource(Res.string.bulk_weight_adjust_select_hint)
+                } else {
+                    stringResource(Res.string.bulk_adjust_hint_pr_scaled)
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = hintText,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            Spacer(Modifier.height(12.dp))
+            HorizontalDivider()
+            Spacer(Modifier.height(8.dp))
+
+            // Preview header
+            Text(
+                text = stringResource(Res.string.bulk_adjust_preview),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+            )
+
+            Spacer(Modifier.height(4.dp))
+
+            // Preview list
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 240.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                items(exercises.indices.toList()) { index ->
+                    val original = exercises[index]
+                    val adjusted = preview?.getOrNull(index)
+                    PreviewRow(
+                        exercise = original,
+                        newWeight = adjusted?.weightPerCableKg,
+                        weightUnit = weightUnit,
+                        formatWeight = formatWeight,
+                    )
                 }
             }
-        },
-        confirmButton = {
-            Button(
-                onClick = { preview?.let { onApply(it) } },
-                enabled = changeCount > 0,
-            ) {
-                Text(if (changeCount > 0) "Apply ($changeCount)" else "Apply")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
-        },
-    )
+        }
+    }
 }
 
 // ── Percentage mode content ─────────────────────────────────────────
@@ -326,7 +314,9 @@ private fun PercentageModeContent(
                 val isSelected = selectedPreset == preset
                 val label = if (preset > 0) "+${preset.toInt()}%" else "${preset.toInt()}%"
                 Surface(
-                    modifier = Modifier.clickable { onPresetSelected(preset) },
+                    modifier = Modifier
+                        .heightIn(min = 48.dp)
+                        .clickable { onPresetSelected(preset) },
                     shape = MaterialTheme.shapes.medium,
                     color = if (isSelected) {
                         MaterialTheme.colorScheme.primaryContainer
@@ -334,17 +324,21 @@ private fun PercentageModeContent(
                         MaterialTheme.colorScheme.surfaceVariant
                     },
                 ) {
-                    Text(
-                        text = label,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                        color = if (isSelected) {
-                            MaterialTheme.colorScheme.onPrimaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    )
+                    Box(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                            color = if (isSelected) {
+                                MaterialTheme.colorScheme.onPrimaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                        )
+                    }
                 }
             }
         }
@@ -356,8 +350,8 @@ private fun PercentageModeContent(
             value = percentValue,
             onValueChange = onCustomValueChange,
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("Custom %") },
-            placeholder = { Text("e.g. 15 or -7.5") },
+            label = { Text(stringResource(Res.string.bulk_adjust_custom_percent)) },
+            placeholder = { Text(stringResource(Res.string.bulk_adjust_hint_percent)) },
             suffix = { Text("%") },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
             singleLine = true,
@@ -377,8 +371,8 @@ private fun AbsoluteModeContent(
         value = absoluteValue,
         onValueChange = onValueChange,
         modifier = Modifier.fillMaxWidth(),
-        label = { Text("Weight change") },
-        placeholder = { Text("e.g. 5 or -2.5") },
+        label = { Text(stringResource(Res.string.bulk_adjust_weight_change)) },
+        placeholder = { Text(stringResource(Res.string.bulk_adjust_hint_absolute)) },
         suffix = { Text(unitLabel) },
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
         singleLine = true,
@@ -401,40 +395,38 @@ private fun PreviewRow(
         )
     val hasChanged = newWeight != null && newWeight != exercise.weightPerCableKg
 
-    Row(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
+        verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        // Exercise name
+        // Exercise name (line 1)
         Text(
             text = exercise.exercise.name,
             style = MaterialTheme.typography.bodyMedium,
-            maxLines = 1,
+            fontWeight = FontWeight.Medium,
+            maxLines = 2,
             overflow = TextOverflow.Ellipsis,
             color = if (isPRScaled) {
                 MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
             } else {
                 MaterialTheme.colorScheme.onSurface
             },
-            modifier = Modifier.weight(1f),
         )
 
-        Spacer(Modifier.width(8.dp))
-
-        // Weight change display
+        // Old -> new weight display (line 2 so narrow/scaled layouts never clip)
         when {
             isPRScaled -> {
                 Text(
-                    text = "PR-scaled",
+                    text = stringResource(Res.string.bulk_adjust_pr_scaled),
                     style = MaterialTheme.typography.bodySmall,
                     fontStyle = FontStyle.Italic,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                 )
             }
 
-            hasChanged && newWeight != null -> {
+            hasChanged -> {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = currentFormatted,
@@ -458,7 +450,7 @@ private fun PreviewRow(
                     )
                     if (isClamped) {
                         Text(
-                            text = " (clamped)",
+                            text = stringResource(Res.string.bulk_adjust_clamped_suffix),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.error,
                         )

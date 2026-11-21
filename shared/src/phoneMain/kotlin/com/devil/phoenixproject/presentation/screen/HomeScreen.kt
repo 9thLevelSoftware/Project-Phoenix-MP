@@ -61,11 +61,14 @@ import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WindowHeightSizeClass
+import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.presentation.viewmodel.RoutineResumeEntryPoint
+import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import com.devil.phoenixproject.util.KmpUtils
 import kotlin.time.Clock
 import kotlin.time.Instant
+import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -74,6 +77,18 @@ import org.koin.compose.koinInject
 import projectphoenix.shared.generated.resources.Res
 import projectphoenix.shared.generated.resources.cd_start_workout
 import projectphoenix.shared.generated.resources.cd_streak
+import projectphoenix.shared.generated.resources.cycles_day_numbered
+import projectphoenix.shared.generated.resources.home_action_cycles
+import projectphoenix.shared.generated.resources.home_action_routines
+import projectphoenix.shared.generated.resources.home_cd_open_cycles
+import projectphoenix.shared.generated.resources.home_cd_open_just_lift
+import projectphoenix.shared.generated.resources.home_cd_open_routines
+import projectphoenix.shared.generated.resources.home_cd_open_single_exercise
+import projectphoenix.shared.generated.resources.home_cycle_day_named
+import projectphoenix.shared.generated.resources.home_cycle_day_numbered
+import projectphoenix.shared.generated.resources.home_no_recent_workouts
+import projectphoenix.shared.generated.resources.home_no_routine_assigned
+import projectphoenix.shared.generated.resources.home_recent_activity
 import projectphoenix.shared.generated.resources.home_recent_activity_date_pattern
 import projectphoenix.shared.generated.resources.home_recent_activity_date_time_separator
 import projectphoenix.shared.generated.resources.home_recent_activity_group_detail
@@ -82,7 +97,17 @@ import projectphoenix.shared.generated.resources.home_recent_activity_many_sets
 import projectphoenix.shared.generated.resources.home_recent_activity_one_rep
 import projectphoenix.shared.generated.resources.home_recent_activity_one_set
 import projectphoenix.shared.generated.resources.home_recent_activity_time_pattern
+import projectphoenix.shared.generated.resources.home_workout_session_fallback
+import projectphoenix.shared.generated.resources.just_lift
+import projectphoenix.shared.generated.resources.nav_single_exercise
 import projectphoenix.shared.generated.resources.start_workout
+import projectphoenix.shared.generated.resources.weekday_initial_fri
+import projectphoenix.shared.generated.resources.weekday_initial_mon
+import projectphoenix.shared.generated.resources.weekday_initial_sat
+import projectphoenix.shared.generated.resources.weekday_initial_sun
+import projectphoenix.shared.generated.resources.weekday_initial_thu
+import projectphoenix.shared.generated.resources.weekday_initial_tue
+import projectphoenix.shared.generated.resources.weekday_initial_wed
 
 private const val HOME_CONTENT_MAX_WIDTH = 720
 
@@ -159,7 +184,7 @@ fun HomeScreen(navController: NavController, viewModel: MainViewModel) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
+            .background(screenBackgroundBrush()),
     ) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
@@ -205,7 +230,7 @@ fun HomeScreen(navController: NavController, viewModel: MainViewModel) {
                         .widthIn(max = HOME_CONTENT_MAX_WIDTH.dp),
                 ) {
                     Text(
-                        "Recent Activity",
+                        stringResource(Res.string.home_recent_activity),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
@@ -263,8 +288,8 @@ private fun HomeLaunchPad(
     val cycleStatus = activeCycle?.let { cycle ->
         when {
             runnableCycleStart != null && currentRoutine != null -> currentRoutine.name
-            currentDayName != null -> "$currentDayName in ${cycle.name}"
-            else -> "Day $currentDayNumber in ${cycle.name}"
+            currentDayName != null -> stringResource(Res.string.home_cycle_day_named, currentDayName, cycle.name)
+            else -> stringResource(Res.string.home_cycle_day_numbered, currentDayNumber, cycle.name)
         }
     }
     val primaryHeight = if (compactVerticalSpace) 56.dp else 72.dp
@@ -299,19 +324,25 @@ private fun HomeLaunchPad(
                 onSingleExercise = onSingleExercise,
                 onRoutines = onRoutines,
                 onCycles = onCycles,
+                singleExerciseLabel = stringResource(Res.string.nav_single_exercise),
+                singleExerciseContentDescription = stringResource(Res.string.home_cd_open_single_exercise),
+                routinesLabel = stringResource(Res.string.home_action_routines),
+                routinesContentDescription = stringResource(Res.string.home_cd_open_routines),
+                cyclesLabel = stringResource(Res.string.home_action_cycles),
+                cyclesContentDescription = stringResource(Res.string.home_cd_open_cycles),
             ),
             stacked = stackedShortcuts,
             buttonHeight = shortcutHeight,
         )
 
         AnimatedActionButton(
-            label = "Just Lift",
+            label = stringResource(Res.string.just_lift),
             icon = Icons.Default.LocalFireDepartment,
             onClick = onJustLift,
             isPrimary = true,
             isFireButton = true,
             iconAnimation = IconAnimation.FIRE,
-            contentDescription = "Open Just Lift",
+            contentDescription = stringResource(Res.string.home_cd_open_just_lift),
             heightOverride = primaryHeight,
             allowTwoLineLabel = true,
         )
@@ -330,6 +361,7 @@ private fun HomeLaunchPad(
 
 @Composable
 private fun ShortcutActions(actions: List<HomeActionSpec>, stacked: Boolean, buttonHeight: androidx.compose.ui.unit.Dp) {
+    val isWideScreen = LocalWindowSizeClass.current.widthSizeClass != WindowWidthSizeClass.Compact
     if (stacked) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             actions.forEach { action ->
@@ -346,28 +378,63 @@ private fun ShortcutActions(actions: List<HomeActionSpec>, stacked: Boolean, but
                 )
             }
         }
+    } else if (isWideScreen && actions.size <= 3) {
+        // C-14: Balanced equal-width 3-up pill row on Medium/Expanded widths
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            actions.forEach { action ->
+                AnimatedActionButton(
+                    label = action.label,
+                    icon = action.icon,
+                    onClick = action.onClick,
+                    isPrimary = false,
+                    iconAnimation = action.iconAnimation,
+                    contentDescription = action.contentDescription,
+                    heightOverride = buttonHeight,
+                    allowTwoLineLabel = true,
+                    enabled = action.enabled,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
     } else {
+        // C-14: On compact phones, pair the top 2 and span any trailing odd action cleanly full width
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             actions.chunked(2).forEach { rowActions ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    rowActions.forEach { action ->
-                        AnimatedActionButton(
-                            label = action.label,
-                            icon = action.icon,
-                            onClick = action.onClick,
-                            isPrimary = false,
-                            iconAnimation = action.iconAnimation,
-                            contentDescription = action.contentDescription,
-                            heightOverride = buttonHeight,
-                            enabled = action.enabled,
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
-                    if (rowActions.size == 1) {
-                        Spacer(Modifier.weight(1f))
+                if (rowActions.size == 1) {
+                    val action = rowActions.first()
+                    AnimatedActionButton(
+                        label = action.label,
+                        icon = action.icon,
+                        onClick = action.onClick,
+                        isPrimary = false,
+                        iconAnimation = action.iconAnimation,
+                        contentDescription = action.contentDescription,
+                        heightOverride = buttonHeight,
+                        allowTwoLineLabel = true,
+                        enabled = action.enabled,
+                    )
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        rowActions.forEach { action ->
+                            AnimatedActionButton(
+                                label = action.label,
+                                icon = action.icon,
+                                onClick = action.onClick,
+                                isPrimary = false,
+                                iconAnimation = action.iconAnimation,
+                                contentDescription = action.contentDescription,
+                                heightOverride = buttonHeight,
+                                allowTwoLineLabel = true,
+                                enabled = action.enabled,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
                     }
                 }
             }
@@ -397,7 +464,11 @@ private fun CycleContextRow(cycle: TrainingCycle, dayNumber: Int, dayName: Strin
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = listOfNotNull("Day $dayNumber", dayName, routineName ?: "No routine assigned").joinToString(" • "),
+                    text = listOfNotNull(
+                        stringResource(Res.string.cycles_day_numbered, dayNumber),
+                        dayName,
+                        routineName ?: stringResource(Res.string.home_no_routine_assigned),
+                    ).joinToString(" • "),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -441,32 +512,53 @@ private fun WeeklyComplianceStrip(
                     sessionDate == date
                 }
 
+                val weekdayLetter = when (date.dayOfWeek) {
+                    DayOfWeek.MONDAY -> stringResource(Res.string.weekday_initial_mon)
+                    DayOfWeek.TUESDAY -> stringResource(Res.string.weekday_initial_tue)
+                    DayOfWeek.WEDNESDAY -> stringResource(Res.string.weekday_initial_wed)
+                    DayOfWeek.THURSDAY -> stringResource(Res.string.weekday_initial_thu)
+                    DayOfWeek.FRIDAY -> stringResource(Res.string.weekday_initial_fri)
+                    DayOfWeek.SATURDAY -> stringResource(Res.string.weekday_initial_sat)
+                    DayOfWeek.SUNDAY -> stringResource(Res.string.weekday_initial_sun)
+                }
                 ComplianceDot(
-                    letter = date.dayOfWeek.name.take(1),
+                    letter = weekdayLetter,
                     isActive = hasWorkout,
                     isToday = date == today,
                 )
             }
         }
 
-        if (!compact && workoutStreak != null && workoutStreak > 0) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(top = 6.dp),
+        if (workoutStreak != null && workoutStreak > 0) {
+            val streakTopPadding = if (compact) 4.dp else 6.dp
+            val streakIconSize = if (compact) 16.dp else 20.dp
+            val streakLabelStyle = if (compact) MaterialTheme.typography.labelMedium else MaterialTheme.typography.labelLarge
+            Surface(
+                modifier = Modifier.padding(top = streakTopPadding),
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
             ) {
-                Icon(
-                    Icons.Default.LocalFireDepartment,
-                    contentDescription = stringResource(Res.string.cd_streak),
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp),
-                )
-                Spacer(Modifier.width(4.dp))
-                Text(
-                    "$workoutStreak",
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(
+                        horizontal = if (compact) 10.dp else 12.dp,
+                        vertical = if (compact) 3.dp else 4.dp,
+                    ),
+                ) {
+                    Icon(
+                        Icons.Default.LocalFireDepartment,
+                        contentDescription = stringResource(Res.string.cd_streak),
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(streakIconSize),
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        "$workoutStreak",
+                        style = streakLabelStyle,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
             }
         }
     }
@@ -481,7 +573,7 @@ private fun ComplianceDot(letter: String, isActive: Boolean, isToday: Boolean) {
             color = if (isToday) {
                 MaterialTheme.colorScheme.primary
             } else {
-                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                MaterialTheme.colorScheme.onSurfaceVariant
             },
             fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal,
         )
@@ -529,7 +621,7 @@ private fun RecentActivitySummary(
 ) {
     if (history.isEmpty()) {
         Text(
-            "No recent workouts yet.",
+            stringResource(Res.string.home_no_recent_workouts),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -572,7 +664,7 @@ private fun RecentActivitySummary(
                             },
                         ) {
                             RecentActivityRowContent(
-                                title = session.exerciseName ?: "Workout Session",
+                                title = session.exerciseName ?: stringResource(Res.string.home_workout_session_fallback),
                                 detail = AchievedLoadPresentation.homeRecentActivityLine(session, weightUnit),
                                 timestamp = session.timestamp,
                                 showChevron = replayExerciseId != null,
@@ -693,22 +785,28 @@ internal fun buildHomeShortcutActions(
     onSingleExercise: () -> Unit,
     onRoutines: () -> Unit,
     onCycles: () -> Unit,
+    singleExerciseLabel: String = "Single Exercise",
+    singleExerciseContentDescription: String = "Open Single Exercise workout",
+    routinesLabel: String = "Routines",
+    routinesContentDescription: String = "Open Routines",
+    cyclesLabel: String = "Cycles",
+    cyclesContentDescription: String = "Open Training Cycles",
 ): List<HomeActionSpec> = listOf(
     HomeActionSpec(
-        label = "Single Exercise",
-        contentDescription = "Open Single Exercise workout",
+        label = singleExerciseLabel,
+        contentDescription = singleExerciseContentDescription,
         icon = Icons.Outlined.FitnessCenter,
         onClick = onSingleExercise,
     ),
     HomeActionSpec(
-        label = "Routines",
-        contentDescription = "Open Routines",
+        label = routinesLabel,
+        contentDescription = routinesContentDescription,
         icon = Icons.AutoMirrored.Filled.FormatListBulleted,
         onClick = onRoutines,
     ),
     HomeActionSpec(
-        label = "Cycles",
-        contentDescription = "Open Training Cycles",
+        label = cyclesLabel,
+        contentDescription = cyclesContentDescription,
         icon = Icons.Default.Loop,
         onClick = onCycles,
         iconAnimation = IconAnimation.ROTATE,

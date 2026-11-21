@@ -1,15 +1,21 @@
 package com.devil.phoenixproject.presentation.components
 
-import androidx.compose.foundation.layout.height
-import androidx.compose.material3.AlertDialog
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import org.jetbrains.compose.resources.stringResource
 import projectphoenix.shared.generated.resources.Res
@@ -18,8 +24,8 @@ import projectphoenix.shared.generated.resources.action_cancel
 /**
  * Canonical destructive-action confirmation dialog.
  *
- * Uses the "M3 Expressive" style established in HistoryTab: surfaceContainerHighest container,
- * large shape, 56 dp tall buttons with medium shape.
+ * Uses [PhoenixModalDialogFrame] for responsive width (`max = 560.dp`), scrollable body,
+ * and >= 56 dp equal-height action controls.
  *
  * The dismiss button always shows "Cancel" (Res.string.action_cancel) — callers supply only
  * the confirm label (e.g. stringResource(Res.string.action_delete)).
@@ -35,53 +41,63 @@ fun DestructiveConfirmDialog(
     onDismiss: () -> Unit,
     icon: ImageVector? = null,
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-        shape = MaterialTheme.shapes.large,
-        icon = icon?.let {
-            { Icon(it, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
+    PhoenixModalDialogFrame(
+        title = title,
+        onDismiss = onDismiss,
+        actions = {
+            OutlinedButton(
+                onClick = onDismiss,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .heightIn(min = 56.dp),
+                shape = MaterialTheme.shapes.extraLarge,
+            ) {
+                Text(
+                    text = stringResource(Res.string.action_cancel),
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Button(
+                onClick = onConfirm,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .heightIn(min = 56.dp),
+                shape = MaterialTheme.shapes.extraLarge,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = MaterialTheme.colorScheme.onError,
+                ),
+            ) {
+                Text(
+                    text = confirmText,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         },
-        title = {
+    ) {
+        if (icon != null) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        } else {
             Text(
-                title,
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-            )
-        },
-        text = {
-            Text(
-                message,
+                text = message,
                 style = MaterialTheme.typography.bodyLarge,
             )
-        },
-        confirmButton = {
-            TextButton(
-                onClick = onConfirm,
-                modifier = Modifier.height(56.dp),
-                shape = MaterialTheme.shapes.medium,
-            ) {
-                Text(
-                    confirmText,
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
-        },
-        dismissButton = {
-            TextButton(
-                onClick = onDismiss,
-                modifier = Modifier.height(56.dp),
-                shape = MaterialTheme.shapes.medium,
-            ) {
-                Text(
-                    stringResource(Res.string.action_cancel),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        },
-    )
+        }
+    }
 }

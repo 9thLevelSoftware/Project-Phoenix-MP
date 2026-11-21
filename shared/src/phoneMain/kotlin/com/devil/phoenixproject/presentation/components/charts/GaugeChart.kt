@@ -1,6 +1,6 @@
 package com.devil.phoenixproject.presentation.components.charts
 
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
@@ -10,7 +10,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -21,6 +22,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
 import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import org.jetbrains.compose.resources.stringResource
@@ -32,7 +34,7 @@ import projectphoenix.shared.generated.resources.Res
  * Custom gauge chart for goal progress visualization
  * Shows progress from 0% to 100% with Material 3 colors
  *
- * Uses Compose Text overlaid on Canvas for KMP-compatible text rendering.
+ * Uses Compose Text stacked in a Column so font scaling never overlaps the arc.
  */
 @Composable
 fun GaugeChart(
@@ -52,11 +54,19 @@ fun GaugeChart(
     }
 
     val progress = (currentValue / targetValue).coerceIn(0f, 1f)
-    val animatedProgress by animateFloatAsState(
-        targetValue = progress,
-        animationSpec = tween(durationMillis = 1500),
-        label = "GaugeProgress",
-    )
+    val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
+    val animatedProgressState = remember { Animatable(if (reduceMotion) progress else 0f) }
+    LaunchedEffect(progress, reduceMotion) {
+        if (reduceMotion) {
+            animatedProgressState.snapTo(progress)
+        } else {
+            animatedProgressState.animateTo(
+                targetValue = progress,
+                animationSpec = tween(durationMillis = 1500),
+            )
+        }
+    }
+    val animatedProgress = animatedProgressState.value
 
     val percentage = (animatedProgress * 100).toInt()
     // Heat-ramp semantics: low progress = error (red), mid = warning (amber), high = success/primary
@@ -67,99 +77,105 @@ fun GaugeChart(
         else -> accessColors.error
     }
 
-    val surfaceContainerHighestColor = MaterialTheme.colorScheme.surfaceContainerHighest
-    val chartHeight = ResponsiveDimensions.chartHeight(baseHeight = 200.dp)
+    // Contrasting track color against both surface and surfaceContainerHighest cards
+    val trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.14f)
+    val chartHeight = ResponsiveDimensions.chartHeight(baseHeight = 160.dp)
 
-    Column(modifier = modifier) {
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(chartHeight)
-                .padding(16.dp),
+                .padding(horizontal = 16.dp, vertical = 8.dp),
             contentAlignment = Alignment.Center,
         ) {
             Canvas(modifier = Modifier.fillMaxSize()) {
-                val centerX = size.width / 2
-                val centerY = size.height * 0.8f
-                val radius = size.width.coerceAtMost(size.height * 1.2f) / 2.5f
+                val strokeWidth = 24.dp.toPx()
+                val maxRx = (size.width - strokeWidth) / 2f
+                val maxRy = size.height - strokeWidth
+                val radius = minOf(maxRx, maxRy).coerceAtLeast(1f)
+                val centerX = size.width / 2f
+                val centerY = (size.height + radius) / 2f
 
                 // Background arc
                 drawArc(
-                    color = surfaceContainerHighestColor,
+                    color = trackColor,
                     startAngle = 180f,
                     sweepAngle = 180f,
                     useCenter = false,
                     topLeft = Offset(centerX - radius, centerY - radius),
                     size = Size(radius * 2, radius * 2),
                     style = Stroke(
-                        width = 24.dp.toPx(),
+                        width = strokeWidth,
                         cap = StrokeCap.Round,
                     ),
                 )
 
                 // Progress arc
-                drawArc(
-                    color = gaugeColor,
-                    startAngle = 180f,
-                    sweepAngle = 180f * animatedProgress,
-                    useCenter = false,
-                    topLeft = Offset(centerX - radius, centerY - radius),
-                    size = Size(radius * 2, radius * 2),
-                    style = Stroke(
-                        width = 24.dp.toPx(),
-                        cap = StrokeCap.Round,
-                    ),
-                )
-
-                // Gradient overlay
-                drawArc(
-                    brush = Brush.linearGradient(
-                        colors = listOf(
-                            gaugeColor.copy(alpha = 0.8f),
-                            gaugeColor.copy(alpha = 0.4f),
+                if (animatedProgress > 0f) {
+                    drawArc(
+                        color = gaugeColor,
+                        startAngle = 180f,
+                        sweepAngle = 180f * animatedProgress,
+                        useCenter = false,
+                        topLeft = Offset(centerX - radius, centerY - radius),
+                        size = Size(radius * 2, radius * 2),
+                        style = Stroke(
+                            width = strokeWidth,
+                            cap = StrokeCap.Round,
                         ),
-                        start = Offset(centerX - radius, centerY),
-                        end = Offset(centerX + radius, centerY),
-                    ),
-                    startAngle = 180f,
-                    sweepAngle = 180f * animatedProgress,
-                    useCenter = false,
-                    topLeft = Offset(centerX - radius, centerY - radius),
-                    size = Size(radius * 2, radius * 2),
-                    style = Stroke(
-                        width = 8.dp.toPx(),
-                        cap = StrokeCap.Round,
-                    ),
-                )
-            }
+                    )
 
-            // Center text overlaid on canvas (positioned in lower portion where arc center is)
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.offset(y = 24.dp),
-            ) {
-                Text(
-                    text = if (showPercentage) "$percentage%" else "${currentValue.toInt()}/${targetValue.toInt()}",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    textAlign = TextAlign.Center,
-                )
+                    // Gradient highlight overlay
+                    drawArc(
+                        brush = Brush.linearGradient(
+                            colors = listOf(
+                                gaugeColor.copy(alpha = 0.8f),
+                                gaugeColor.copy(alpha = 0.4f),
+                            ),
+                            start = Offset(centerX - radius, centerY),
+                            end = Offset(centerX + radius, centerY),
+                        ),
+                        startAngle = 180f,
+                        sweepAngle = 180f * animatedProgress,
+                        useCenter = false,
+                        topLeft = Offset(centerX - radius, centerY - radius),
+                        size = Size(radius * 2, radius * 2),
+                        style = Stroke(
+                            width = 8.dp.toPx(),
+                            cap = StrokeCap.Round,
+                        ),
+                    )
+                }
             }
         }
 
-        // Label text below gauge
-        Text(
-            text = label,
-            style = MaterialTheme.typography.titleLarge.copy(
-                fontWeight = FontWeight.Medium,
-            ),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp),
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 8.dp),
-        )
+                .padding(horizontal = 16.dp),
+        ) {
+            Text(
+                text = if (showPercentage) "$percentage%" else "${currentValue.toInt()}/${targetValue.toInt()}",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                textAlign = TextAlign.Center,
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontWeight = FontWeight.Medium,
+                ),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+        }
     }
 }
 
