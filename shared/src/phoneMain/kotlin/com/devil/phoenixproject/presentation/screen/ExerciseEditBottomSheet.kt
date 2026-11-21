@@ -6,6 +6,8 @@ import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -13,8 +15,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -91,11 +95,14 @@ import com.devil.phoenixproject.presentation.components.CompactNumberPicker
 import com.devil.phoenixproject.presentation.components.EquipmentRackSelectionCard
 import com.devil.phoenixproject.presentation.components.ExerciseDemoImage
 import com.devil.phoenixproject.presentation.components.ExpressiveSlider
+import com.devil.phoenixproject.presentation.components.PhoenixSheetHeader
 import com.devil.phoenixproject.presentation.components.ProgressionSlider
+import com.devil.phoenixproject.presentation.components.ResponsiveSegmentedSelector
 import com.devil.phoenixproject.presentation.util.LocalWeightTextScale
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import com.devil.phoenixproject.presentation.util.effectiveWeightTextScale
+import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
 import com.devil.phoenixproject.presentation.util.scaledForWeightValue
 import com.devil.phoenixproject.presentation.util.shouldStackExerciseSetPickers
 import com.devil.phoenixproject.presentation.viewmodel.ExerciseConfigViewModel
@@ -327,35 +334,14 @@ fun ExerciseEditBottomSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(Spacing.small),
+                .navigationBarsPadding()
+                .padding(horizontal = Spacing.small, vertical = Spacing.extraSmall),
         ) {
-            // Header
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column {
-                    Text(
-                        "Configure Exercise",
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    Text(
-                        exercise.exercise.displayName,
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                }
-                IconButton(onClick = dismissSheet) {
-                    Icon(
-                        Icons.Default.Close,
-                        contentDescription = stringResource(Res.string.cd_close),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
+            PhoenixSheetHeader(
+                title = "Configure Exercise",
+                subtitle = exercise.exercise.displayName,
+                onClose = dismissSheet,
+            )
 
             Spacer(modifier = Modifier.height(Spacing.small))
 
@@ -968,7 +954,7 @@ private fun SetsConfiguration(
             onClick = onAddSet,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(56.dp),
+                .heightIn(min = 56.dp),
             shape = MaterialTheme.shapes.medium,
         ) {
             Icon(
@@ -1437,20 +1423,13 @@ private fun EchoLevelSelector(
             )
             Spacer(modifier = Modifier.height(Spacing.small))
 
-            SingleChoiceSegmentedButtonRow(
+            ResponsiveSegmentedSelector(
+                options = EchoLevel.entries,
+                selectedOption = level,
+                onSelect = onLevelChange,
+                labelForOption = { echoLevelLabel(it) },
                 modifier = Modifier.fillMaxWidth(),
-            ) {
-                val levels = EchoLevel.entries
-                levels.forEachIndexed { index, echoLevel ->
-                    SegmentedButton(
-                        shape = SegmentedButtonDefaults.itemShape(index = index, count = levels.size),
-                        onClick = { onLevelChange(echoLevel) },
-                        selected = level == echoLevel,
-                    ) {
-                        Text(echoLevelLabel(echoLevel), maxLines = 1)
-                    }
-                }
-            }
+            )
         }
     }
 }
@@ -1584,17 +1563,13 @@ internal fun WeightConfigurationCard(
                     ScalingBasis.MAX_VOLUME_PR to "Max-volume PR",
                     ScalingBasis.ESTIMATED_1RM to "Est. 1RM",
                 )
-                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                    basisOptions.forEachIndexed { index, (basis, label) ->
-                        SegmentedButton(
-                            shape = SegmentedButtonDefaults.itemShape(index = index, count = basisOptions.size),
-                            onClick = { onScalingBasisChange(basis) },
-                            selected = effectiveBasisForControls == basis,
-                        ) {
-                            Text(label, maxLines = 1)
-                        }
-                    }
-                }
+                ResponsiveSegmentedSelector(
+                    options = basisOptions.map { it.first },
+                    selectedOption = effectiveBasisForControls,
+                    onSelect = onScalingBasisChange,
+                    labelForOption = { basis -> basisOptions.first { it.first == basis }.second },
+                    modifier = Modifier.fillMaxWidth(),
+                )
 
                 if (baselineWeightKg != null) {
                     Spacer(modifier = Modifier.height(Spacing.medium))
@@ -1664,17 +1639,19 @@ internal fun WeightConfigurationCard(
 
                     Spacer(modifier = Modifier.height(Spacing.small))
 
-                    // Common preset buttons
-                    Row(
+                    // Common preset buttons wrapped cleanly for narrow/scaled widths
+                    @OptIn(ExperimentalLayoutApi::class)
+                    FlowRow(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(Spacing.small),
+                        verticalArrangement = Arrangement.spacedBy(Spacing.small),
                     ) {
                         listOf(70, 80, 90, 100).forEach { percent ->
                             FilterChip(
                                 selected = weightPercentOfPR == percent,
                                 onClick = { onWeightPercentOfPRChange(percent) },
                                 label = { Text(stringResource(Res.string.percent_label, percent)) },
-                                modifier = Modifier.weight(1f),
+                                modifier = Modifier.heightIn(min = 48.dp),
                             )
                         }
                     }
@@ -2010,7 +1987,7 @@ internal fun WarmupSetRow(
             ) {
                 IconButton(
                     onClick = { onUpdateReps(warmupSet.reps - 1) },
-                    modifier = Modifier.size(32.dp),
+                    modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
                     enabled = warmupSet.reps > 1,
                 ) {
                     Text("-", fontWeight = FontWeight.Bold)
@@ -2022,7 +1999,7 @@ internal fun WarmupSetRow(
                 )
                 IconButton(
                     onClick = { onUpdateReps(warmupSet.reps + 1) },
-                    modifier = Modifier.size(32.dp),
+                    modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
                     enabled = warmupSet.reps < 20,
                 ) {
                     Text("+", fontWeight = FontWeight.Bold)
@@ -2046,7 +2023,7 @@ internal fun WarmupSetRow(
             ) {
                 IconButton(
                     onClick = { onUpdatePercent(warmupSet.percentOfWorking - 5) },
-                    modifier = Modifier.size(32.dp),
+                    modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
                     enabled = warmupSet.percentOfWorking > 10,
                 ) {
                     Text("-", fontWeight = FontWeight.Bold)
@@ -2059,7 +2036,7 @@ internal fun WarmupSetRow(
                 )
                 IconButton(
                     onClick = { onUpdatePercent(warmupSet.percentOfWorking + 5) },
-                    modifier = Modifier.size(32.dp),
+                    modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
                     enabled = warmupSet.percentOfWorking < 100,
                 ) {
                     Text("+", fontWeight = FontWeight.Bold)
@@ -2070,7 +2047,7 @@ internal fun WarmupSetRow(
     val deleteButton: @Composable () -> Unit = {
         IconButton(
             onClick = onRemove,
-            modifier = Modifier.size(36.dp),
+            modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
         ) {
             Icon(
                 Icons.Default.Delete,
@@ -2081,13 +2058,17 @@ internal fun WarmupSetRow(
         }
     }
 
+    val stackWarmupRow = effectiveScale > 1.0f ||
+        isCompactAccessibilityLayout() ||
+        LocalWindowSizeClass.current.widthSizeClass == WindowWidthSizeClass.Compact
+
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.small,
         color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
-        if (effectiveScale > 1.0f) {
+        if (stackWarmupRow) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -2096,34 +2077,45 @@ internal fun WarmupSetRow(
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(Spacing.small),
+                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    warmupLabel()
-                    repsStepper(Modifier.weight(1f))
-                    percentStepper(Modifier.weight(1f))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.small),
+                    ) {
+                        warmupLabel()
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Text(
+                                "=",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Text(
+                                "$calculatedWeight",
+                                style = calculatedWeightStyle,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                            )
+                            Text(
+                                weightSuffix,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                     deleteButton()
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(Spacing.extraSmall, Alignment.End),
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.small),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
-                        "Weight",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        "$calculatedWeight",
-                        style = calculatedWeightStyle,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    Text(
-                        weightSuffix,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    repsStepper(Modifier.weight(1f))
+                    percentStepper(Modifier.weight(1f))
                 }
             }
         } else {

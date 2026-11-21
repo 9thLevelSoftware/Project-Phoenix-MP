@@ -29,6 +29,7 @@ fun SwipeableCycleItem(
     onTap: () -> Unit,
     dragModifier: Modifier = Modifier,
     modifier: Modifier = Modifier,
+    gesturesEnabled: Boolean = true,
 ) {
     val deleteLabel = stringResource(Res.string.action_delete)
     val copyLabel = stringResource(Res.string.action_copy)
@@ -56,6 +57,7 @@ fun SwipeableCycleItem(
     SwipeToDismissBox(
         state = dismissState,
         modifier = modifier,
+        gesturesEnabled = gesturesEnabled,
         backgroundContent = {
             val direction = dismissState.dismissDirection
             val colors = AccessibilityTheme.colors

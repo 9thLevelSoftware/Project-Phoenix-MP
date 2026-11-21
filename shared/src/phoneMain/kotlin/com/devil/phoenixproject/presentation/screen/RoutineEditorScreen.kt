@@ -13,22 +13,29 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Edit
@@ -59,6 +66,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.repository.ExerciseRepository
@@ -80,11 +93,15 @@ import com.devil.phoenixproject.presentation.components.DestructiveConfirmDialog
 import com.devil.phoenixproject.presentation.components.ExercisePickerDialog
 import com.devil.phoenixproject.presentation.components.ExerciseRowInSuperset
 import com.devil.phoenixproject.presentation.components.ExerciseRowWithConnector
+import com.devil.phoenixproject.presentation.components.PhoenixModalDialogFrame
+import com.devil.phoenixproject.presentation.components.RestTimePickerDialog
 import com.devil.phoenixproject.presentation.components.SelectionActionBar
 import com.devil.phoenixproject.presentation.components.SupersetContainer
 import com.devil.phoenixproject.presentation.components.SupersetHeader
 import com.devil.phoenixproject.presentation.components.SupersetPickerDialog
 import com.devil.phoenixproject.presentation.routine.buildDefaultRoutineExerciseForEditor
+import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
+import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
 import com.devil.phoenixproject.ui.theme.SupersetTheme
 import com.devil.phoenixproject.util.CommandLimits
 import com.devil.phoenixproject.util.UnitConverter
@@ -183,6 +200,7 @@ fun RoutineEditorScreen(
     // Dialog state for superset editing
     var supersetToRename by remember { mutableStateOf<Superset?>(null) }
     var supersetToChangeColor by remember { mutableStateOf<Superset?>(null) }
+    var supersetToEditRest by remember { mutableStateOf<Superset?>(null) }
     var supersetToDelete by remember { mutableStateOf<Superset?>(null) } // Delete All confirmation
 
     // Selection mode dialogs
@@ -418,88 +436,150 @@ fun RoutineEditorScreen(
             }
         },
     ) { padding ->
-        Column(
+        val contentMaxWidth = ResponsiveDimensions.contentMaxWidth()
+        val widthModifier = if (contentMaxWidth != null) {
+            Modifier.widthIn(max = contentMaxWidth).fillMaxWidth()
+        } else {
+            Modifier.fillMaxWidth()
+        }
+        val compactHeader = isCompactAccessibilityLayout()
+
+        val saveAction: () -> Unit = {
+            // F046: resolve the final routine id first, then rewrite
+            // every child Superset.routineId to it. New routines are
+            // edited under the draft id "new"; without this remap the
+            // saved superset rows keep routineId = "new" and become
+            // unreachable by the real routine id.
+            val finalRoutineId = if (routineId == "new") generateUUID() else routineId
+            val base = state.routine
+            val routineToSave = if (base != null) {
+                base.copy(
+                    id = finalRoutineId,
+                    name = state.routineName.trim(),
+                    supersets = base.supersets.map { it.copy(routineId = finalRoutineId) },
+                )
+            } else {
+                Routine(
+                    id = finalRoutineId,
+                    name = state.routineName.trim(),
+                )
+            }
+            viewModel.saveRoutine(routineToSave)
+            navController.popBackStack()
+        }
+
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(top = padding.calculateTopPadding())
-                .then(
-                    if (selectionMode) {
-                        Modifier.clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                        ) { clearSelection() }
-                    } else {
-                        Modifier
-                    },
-                ),
+                .padding(top = padding.calculateTopPadding()),
+            contentAlignment = Alignment.TopCenter,
         ) {
-            // Editable name row with Save button
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            Column(
+                modifier = widthModifier.fillMaxHeight(),
             ) {
-                OutlinedTextField(
-                    value = state.routineName,
-                    onValueChange = { state = state.copy(routineName = it) },
-                    modifier = Modifier.weight(1f),
-                    placeholder = { Text(stringResource(Res.string.routine_name)) },
-                    textStyle = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                    singleLine = true,
-                )
-                Button(
-                    onClick = {
-                        // F046: resolve the final routine id first, then rewrite
-                        // every child Superset.routineId to it. New routines are
-                        // edited under the draft id "new"; without this remap the
-                        // saved superset rows keep routineId = "new" and become
-                        // unreachable by the real routine id.
-                        val finalRoutineId = if (routineId == "new") generateUUID() else routineId
-                        val base = state.routine
-                        val routineToSave = if (base != null) {
-                            base.copy(
-                                id = finalRoutineId,
-                                name = state.routineName.trim(),
-                                supersets = base.supersets.map { it.copy(routineId = finalRoutineId) },
-                            )
-                        } else {
-                            Routine(
-                                id = finalRoutineId,
-                                name = state.routineName.trim(),
-                            )
-                        }
-                        viewModel.saveRoutine(routineToSave)
-                        navController.popBackStack()
-                    },
-                    enabled = canSaveRoutine,
-                ) {
-                    Text(stringResource(Res.string.action_save))
-                }
-
-                // Overflow menu for routine-level actions
-                Box {
-                    IconButton(onClick = { showOverflowMenu = true }) {
-                        Icon(Icons.Default.MoreVert, contentDescription = "More actions")
-                    }
-                    DropdownMenu(
-                        expanded = showOverflowMenu,
-                        onDismissRequest = { showOverflowMenu = false },
+                // Editable name row with Save button (stacks cleanly on compact/scaled layouts)
+                if (compactHeader) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        DropdownMenuItem(
-                            text = { Text("Adjust All Weights") },
-                            onClick = {
-                                showOverflowMenu = false
-                                bulkAdjustExerciseIds = null // null = target all exercises
-                                showBulkAdjust = true
-                            },
-                            leadingIcon = { Icon(Icons.AutoMirrored.Filled.TrendingUp, null) },
-                            enabled = state.exercises.isNotEmpty(),
+                        OutlinedTextField(
+                            value = state.routineName,
+                            onValueChange = { state = state.copy(routineName = it) },
+                            modifier = Modifier.fillMaxWidth(),
+                            placeholder = { Text(stringResource(Res.string.routine_name)) },
+                            textStyle = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                            singleLine = true,
                         )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Button(
+                                onClick = saveAction,
+                                enabled = canSaveRoutine,
+                                modifier = Modifier.heightIn(min = 48.dp),
+                            ) {
+                                Text(stringResource(Res.string.action_save))
+                            }
+                            Box {
+                                IconButton(
+                                    onClick = { showOverflowMenu = true },
+                                    modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
+                                ) {
+                                    Icon(Icons.Default.MoreVert, contentDescription = "More actions")
+                                }
+                                DropdownMenu(
+                                    expanded = showOverflowMenu,
+                                    onDismissRequest = { showOverflowMenu = false },
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("Adjust All Weights") },
+                                        onClick = {
+                                            showOverflowMenu = false
+                                            bulkAdjustExerciseIds = null
+                                            showBulkAdjust = true
+                                        },
+                                        leadingIcon = { Icon(Icons.AutoMirrored.Filled.TrendingUp, null) },
+                                        enabled = state.exercises.isNotEmpty(),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        OutlinedTextField(
+                            value = state.routineName,
+                            onValueChange = { state = state.copy(routineName = it) },
+                            modifier = Modifier.weight(1f),
+                            placeholder = { Text(stringResource(Res.string.routine_name)) },
+                            textStyle = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                            singleLine = true,
+                        )
+                        Button(
+                            onClick = saveAction,
+                            enabled = canSaveRoutine,
+                            modifier = Modifier.heightIn(min = 48.dp),
+                        ) {
+                            Text(stringResource(Res.string.action_save))
+                        }
+
+                        // Overflow menu for routine-level actions
+                        Box {
+                            IconButton(
+                                onClick = { showOverflowMenu = true },
+                                modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
+                            ) {
+                                Icon(Icons.Default.MoreVert, contentDescription = "More actions")
+                            }
+                            DropdownMenu(
+                                expanded = showOverflowMenu,
+                                onDismissRequest = { showOverflowMenu = false },
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Adjust All Weights") },
+                                    onClick = {
+                                        showOverflowMenu = false
+                                        bulkAdjustExerciseIds = null // null = target all exercises
+                                        showBulkAdjust = true
+                                    },
+                                    leadingIcon = { Icon(Icons.AutoMirrored.Filled.TrendingUp, null) },
+                                    enabled = state.exercises.isNotEmpty(),
+                                )
+                            }
+                        }
                     }
                 }
-            }
 
             // Exercise list content
             Box(
@@ -584,6 +664,7 @@ fun RoutineEditorScreen(
                                                         interactionSource = remember { MutableInteractionSource() },
                                                     )
                                                 },
+                                                onEditRestTime = { supersetToEditRest = superset },
                                             )
 
                                             // Exercises in superset (nested drag-and-drop reorder)
@@ -610,18 +691,21 @@ fun RoutineEditorScreen(
                                                             .shadow(innerElevation, MaterialTheme.shapes.small),
                                                         verticalAlignment = Alignment.CenterVertically,
                                                     ) {
-                                                        // Drag handle for intra-superset reorder
+                                                        // Drag handle for intra-superset reorder (48dp target)
                                                         if (!selectionMode && sortedExercises.size > 1) {
-                                                            Icon(
-                                                                Icons.Default.DragHandle,
-                                                                contentDescription = "Reorder exercise",
-                                                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                                            Box(
                                                                 modifier = Modifier
-                                                                    .size(20.dp)
-                                                                    .draggableHandle()
-                                                                    .padding(start = 4.dp),
-                                                            )
-                                                            Spacer(Modifier.width(4.dp))
+                                                                    .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                                                                    .draggableHandle(),
+                                                                contentAlignment = Alignment.Center,
+                                                            ) {
+                                                                Icon(
+                                                                    Icons.Default.DragHandle,
+                                                                    contentDescription = "Reorder exercise",
+                                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                                                    modifier = Modifier.size(20.dp),
+                                                                )
+                                                            }
                                                         }
 
                                                         ExerciseRowInSuperset(
@@ -631,6 +715,7 @@ fun RoutineEditorScreen(
                                                             kgToDisplay = kgToDisplay,
                                                             isSelectionMode = selectionMode,
                                                             isSelected = selectedExerciseIds.contains(exercise.id),
+                                                            onRestClick = { supersetToEditRest = superset },
                                                             onClick = {
                                                                 if (!selectionMode) {
                                                                     exerciseToConfig = exercise
@@ -782,6 +867,7 @@ fun RoutineEditorScreen(
                 )
             }
         }
+        }
     }
 
     // Exercise Picker Dialog
@@ -900,38 +986,74 @@ fun RoutineEditorScreen(
 
     // Color Picker Dialog
     supersetToChangeColor?.let { superset ->
-        AlertDialog(
-            onDismissRequest = { supersetToChangeColor = null },
-            title = { Text(stringResource(Res.string.choose_color)) },
-            text = {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+        PhoenixModalDialogFrame(
+            title = stringResource(Res.string.choose_color),
+            onDismiss = { supersetToChangeColor = null },
+            actions = {
+                TextButton(
+                    onClick = { supersetToChangeColor = null },
+                    modifier = Modifier.heightIn(min = 48.dp),
                 ) {
-                    SupersetTheme.colors.forEachIndexed { index, color ->
-                        Box(
-                            modifier = Modifier
-                                .size(48.dp)
-                                .clip(CircleShape)
-                                .background(color)
-                                .border(
-                                    width = if (superset.colorIndex == index) 3.dp else 0.dp,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    shape = CircleShape,
-                                )
-                                .clickable {
-                                    updateSuperset(superset.id) { it.copy(colorIndex = index) }
-                                    supersetToChangeColor = null
-                                },
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { supersetToChangeColor = null }) {
                     Text(stringResource(Res.string.action_cancel))
                 }
             },
+        ) {
+            @OptIn(ExperimentalLayoutApi::class)
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+            ) {
+                SupersetTheme.colors.forEachIndexed { index, color ->
+                    val isSelectedColor = superset.colorIndex == index
+                    val colorDesc = if (isSelectedColor) {
+                        "Color ${index + 1}, selected"
+                    } else {
+                        "Color ${index + 1}"
+                    }
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .background(color)
+                            .border(
+                                width = if (isSelectedColor) 3.dp else 0.dp,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                shape = CircleShape,
+                            )
+                            .semantics {
+                                role = Role.Button
+                                contentDescription = colorDesc
+                            }
+                            .clickable {
+                                updateSuperset(superset.id) { it.copy(colorIndex = index) }
+                                supersetToChangeColor = null
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (isSelectedColor) {
+                            val checkTint = if (color.luminance() > 0.5f) Color.Black else Color.White
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = null,
+                                tint = checkTint,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Superset Rest Between Exercises Picker Dialog
+    supersetToEditRest?.let { superset ->
+        RestTimePickerDialog(
+            currentRestSeconds = superset.restBetweenSeconds,
+            onSelect = { seconds ->
+                updateSuperset(superset.id) { it.copy(restBetweenSeconds = seconds) }
+                supersetToEditRest = null
+            },
+            onDismiss = { supersetToEditRest = null },
         )
     }
 

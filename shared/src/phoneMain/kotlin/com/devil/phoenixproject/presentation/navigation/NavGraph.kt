@@ -29,6 +29,7 @@ import com.devil.phoenixproject.data.repository.ProfileContextRecoveryException
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.domain.model.TrainingCycle
+import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.presentation.screen.*
@@ -68,6 +69,7 @@ private fun AssessmentDestination(
     exerciseId: String?,
     metricsFlow: StateFlow<WorkoutMetric?>,
     onNavigateBack: () -> Unit,
+    weightUnit: WeightUnit = WeightUnit.KG,
 ) {
     val profileRepository: UserProfileRepository = koinInject()
     val activeProfileContext by profileRepository.activeProfileContext.collectAsState()
@@ -90,6 +92,7 @@ private fun AssessmentDestination(
                 exerciseId = exerciseId,
                 onNavigateBack = onNavigateBack,
                 metricsFlow = metricsFlow,
+                weightUnit = weightUnit,
             )
         }
 
@@ -714,13 +717,29 @@ fun NavGraph(
             val routines by viewModel.routines.collectAsState()
             val cycleRepository: TrainingCycleRepository = koinInject()
 
-            // Load cycle from repository
+            // Load cycle and any cycle-specific template routines ("cycle_routine_*")
+            // that are intentionally filtered out of viewModel.routines.
             var cycle by remember { mutableStateOf<TrainingCycle?>(null) }
+            var resolvedRoutines by remember(routines) { mutableStateOf(routines) }
             var isLoading by remember { mutableStateOf(true) }
 
-            LaunchedEffect(cycleId) {
+            LaunchedEffect(cycleId, routines) {
                 isLoading = true
-                cycle = cycleRepository.getCycleById(cycleId)
+                val loadedCycle = cycleRepository.getCycleById(cycleId)
+                cycle = loadedCycle
+                resolvedRoutines = if (loadedCycle != null) {
+                    val knownIds = routines.map { it.id }.toSet()
+                    val missingIds = loadedCycle.days
+                        .mapNotNull { it.routineId }
+                        .distinct()
+                        .filter { it !in knownIds }
+                    val extraRoutines = missingIds.mapNotNull { id ->
+                        viewModel.workoutRepository.getRoutineById(id)
+                    }
+                    routines + extraRoutines
+                } else {
+                    routines
+                }
                 isLoading = false
             }
 
@@ -746,7 +765,7 @@ fun NavGraph(
                     CycleReviewScreen(
                         cycleName = cycle!!.name,
                         days = cycle!!.days,
-                        routines = routines,
+                        routines = resolvedRoutines,
                         onSave = {
                             // Cycle is already saved, just navigate back to TrainingCycles
                             navController.navigate(NavigationRoutes.TrainingCycles.route) {
@@ -790,11 +809,13 @@ fun NavGraph(
         ) { backStackEntry ->
             val profileId =
                 backStackEntry.arguments?.read { getStringOrNull("profileId") }.orEmpty()
+            val weightUnit by viewModel.weightUnit.collectAsState()
             AssessmentDestination(
                 routeProfileId = profileId,
                 exerciseId = null,
                 onNavigateBack = { navController.popBackStack() },
                 metricsFlow = viewModel.currentMetric,
+                weightUnit = weightUnit,
             )
         }
 
@@ -834,11 +855,13 @@ fun NavGraph(
                 backStackEntry.arguments?.read { getStringOrNull("profileId") }.orEmpty()
             val exerciseId =
                 backStackEntry.arguments?.read { getStringOrNull("exerciseId") }.orEmpty()
+            val weightUnit by viewModel.weightUnit.collectAsState()
             AssessmentDestination(
                 routeProfileId = profileId,
                 exerciseId = exerciseId,
                 onNavigateBack = { navController.popBackStack() },
                 metricsFlow = viewModel.currentMetric,
+                weightUnit = weightUnit,
             )
         }
 

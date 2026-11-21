@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.presentation.components.PhoenixSheetHeader
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -24,7 +25,7 @@ fun AddDaySheet(
     onSelectRoutine: (Routine) -> Unit,
     onAddRestDay: () -> Unit,
     onDismiss: () -> Unit,
-    sheetState: SheetState = rememberModalBottomSheetState(),
+    sheetState: SheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
     // When editing an existing workout day: opens the routine editor for its exercises.
     onEditExercises: (() -> Unit)? = null,
 ) {
@@ -38,15 +39,13 @@ fun AddDaySheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .navigationBarsPadding()
                 .padding(horizontal = 16.dp)
-                .padding(bottom = 32.dp),
+                .padding(bottom = 24.dp),
         ) {
-            // Header
-            Text(
-                text = "Add to Cycle",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.align(Alignment.CenterHorizontally),
+            PhoenixSheetHeader(
+                title = "Add to Cycle",
+                onClose = onDismiss,
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -111,7 +110,7 @@ fun AddDaySheet(
 
             // Routine list
             BoxWithConstraints {
-                val maxSheetHeight = (maxHeight * 0.8f).coerceIn(300.dp, 600.dp)
+                val maxSheetHeight = (maxHeight * 0.8f).coerceAtMost(600.dp).coerceAtLeast(160.dp)
 
                 LazyColumn(
                     modifier = Modifier.heightIn(max = maxSheetHeight),

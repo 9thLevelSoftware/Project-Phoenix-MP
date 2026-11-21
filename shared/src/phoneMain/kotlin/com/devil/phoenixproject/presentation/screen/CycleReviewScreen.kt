@@ -24,6 +24,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.CycleDay
+import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
@@ -39,7 +40,7 @@ import kotlin.math.roundToInt
  * - [Back] -> Returns to editor
  * - [Confirm & Finish] -> Commits and navigates home
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun CycleReviewScreen(
     cycleName: String,
@@ -50,6 +51,12 @@ fun CycleReviewScreen(
 ) {
     // Track expanded state for each day by id (stable key)
     val expandedDays = remember { mutableStateMapOf<String, Boolean>() }
+    val contentMaxWidth = ResponsiveDimensions.contentMaxWidth()
+    val widthModifier = if (contentMaxWidth != null) {
+        Modifier.widthIn(max = contentMaxWidth).fillMaxWidth()
+    } else {
+        Modifier.fillMaxWidth()
+    }
 
     // Publish this cycle's name. A blank name clears the title so the shell
     // falls back to "Cycle Review".
@@ -57,54 +64,26 @@ fun CycleReviewScreen(
         viewModel?.updateTopBarTitle(cycleName)
     }
 
-    Scaffold(
-        contentWindowInsets = WindowInsets.navigationBars,
-        bottomBar = {
-            Surface(
-                tonalElevation = 3.dp,
-                shadowElevation = 8.dp,
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .navigationBarsPadding()
-                        .padding(16.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Button(
-                        onClick = onSave,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = MaterialTheme.shapes.small,
-                    ) {
-                        Text(
-                            text = "Confirm & Finish",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                        )
-                    }
-                }
-            }
-        },
-    ) { padding ->
-        Box(
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(screenBackgroundBrush()),
+    ) {
+        LazyColumn(
             modifier = Modifier
-                .fillMaxSize()
-                .background(screenBackgroundBrush()),
+                .weight(1f)
+                .fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(16.dp),
         ) {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                contentPadding = PaddingValues(vertical = 16.dp),
-            ) {
-                itemsIndexed(days, key = { _, day -> day.id }) { _, day ->
-                    val routine = day.routineId?.let { routineId ->
-                        routines.find { it.id == routineId }
-                    }
-                    val isExpanded = expandedDays[day.id] ?: false
+            itemsIndexed(days, key = { _, day -> day.id }) { _, day ->
+                val routine = day.routineId?.let { routineId ->
+                    routines.find { it.id == routineId }
+                }
+                val isExpanded = expandedDays[day.id] ?: false
 
+                Box(modifier = widthModifier) {
                     CycleReviewDayCard(
                         day = day,
                         routine = routine,
@@ -119,12 +98,38 @@ fun CycleReviewScreen(
                 }
             }
         }
+
+        Surface(
+            tonalElevation = 3.dp,
+            shadowElevation = 4.dp,
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(16.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Button(
+                    onClick = onSave,
+                    modifier = widthModifier.heightIn(min = 48.dp),
+                    shape = MaterialTheme.shapes.small,
+                ) {
+                    Text(
+                        text = "Confirm & Finish",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
+        }
     }
 }
 
 /**
  * Individual day card with expand/collapse functionality.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun CycleReviewDayCard(day: CycleDay, routine: Routine?, isExpanded: Boolean, onToggleExpand: () -> Unit) {
     val canExpand = !day.isRestDay && routine != null && routine.exercises.isNotEmpty()
@@ -228,8 +233,9 @@ private fun CycleReviewDayCard(day: CycleDay, routine: Routine?, isExpanded: Boo
                         val badges = buildModifierBadges(day)
                         if (badges.isNotEmpty()) {
                             Spacer(Modifier.height(4.dp))
-                            Row(
+                            FlowRow(
                                 horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
                             ) {
                                 badges.forEach { badge ->
                                     ReviewModifierBadge(text = badge)

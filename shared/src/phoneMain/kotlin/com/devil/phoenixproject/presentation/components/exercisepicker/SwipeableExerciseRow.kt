@@ -25,10 +25,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.Exercise
+import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
@@ -63,6 +67,7 @@ fun SwipeableExerciseRow(
     val revealWidthPx = with(density) { REVEAL_WIDTH.toPx() }
     val thresholdPx = revealWidthPx * THRESHOLD_RATIO
     val scope = rememberCoroutineScope()
+    val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
 
     // Single animatable for smooth drag + animate
     val offsetX = remember { Animatable(0f) }
@@ -70,14 +75,40 @@ fun SwipeableExerciseRow(
     val currentIsRevealed = rememberUpdatedState(isRevealed)
 
     // Animate to target when isRevealed changes externally
-    LaunchedEffect(isRevealed) {
+    LaunchedEffect(isRevealed, reduceMotion) {
         val target = if (isRevealed) revealWidthPx else 0f
         if (offsetX.value != target) {
-            offsetX.animateTo(target, tween(200))
+            if (reduceMotion) {
+                offsetX.snapTo(target)
+            } else {
+                offsetX.animateTo(target, tween(200))
+            }
         }
     }
 
-    Box(modifier = modifier) {
+    val favoriteActionLabel = if (exercise.isFavorite) "Remove from favorites" else "Add to favorites"
+    val accessibilityActions = buildList {
+        add(
+            CustomAccessibilityAction(favoriteActionLabel) {
+                onToggleFavorite()
+                true
+            },
+        )
+        if (onLongPress != null && onLongPressLabel != null) {
+            add(
+                CustomAccessibilityAction(onLongPressLabel) {
+                    onLongPress()
+                    true
+                },
+            )
+        }
+    }
+
+    Box(
+        modifier = modifier.semantics {
+            customActions = accessibilityActions
+        },
+    ) {
         // Background with star button on LEFT side
         Box(
             modifier = Modifier

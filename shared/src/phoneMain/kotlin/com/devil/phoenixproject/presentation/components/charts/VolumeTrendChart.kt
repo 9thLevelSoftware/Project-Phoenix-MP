@@ -31,12 +31,14 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.effectiveTotalVolumeKg
+import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
@@ -105,29 +107,36 @@ fun VolumeTrendChart(
         return
     }
 
-    val maxVolume = volumeData.maxOfOrNull { it.volume } ?: 1f
+    val maxVolume = (volumeData.maxOfOrNull { it.volume } ?: 1f).let {
+        if (it.isFinite() && it > 0f) it else 1f
+    }
     val barColor = DataColors.Volume
     val selectedBarColor = DataColors.Intensity
     val gridColor = MaterialTheme.colorScheme.outlineVariant
     val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
 
-    // Animation for bars — Animatable ensures snapTo(0f) and animateTo(1f) are
-    // never batched in the same frame, so the enter animation replays on every
-    // volumeData change (e.g. period switch).
-    val animatedProgress = remember { Animatable(0f) }
+    // Animation for bars — gated on reduceMotion accessibility setting
+    val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
+    val animatedProgress = remember { Animatable(if (reduceMotion) 1f else 0f) }
 
-    LaunchedEffect(volumeData) {
-        animatedProgress.snapTo(0f)
-        animatedProgress.animateTo(1f, tween(800))
+    LaunchedEffect(volumeData, reduceMotion) {
+        if (reduceMotion) {
+            animatedProgress.snapTo(1f)
+        } else {
+            animatedProgress.snapTo(0f)
+            animatedProgress.animateTo(1f, tween(800))
+        }
     }
 
-    // Responsive column width for Y-axis labels
+    // Responsive column width for Y-axis labels scaled gently with fontSize
     val windowSizeClass = LocalWindowSizeClass.current
-    val columnWidth = when (windowSizeClass.widthSizeClass) {
+    val baseColumnWidth = when (windowSizeClass.widthSizeClass) {
         WindowWidthSizeClass.Expanded -> 80.dp
         WindowWidthSizeClass.Medium -> 65.dp
         WindowWidthSizeClass.Compact -> 50.dp
     }
+    val fontScale = LocalDensity.current.fontScale.coerceIn(1f, 1.5f)
+    val columnWidth = baseColumnWidth * fontScale
 
     // Responsive chart height
     val chartHeight = ResponsiveDimensions.chartHeight(baseHeight = 250.dp)
@@ -177,35 +186,41 @@ fun VolumeTrendChart(
             }
         }
 
-        Column(modifier = Modifier.fillMaxWidth().height(chartHeight)) {
-            // Chart area
+        val barWidth = 40.dp
+        val barSpacing = 8.dp
+
+        Column(modifier = Modifier.fillMaxWidth()) {
+            // Chart area (fixed responsive height; X-axis dates stack cleanly below without clipping)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f),
+                    .height(chartHeight),
             ) {
-                // Y-axis labels
+                // Y-axis labels aligned with Canvas vertical padding
                 Column(
                     modifier = Modifier
                         .width(columnWidth)
                         .fillMaxHeight()
-                        .padding(end = 4.dp),
+                        .padding(top = 8.dp, bottom = 8.dp, end = 4.dp),
                     verticalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Text(
                         text = formatVolumeLabel(maxVolume),
                         style = MaterialTheme.typography.labelSmall,
                         color = labelColor,
+                        maxLines = 1,
                     )
                     Text(
                         text = formatVolumeLabel(maxVolume / 2),
                         style = MaterialTheme.typography.labelSmall,
                         color = labelColor,
+                        maxLines = 1,
                     )
                     Text(
                         text = "0",
                         style = MaterialTheme.typography.labelSmall,
                         color = labelColor,
+                        maxLines = 1,
                     )
                 }
 
@@ -216,8 +231,6 @@ fun VolumeTrendChart(
                         .fillMaxHeight()
                         .horizontalScroll(chartScrollState),
                 ) {
-                    val barWidth = 40.dp
-                    val barSpacing = 8.dp
                     val chartWidth = (barWidth + barSpacing) * volumeData.size + barSpacing
 
                     Canvas(
@@ -259,7 +272,8 @@ fun VolumeTrendChart(
                         // Draw bars
                         volumeData.forEachIndexed { index, data ->
                             val x = barSpacingPx + index * (barWidthPx + barSpacingPx)
-                            val normalizedHeight = (data.volume / maxVolume) * animatedProgress.value
+                            val safeVolume = if (data.volume.isFinite() && data.volume > 0f) data.volume else 0f
+                            val normalizedHeight = (safeVolume / maxVolume) * animatedProgress.value
                             val barHeight = normalizedHeight * usableHeight
                             val y = usableHeight - barHeight
 
@@ -278,21 +292,29 @@ fun VolumeTrendChart(
                 }
             }
 
-            // X-axis labels (dates)
+            // X-axis labels (dates) aligned 1:1 with scrollable bar centers
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .horizontalScroll(chartScrollState)
-                    .padding(start = columnWidth + 4.dp, top = 4.dp),
+                    .padding(top = 4.dp),
             ) {
-                volumeData.forEach { data ->
-                    Text(
-                        text = data.dateLabel,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = labelColor,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.width(48.dp),
-                    )
+                Box(modifier = Modifier.width(columnWidth))
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .horizontalScroll(chartScrollState)
+                        .padding(horizontal = barSpacing / 2),
+                ) {
+                    volumeData.forEach { data ->
+                        Text(
+                            text = data.dateLabel,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = labelColor,
+                            textAlign = TextAlign.Center,
+                            maxLines = 1,
+                            modifier = Modifier.width(barWidth + barSpacing),
+                        )
+                    }
                 }
             }
         }
@@ -439,8 +461,11 @@ private fun groupByMonth(sessions: List<WorkoutSession>): List<Pair<String, List
  * Values of 1000 and above use a compact "Nk" form, rounded to the nearest thousand.
  * Smaller values are whole numbers, truncated toward zero.
  */
-internal fun formatVolumeLabel(volume: Float): String =
-    if (volume >= 1000) "${(volume / 1000).roundToInt()}k" else "${volume.toInt()}"
+internal fun formatVolumeLabel(volume: Float): String = when {
+    !volume.isFinite() || volume <= 0f -> "0"
+    volume >= 1000f -> "${(volume / 1000f).roundToInt()}k"
+    else -> "${volume.toInt()}"
+}
 
 @Composable
 private fun EmptyVolumeTrendState(modifier: Modifier = Modifier) {

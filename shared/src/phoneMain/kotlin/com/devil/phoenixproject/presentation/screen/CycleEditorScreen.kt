@@ -22,6 +22,8 @@ import com.devil.phoenixproject.presentation.components.cycle.AddDaySheet
 import com.devil.phoenixproject.presentation.components.cycle.ProgressionSettingsSheet
 import com.devil.phoenixproject.presentation.components.cycle.SwipeableCycleItem
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
+import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
+import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
 import com.devil.phoenixproject.presentation.viewmodel.CycleEditorViewModel
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.Spacing
@@ -130,136 +132,189 @@ fun CycleEditorScreen(
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
-        Column(
+        val contentMaxWidth = ResponsiveDimensions.contentMaxWidth()
+        val widthModifier = if (contentMaxWidth != null) {
+            Modifier.widthIn(max = contentMaxWidth).fillMaxWidth()
+        } else {
+            Modifier.fillMaxWidth()
+        }
+        val canPreview = uiState.cycleName.isNotBlank() && uiState.items.isNotEmpty()
+        val compactHeader = isCompactAccessibilityLayout()
+
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(screenBackgroundBrush())
                 .padding(padding),
+            contentAlignment = Alignment.TopCenter,
         ) {
-            // Editable cycle name with Preview button
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = Spacing.medium, vertical = Spacing.small),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(Spacing.small),
-            ) {
+            Column(modifier = widthModifier.fillMaxHeight()) {
+                // Editable cycle name with Preview button (stacks on compact/scaled screens)
+                if (compactHeader) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = Spacing.medium, vertical = Spacing.small),
+                        verticalArrangement = Arrangement.spacedBy(Spacing.small),
+                    ) {
+                        OutlinedTextField(
+                            value = uiState.cycleName,
+                            onValueChange = { cycleEditorViewModel.updateCycleName(it) },
+                            modifier = Modifier.fillMaxWidth(),
+                            placeholder = { Text(stringResource(Res.string.cycle_name)) },
+                            textStyle = MaterialTheme.typography.titleLarge.copy(
+                                fontWeight = FontWeight.Bold,
+                            ),
+                            singleLine = true,
+                        )
+                        Button(
+                            onClick = { saveCycle() },
+                            enabled = canPreview,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 48.dp),
+                        ) {
+                            Text(stringResource(Res.string.action_preview))
+                        }
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = Spacing.medium, vertical = Spacing.small),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.small),
+                    ) {
+                        OutlinedTextField(
+                            value = uiState.cycleName,
+                            onValueChange = { cycleEditorViewModel.updateCycleName(it) },
+                            modifier = Modifier.weight(1f),
+                            placeholder = { Text(stringResource(Res.string.cycle_name)) },
+                            textStyle = MaterialTheme.typography.titleLarge.copy(
+                                fontWeight = FontWeight.Bold,
+                            ),
+                            singleLine = true,
+                        )
+                        Button(
+                            onClick = { saveCycle() },
+                            enabled = canPreview,
+                            modifier = Modifier.heightIn(min = 48.dp),
+                        ) {
+                            Text(stringResource(Res.string.action_preview))
+                        }
+                    }
+                }
+
+                // Description field
                 OutlinedTextField(
-                    value = uiState.cycleName,
-                    onValueChange = { cycleEditorViewModel.updateCycleName(it) },
-                    modifier = Modifier.weight(1f),
-                    placeholder = { Text(stringResource(Res.string.cycle_name)) },
-                    textStyle = MaterialTheme.typography.titleLarge.copy(
-                        fontWeight = FontWeight.Bold,
-                    ),
+                    value = uiState.description,
+                    onValueChange = { cycleEditorViewModel.updateDescription(it) },
+                    label = { Text(stringResource(Res.string.label_description_optional)) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = Spacing.medium, vertical = Spacing.small),
                     singleLine = true,
                 )
-                Button(onClick = { saveCycle() }) {
-                    Text(stringResource(Res.string.action_preview))
-                }
-            }
 
-            // Description field
-            OutlinedTextField(
-                value = uiState.description,
-                onValueChange = { cycleEditorViewModel.updateDescription(it) },
-                label = { Text(stringResource(Res.string.label_description_optional)) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = Spacing.medium, vertical = Spacing.small),
-                singleLine = true,
-            )
-
-            // Cycle length header with progression settings
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = Spacing.medium, vertical = Spacing.small),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = "CYCLE LENGTH: ${uiState.items.size} days",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                IconButton(onClick = { cycleEditorViewModel.showProgressionSheet(true) }) {
-                    Icon(
-                        Icons.Default.Settings,
-                        contentDescription = stringResource(Res.string.cd_progression_settings),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-
-            // Day list or empty state
-            if (uiState.items.isEmpty()) {
-                Box(
+                // Cycle length header with progression settings
+                Row(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(Spacing.extraLarge),
-                    contentAlignment = Alignment.Center,
+                        .fillMaxWidth()
+                        .padding(horizontal = Spacing.medium, vertical = Spacing.small),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            text = "No days added yet.",
-                            style = MaterialTheme.typography.bodyLarge,
+                    Text(
+                        text = "CYCLE LENGTH: ${uiState.items.size} days",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    IconButton(onClick = { cycleEditorViewModel.showProgressionSheet(true) }) {
+                        Icon(
+                            Icons.Default.Settings,
+                            contentDescription = stringResource(Res.string.cd_progression_settings),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        Text(
-                            text = "Build your cycle by adding workout or rest days.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Spacer(modifier = Modifier.height(Spacing.large))
-                        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.small)) {
-                            OutlinedButton(
-                                onClick = { cycleEditorViewModel.showAddDaySheet(true) },
-                            ) {
-                                Text(stringResource(Res.string.add_workout))
-                            }
-                            OutlinedButton(onClick = { cycleEditorViewModel.addRestDay() }) {
-                                Text(stringResource(Res.string.add_rest))
-                            }
-                        }
                     }
                 }
-            } else {
-                LazyColumn(
-                    state = lazyListState,
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = Spacing.medium, vertical = Spacing.small),
-                    verticalArrangement = Arrangement.spacedBy(Spacing.small),
-                ) {
-                    itemsIndexed(uiState.items, key = { _, item -> item.id }) { index, item ->
-                        ReorderableItem(reorderState, key = item.id) { isDragging ->
-                            SwipeableCycleItem(
-                                item = item,
-                                onDelete = {
-                                    cycleEditorViewModel.deleteItem(index)
-                                    scope.launch {
-                                        val result = snackbarHostState.showSnackbar(
-                                            message = "Day removed",
-                                            actionLabel = "UNDO",
-                                            duration = SnackbarDuration.Short,
-                                        )
-                                        if (result == SnackbarResult.ActionPerformed) {
-                                            cycleEditorViewModel.undoDelete()
-                                        } else {
-                                            cycleEditorViewModel.clearLastDeleted()
-                                        }
-                                    }
-                                },
-                                onDuplicate = { cycleEditorViewModel.duplicateItem(index) },
-                                onTap = {
-                                    // Workout: change routine; Rest: convert to workout
-                                    cycleEditorViewModel.setEditingItemIndex(index)
-                                },
-                                dragModifier = Modifier.draggableHandle(),
+
+                // Day list or empty state
+                if (uiState.items.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(Spacing.extraLarge),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = "No days added yet.",
+                                style = MaterialTheme.typography.bodyLarge,
                             )
+                            Text(
+                                text = "Build your cycle by adding workout or rest days.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Spacer(modifier = Modifier.height(Spacing.large))
+                            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.small)) {
+                                OutlinedButton(
+                                    onClick = { cycleEditorViewModel.showAddDaySheet(true) },
+                                    modifier = Modifier.heightIn(min = 48.dp),
+                                ) {
+                                    Text(stringResource(Res.string.add_workout))
+                                }
+                                OutlinedButton(
+                                    onClick = { cycleEditorViewModel.addRestDay() },
+                                    modifier = Modifier.heightIn(min = 48.dp),
+                                ) {
+                                    Text(stringResource(Res.string.add_rest))
+                                }
+                            }
                         }
                     }
-                    // Bottom padding for FAB
-                    item { Spacer(modifier = Modifier.height(80.dp)) }
+                } else {
+                    LazyColumn(
+                        state = lazyListState,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(
+                            start = Spacing.medium,
+                            end = Spacing.medium,
+                            top = Spacing.small,
+                            bottom = 88.dp,
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(Spacing.small),
+                    ) {
+                        itemsIndexed(uiState.items, key = { _, item -> item.id }) { index, item ->
+                            ReorderableItem(reorderState, key = item.id) { isDragging ->
+                                SwipeableCycleItem(
+                                    item = item,
+                                    onDelete = {
+                                        cycleEditorViewModel.deleteItem(index)
+                                        scope.launch {
+                                            val result = snackbarHostState.showSnackbar(
+                                                message = "Day removed",
+                                                actionLabel = "UNDO",
+                                                duration = SnackbarDuration.Short,
+                                            )
+                                            if (result == SnackbarResult.ActionPerformed) {
+                                                cycleEditorViewModel.undoDelete()
+                                            } else {
+                                                cycleEditorViewModel.clearLastDeleted()
+                                            }
+                                        }
+                                    },
+                                    onDuplicate = { cycleEditorViewModel.duplicateItem(index) },
+                                    onTap = {
+                                        // Workout: change routine; Rest: convert to workout
+                                        cycleEditorViewModel.setEditingItemIndex(index)
+                                    },
+                                    dragModifier = Modifier.draggableHandle(),
+                                    gesturesEnabled = !isDragging,
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }

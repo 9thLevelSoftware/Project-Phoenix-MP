@@ -16,6 +16,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.CycleTemplates
 import com.devil.phoenixproject.domain.model.CycleTemplate
+import com.devil.phoenixproject.presentation.components.PhoenixSheetHeader
 import org.jetbrains.compose.resources.stringResource
 import projectphoenix.shared.generated.resources.*
 import projectphoenix.shared.generated.resources.Res
@@ -30,7 +31,7 @@ fun UnifiedCycleCreationSheet(
     onSelectTemplate: (CycleTemplate) -> Unit,
     onCreateCustom: () -> Unit,
     onDismiss: () -> Unit,
-    sheetState: SheetState = rememberModalBottomSheetState(),
+    sheetState: SheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
 ) {
     val templates = remember { CycleTemplates.all() }
 
@@ -42,28 +43,18 @@ fun UnifiedCycleCreationSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .navigationBarsPadding()
                 .padding(horizontal = 16.dp)
-                .padding(bottom = 32.dp)
-                .verticalScroll(rememberScrollState()),
+                .padding(bottom = 24.dp),
         ) {
-            // Header
-            Text(
-                text = "Create Training Cycle",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.align(Alignment.CenterHorizontally),
+            PhoenixSheetHeader(
+                title = "Create Training Cycle",
+                subtitle = "Start with a template or build your own",
+                onClose = onDismiss,
             )
 
-            Spacer(modifier = Modifier.height(4.dp))
-
-            Text(
-                text = "Start with a template or build your own",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.align(Alignment.CenterHorizontally),
-            )
-
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
             // TEMPLATES Section
             Text(

@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -59,7 +60,9 @@ import com.devil.phoenixproject.presentation.components.InsightContextBlock
 import com.devil.phoenixproject.presentation.components.InsightSectionHeader
 import com.devil.phoenixproject.presentation.components.ReadinessBriefingCard
 import com.devil.phoenixproject.presentation.components.TimeframeBadge
+import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
 import com.devil.phoenixproject.presentation.util.SmartInsightsWeightText
+import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.Spacing
 import kotlin.math.roundToInt
@@ -209,77 +212,130 @@ private fun SmartInsightsContent(
         SmartSuggestionsEngine.analyzeTimeOfDay(sessionSummaries)
     }
 
+    val contentMaxWidth = ResponsiveDimensions.contentMaxWidth()
+    val widthModifier = if (contentMaxWidth != null) {
+        Modifier.widthIn(max = contentMaxWidth).fillMaxWidth()
+    } else {
+        Modifier.fillMaxWidth()
+    }
+
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(horizontal = Spacing.medium),
+            .background(MaterialTheme.colorScheme.background),
         verticalArrangement = Arrangement.spacedBy(Spacing.small),
-        contentPadding = PaddingValues(vertical = Spacing.medium),
+        contentPadding = PaddingValues(
+            start = Spacing.medium,
+            end = Spacing.medium,
+            top = Spacing.medium,
+            bottom = 96.dp,
+        ),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         item {
-            Text(
-                text = stringResource(Res.string.insights_title),
-                style = MaterialTheme.typography.headlineLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
-            Spacer(modifier = Modifier.height(Spacing.extraSmall))
-            Text(
-                text = stringResource(Res.string.insights_subtitle),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Column(modifier = widthModifier) {
+                Text(
+                    text = stringResource(Res.string.insights_title),
+                    style = MaterialTheme.typography.headlineLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onBackground,
+                )
+                Spacer(modifier = Modifier.height(Spacing.extraSmall))
+                Text(
+                    text = stringResource(Res.string.insights_subtitle),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
 
-        item { InsightSectionHeader("1. Snapshot", "Current status") }
+        item {
+            InsightSectionHeader(
+                title = "Weekly Volume",
+                subtitle = "Muscle-group workload over the last 7 days",
+                modifier = widthModifier,
+            )
+        }
 
         // Section A: Weekly Volume (SUGG-01)
         item {
-            WeeklyVolumeCard(weeklyVolume, weightUnit)
+            Box(modifier = widthModifier) {
+                WeeklyVolumeCard(weeklyVolume, weightUnit)
+            }
         }
 
-        item { InsightSectionHeader("2. Trends", "How it changed") }
+        item {
+            InsightSectionHeader(
+                title = "Training Balance",
+                subtitle = "Push, pull, and lower-body distribution",
+                modifier = widthModifier,
+            )
+        }
 
         // Section B: Balance Analysis (SUGG-02)
         item {
-            BalanceAnalysisCard(balanceAnalysis)
+            Box(modifier = widthModifier) {
+                BalanceAnalysisCard(balanceAnalysis)
+            }
         }
 
-        item { InsightSectionHeader("3. Diagnostics", "Why") }
+        item {
+            InsightSectionHeader(
+                title = "Recovery & Plateaus",
+                subtitle = "Undertrained movements and weight plateaus",
+                modifier = widthModifier,
+            )
+        }
 
         // Section C: Neglected Exercises (SUGG-03)
         item {
-            NeglectedExercisesCard(neglectedExercises)
+            Box(modifier = widthModifier) {
+                NeglectedExercisesCard(neglectedExercises)
+            }
         }
 
         // Section D: Plateau Detection (SUGG-04)
         item {
-            PlateauDetectionCard(plateaus, weightUnit)
+            Box(modifier = widthModifier) {
+                PlateauDetectionCard(plateaus, weightUnit)
+            }
         }
 
-        item { InsightSectionHeader("4. Actions", "What to do next") }
+        item {
+            InsightSectionHeader(
+                title = "Readiness & Schedule",
+                subtitle = "When you perform best and today's load guidance",
+                modifier = widthModifier,
+            )
+        }
 
         // Section E: Optimal Training Time (SUGG-05)
         item {
-            TimeOfDayCard(timeOfDay)
+            Box(modifier = widthModifier) {
+                TimeOfDayCard(timeOfDay)
+            }
         }
 
         // Section F: Training Readiness / ACWR (ACWR-01)
         item {
-            val readiness = remember(sessionSummaries, anchorNowMs) {
-                ReadinessEngine.computeReadiness(sessionSummaries, anchorNowMs)
+            Column(
+                modifier = widthModifier,
+                verticalArrangement = Arrangement.spacedBy(Spacing.small),
+            ) {
+                val readiness = remember(sessionSummaries, anchorNowMs) {
+                    ReadinessEngine.computeReadiness(sessionSummaries, anchorNowMs)
+                }
+                InsightContextBlock(
+                    title = "Training Readiness",
+                    definition = "Compares your last 7 days of training against your 28-day baseline.",
+                    timeframe = "Acute 7d vs Chronic 28d",
+                    soWhat = "Adjust intensity or prioritize recovery when readiness dips.",
+                )
+                ReadinessBriefingCard(
+                    readinessResult = readiness,
+                    weightUnit = weightUnit,
+                )
             }
-            InsightContextBlock(
-                title = "Training Readiness",
-                definition = "Acute vs chronic workload readiness signal.",
-                timeframe = "Acute 7d vs Chronic 28d",
-                soWhat = "If readiness is low, reduce intensity/volume and prioritize recovery.",
-            )
-            ReadinessBriefingCard(
-                readinessResult = readiness,
-                weightUnit = weightUnit,
-            )
         }
     }
 }
@@ -288,9 +344,45 @@ private fun SmartInsightsContent(
 
 @Composable
 private fun WeeklyVolumeCard(report: WeeklyVolumeReport, weightUnit: WeightUnit) {
-    InsightCard(title = stringResource(Res.string.insights_weekly_volume), definition = "Weekly muscle-group workload breakdown.", timeframe = "Last 7 days", soWhat = "Use as drill-down detail after checking the main total-volume trend.") {
+    InsightCard(
+        title = stringResource(Res.string.insights_weekly_volume),
+        definition = "Weekly muscle-group workload breakdown.",
+        timeframe = "Last 7 days",
+        soWhat = "Ensure primary target muscle groups receive consistent weekly volume.",
+    ) {
         if (report.volumes.isEmpty()) {
             PlaceholderText(stringResource(Res.string.no_workouts_this_week))
+        } else if (isCompactAccessibilityLayout()) {
+            val unitLabel = SmartInsightsWeightText.unitLabel(weightUnit)
+            Column(verticalArrangement = Arrangement.spacedBy(Spacing.small)) {
+                report.volumes.forEach { vol ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            vol.muscleGroup,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f).padding(end = Spacing.small),
+                        )
+                        Text(
+                            "${SmartInsightsWeightText.volumeAmount(vol.totalKg, weightUnit)} $unitLabel",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                    Text(
+                        "${vol.sets} sets · ${vol.reps} reps",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                }
+            }
         } else {
             // Header row
             Row(
@@ -477,21 +569,32 @@ private fun BalanceAnalysisCard(analysis: BalanceAnalysis) {
 
 @Composable
 private fun BalanceBar(label: String, percentage: Int, fraction: Float) {
-    Row(
+    Column(
         modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Text(
-            label,
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.width(48.dp),
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                label,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                "$percentage%",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        }
         Box(
             modifier = Modifier
-                .weight(1f)
-                .height(20.dp)
+                .fillMaxWidth()
+                .height(16.dp)
                 .clip(MaterialTheme.shapes.small)
                 .background(MaterialTheme.colorScheme.surfaceVariant),
         ) {
@@ -503,15 +606,6 @@ private fun BalanceBar(label: String, percentage: Int, fraction: Float) {
                     .background(MaterialTheme.colorScheme.primary),
             )
         }
-        Spacer(modifier = Modifier.width(Spacing.small))
-        Text(
-            "$percentage%",
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.width(36.dp),
-            textAlign = TextAlign.End,
-        )
     }
 }
 
@@ -643,21 +737,32 @@ private fun TimeOfDayCard(analysis: TimeOfDayAnalysis) {
                 val count = analysis.windowCounts[window] ?: 0
                 val barFraction = if (maxCount > 0f) count / maxCount else 0f
 
-                Row(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                        .padding(vertical = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    Text(
-                        formatWindowShort(window),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.width(72.dp),
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            formatWindowShort(window),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            "$count",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
                     Box(
                         modifier = Modifier
-                            .weight(1f)
+                            .fillMaxWidth()
                             .height(14.dp)
                             .clip(RoundedCornerShape(7.dp))
                             .background(MaterialTheme.colorScheme.surfaceVariant),
@@ -676,14 +781,6 @@ private fun TimeOfDayCard(analysis: TimeOfDayAnalysis) {
                                 ),
                         )
                     }
-                    Spacer(modifier = Modifier.width(Spacing.small))
-                    Text(
-                        "$count",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.width(24.dp),
-                        textAlign = TextAlign.End,
-                    )
                 }
             }
         }
@@ -722,7 +819,7 @@ private fun InsightCard(
             Spacer(modifier = Modifier.height(Spacing.extraSmall))
             TimeframeBadge(timeframe)
             Spacer(modifier = Modifier.height(Spacing.extraSmall))
-            Text("So what? $soWhat", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
+            Text(soWhat, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
             Spacer(modifier = Modifier.height(Spacing.small))
             content()
         }

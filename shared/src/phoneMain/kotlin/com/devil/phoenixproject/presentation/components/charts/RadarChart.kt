@@ -1,6 +1,6 @@
 package com.devil.phoenixproject.presentation.components.charts
 
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
@@ -10,7 +10,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -18,12 +19,15 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
 import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
 import kotlin.math.PI
 import kotlin.math.cos
+import kotlin.math.roundToInt
 import kotlin.math.sin
 import org.jetbrains.compose.resources.stringResource
 import projectphoenix.shared.generated.resources.*
@@ -34,7 +38,7 @@ import projectphoenix.shared.generated.resources.Res
  * Visualizes muscle group balance and distribution
  * Shows relative strength/volume across different muscle groups
  *
- * Uses Compose Text with BoxWithConstraints for KMP-compatible label rendering.
+ * Uses Compose Text with dynamically measured bounds so labels never clip.
  */
 @Composable
 fun RadarChart(
@@ -52,13 +56,22 @@ fun RadarChart(
         return
     }
 
+    val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
+    val revealProgress = remember { Animatable(if (reduceMotion) 1f else 0f) }
+    LaunchedEffect(data, reduceMotion) {
+        if (reduceMotion) {
+            revealProgress.snapTo(1f)
+        } else {
+            revealProgress.snapTo(0f)
+            revealProgress.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(durationMillis = 1500),
+            )
+        }
+    }
+
     val animatedData = data.map { (label, value) ->
-        val animatedValue by animateFloatAsState(
-            targetValue = value.coerceIn(0f, maxValue),
-            animationSpec = tween(durationMillis = 1500),
-            label = "RadarValue_$label",
-        )
-        label to animatedValue
+        label to (value.coerceIn(0f, maxValue) * revealProgress.value)
     }
 
     val colorScheme = MaterialTheme.colorScheme
@@ -68,22 +81,45 @@ fun RadarChart(
     val labelColor = colorScheme.onSurface
     val labelStyle = MaterialTheme.typography.labelSmall
     val density = LocalDensity.current
+    val textMeasurer = rememberTextMeasurer()
     val numPoints = animatedData.size
     val angleStep = (2 * PI) / numPoints
-    val chartHeight = ResponsiveDimensions.chartHeight(baseHeight = 320.dp)
+    val chartHeight = ResponsiveDimensions.chartHeight(baseHeight = 300.dp)
+
+    val labelMeasurements = remember(data, labelStyle, showLabels) {
+        if (showLabels) {
+            data.map { (label, _) -> textMeasurer.measure(label, labelStyle) }
+        } else {
+            emptyList()
+        }
+    }
 
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
             .height(chartHeight)
-            .padding(24.dp),
+            .padding(8.dp),
     ) {
         val boxWidth = with(density) { maxWidth.toPx() }
         val boxHeight = with(density) { maxHeight.toPx() }
-        val centerX = boxWidth / 2
-        val centerY = boxHeight / 2
-        val radius = boxWidth.coerceAtMost(boxHeight) / 2.5f
-        val labelRadius = radius * 1.15f
+        val centerX = boxWidth / 2f
+        val centerY = boxHeight / 2f
+        val labelGapPx = with(density) { 8.dp.toPx() }
+        val maxLabelWidthPx = if (showLabels) {
+            (labelMeasurements.maxOfOrNull { it.size.width.toFloat() } ?: 0f) + labelGapPx + with(density) { 4.dp.toPx() }
+        } else {
+            with(density) { 8.dp.toPx() }
+        }
+        val maxLabelHeightPx = if (showLabels) {
+            (labelMeasurements.maxOfOrNull { it.size.height.toFloat() } ?: 0f) + labelGapPx + with(density) { 4.dp.toPx() }
+        } else {
+            with(density) { 8.dp.toPx() }
+        }
+        val radius = minOf(
+            (boxWidth / 2f - maxLabelWidthPx),
+            (boxHeight / 2f - maxLabelHeightPx),
+        ).coerceAtLeast(with(density) { 24.dp.toPx() })
+        val labelRadius = radius + labelGapPx
 
         Canvas(modifier = Modifier.fillMaxSize()) {
             // Draw grid circles
@@ -166,33 +202,49 @@ fun RadarChart(
             }
         }
 
-        // Draw labels using Compose Text positioned around the radar
+        // Draw dynamically measured labels positioned around the radar without clipping
         if (showLabels) {
             animatedData.forEachIndexed { index, (label, _) ->
+                val measured = labelMeasurements.getOrNull(index)
+                val labelW = measured?.size?.width?.toFloat() ?: 0f
+                val labelH = measured?.size?.height?.toFloat() ?: 0f
                 val angle = index * angleStep - PI / 2
-                val labelX = centerX + labelRadius * cos(angle).toFloat()
-                val labelY = centerY + labelRadius * sin(angle).toFloat()
+                val cosA = cos(angle)
+                val sinA = sin(angle)
+                val labelX = centerX + labelRadius * cosA.toFloat()
+                val labelY = centerY + labelRadius * sinA.toFloat()
 
-                // Calculate text alignment based on position
                 val textAlign = when {
-                    cos(angle) > 0.3 -> TextAlign.Start
-                    cos(angle) < -0.3 -> TextAlign.End
+                    cosA > 0.3 -> TextAlign.Start
+                    cosA < -0.3 -> TextAlign.End
                     else -> TextAlign.Center
                 }
+
+                val rawX = when {
+                    cosA > 0.3 -> labelX
+                    cosA < -0.3 -> labelX - labelW
+                    else -> labelX - labelW / 2f
+                }
+                val rawY = when {
+                    sinA > 0.3 -> labelY
+                    sinA < -0.3 -> labelY - labelH
+                    else -> labelY - labelH / 2f
+                }
+                val maxOffsetX = (boxWidth - labelW).coerceAtLeast(0f)
+                val maxOffsetY = (boxHeight - labelH).coerceAtLeast(0f)
 
                 Text(
                     text = label,
                     style = labelStyle,
                     color = labelColor,
                     textAlign = textAlign,
-                    modifier = Modifier
-                        .offset {
-                            IntOffset(
-                                x = (labelX - with(density) { 30.dp.toPx() }).toInt(),
-                                y = (labelY - with(density) { 8.dp.toPx() }).toInt(),
-                            )
-                        }
-                        .width(60.dp),
+                    maxLines = 2,
+                    modifier = Modifier.offset {
+                        IntOffset(
+                            x = rawX.coerceIn(0f, maxOffsetX).roundToInt(),
+                            y = rawY.coerceIn(0f, maxOffsetY).roundToInt(),
+                        )
+                    },
                 )
             }
         }

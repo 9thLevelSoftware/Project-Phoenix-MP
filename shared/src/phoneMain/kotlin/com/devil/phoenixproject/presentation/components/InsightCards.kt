@@ -390,7 +390,7 @@ fun MuscleBalanceRadarCard(personalRecords: List<PersonalRecord>, exerciseReposi
                 RadarChart(
                     data = radarData,
                     maxValue = 1.0f,
-                    modifier = Modifier.height(300.dp),
+                    modifier = Modifier.fillMaxWidth(),
                 )
             } else {
                 Text(
@@ -442,7 +442,7 @@ fun ConsistencyGaugeCard(workoutSessions: List<WorkoutSession>, modifier: Modifi
                 currentValue = stats.toFloat(),
                 targetValue = target,
                 label = "Workouts",
-                modifier = Modifier.height(250.dp),
+                modifier = Modifier.fillMaxWidth(),
             )
         }
     }
@@ -502,12 +502,15 @@ fun VolumeVsIntensityCard(workoutSessions: List<WorkoutSession>, weightUnit: Wei
             Spacer(modifier = Modifier.height(16.dp))
 
             if (columnData.isNotEmpty()) {
+                val weightSuffix = if (weightUnit == WeightUnit.KG) "kg" else "lbs"
                 ComboChart(
                     columnData = columnData,
                     lineData = lineData,
-                    columnLabel = "Volume (${if (weightUnit == WeightUnit.KG) "kg" else "lbs"})",
-                    lineLabel = "Max Weight",
-                    modifier = Modifier.height(300.dp),
+                    columnLabel = "Volume ($weightSuffix)",
+                    lineLabel = "Max Weight ($weightSuffix)",
+                    columnUnit = weightSuffix,
+                    lineUnit = weightSuffix,
+                    modifier = Modifier.fillMaxWidth(),
                 )
             } else {
                 Text(
@@ -598,7 +601,7 @@ fun TotalVolumeCard(
                 VolumeTrendChart(
                     workoutSessions = workoutSessions,
                     weightUnit = weightUnit,
-                    modifier = Modifier.height(280.dp),
+                    modifier = Modifier.fillMaxWidth(),
                 )
             } else {
                 Text(

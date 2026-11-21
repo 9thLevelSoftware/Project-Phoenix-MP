@@ -7,22 +7,25 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -72,7 +75,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -88,13 +90,14 @@ import com.devil.phoenixproject.domain.model.routineCopyName
 import com.devil.phoenixproject.domain.usecase.RoutineTimeEstimator
 import com.devil.phoenixproject.presentation.components.DestructiveConfirmDialog
 import com.devil.phoenixproject.presentation.components.EmptyState
+import com.devil.phoenixproject.presentation.components.PhoenixModalDialogFrame
 import com.devil.phoenixproject.presentation.components.ProfileColors
 import com.devil.phoenixproject.presentation.components.RoutineModifierDialog
 import com.devil.phoenixproject.presentation.theme.routineCardContainerColor
 import com.devil.phoenixproject.presentation.theme.routineCardDefaultElevation
+import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
 import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
 import com.devil.phoenixproject.ui.theme.Spacing
-import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import com.devil.phoenixproject.util.KmpUtils
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
@@ -248,72 +251,104 @@ fun RoutinesTab(
         selectionMode = false
     }
 
-    val backgroundGradient = screenBackgroundBrush()
+    val contentMaxWidth = ResponsiveDimensions.contentMaxWidth()
+    val widthModifier = if (contentMaxWidth != null) {
+        Modifier.widthIn(max = contentMaxWidth).fillMaxWidth()
+    } else {
+        Modifier.fillMaxWidth()
+    }
 
+    // Transparent root so DailyRoutinesScreen's single screenBackgroundBrush() renders without seam
     Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(backgroundGradient)
-            .pointerInput(selectionMode) {
-                if (selectionMode) {
-                    detectTapGestures {
-                        clearSelection()
-                    }
-                }
-            },
+        modifier = modifier.fillMaxSize(),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(20.dp),
+                .padding(horizontal = 20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
+            if (selectionMode) {
+                Surface(
+                    shape = MaterialTheme.shapes.small,
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    modifier = widthModifier.padding(top = 12.dp, bottom = 8.dp),
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(
+                            text = "${selectedIds.size} selected",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        )
+                        TextButton(
+                            onClick = { clearSelection() },
+                            modifier = Modifier.heightIn(min = 48.dp),
+                        ) {
+                            Text(stringResource(Res.string.action_cancel))
+                        }
+                    }
+                }
+            }
             if (routines.isEmpty()) {
-                EmptyState(
-                    icon = Icons.Default.FitnessCenter,
-                    title = stringResource(Res.string.empty_no_routines_title),
-                    message = stringResource(Res.string.empty_no_routines_message),
-                    actionText = stringResource(Res.string.create_new_routine),
-                    onAction = {
-                        onCreateRoutine()
-                    },
-                )
+                Box(modifier = widthModifier.padding(top = 20.dp)) {
+                    EmptyState(
+                        icon = Icons.Default.FitnessCenter,
+                        title = stringResource(Res.string.empty_no_routines_title),
+                        message = stringResource(Res.string.empty_no_routines_message),
+                        actionText = stringResource(Res.string.create_new_routine),
+                        onAction = {
+                            onCreateRoutine()
+                        },
+                    )
+                }
             } else {
                 LazyColumn(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(Spacing.small),
-                    contentPadding = PaddingValues(bottom = 80.dp), // Space for FAB
+                    contentPadding = PaddingValues(top = 16.dp, bottom = 96.dp), // Space for FAB
                 ) {
                     // --- Ungrouped routines first ---
                     items(ungroupedRoutines, key = { it.id }) { routine ->
-                        RoutineCardWithActions(
-                            routine = routine,
-                            routines = routines,
-                            selectionMode = selectionMode,
-                            selectedIds = selectedIds,
-                            targetProfiles = targetProfiles,
-                            onSelectionModeActivate = { selectionMode = true },
-                            onSelectionModeDeactivate = { selectionMode = false },
-                            onStartWorkout = onStartWorkout,
-                            onStartActiveRecovery = { routine ->
-                                modifierDialogRoutine = routine
-                                modifierDialogType = RoutineModifierType.ACTIVE_RECOVERY
-                            },
-                            onStartHeavyDeload = { routine ->
-                                modifierDialogRoutine = routine
-                                modifierDialogType = RoutineModifierType.HEAVY_DELOAD
-                            },
-                            onEditRoutine = onEditRoutine,
-                            onDeleteRoutine = onDeleteRoutine,
-                            onSaveRoutine = onSaveRoutine,
-                            profilePickerRoutineId = { profilePickerRoutineId = it },
-                            profilePickerIsMoveAction = { profilePickerIsMoveAction = it },
-                            hasGroups = routineGroups.isNotEmpty(),
-                            onMoveToGroup = {
-                                moveToGroupRoutineId = routine.id
-                                showMoveToGroupDialog = true
-                            },
-                            historicalTimeEstimate = timeEstimates[routine.id],
-                            onExportCsv = onExportRoutineCsv?.let { export -> { export(routine) } },
-                        )
+                        Box(modifier = widthModifier) {
+                            RoutineCardWithActions(
+                                routine = routine,
+                                routines = routines,
+                                selectionMode = selectionMode,
+                                selectedIds = selectedIds,
+                                targetProfiles = targetProfiles,
+                                onSelectionModeActivate = { selectionMode = true },
+                                onSelectionModeDeactivate = { selectionMode = false },
+                                onStartWorkout = onStartWorkout,
+                                onStartActiveRecovery = { routine ->
+                                    modifierDialogRoutine = routine
+                                    modifierDialogType = RoutineModifierType.ACTIVE_RECOVERY
+                                },
+                                onStartHeavyDeload = { routine ->
+                                    modifierDialogRoutine = routine
+                                    modifierDialogType = RoutineModifierType.HEAVY_DELOAD
+                                },
+                                onEditRoutine = onEditRoutine,
+                                onDeleteRoutine = onDeleteRoutine,
+                                onSaveRoutine = onSaveRoutine,
+                                profilePickerRoutineId = { profilePickerRoutineId = it },
+                                profilePickerIsMoveAction = { profilePickerIsMoveAction = it },
+                                hasGroups = routineGroups.isNotEmpty(),
+                                onMoveToGroup = {
+                                    moveToGroupRoutineId = routine.id
+                                    showMoveToGroupDialog = true
+                                },
+                                historicalTimeEstimate = timeEstimates[routine.id],
+                                onExportCsv = onExportRoutineCsv?.let { export -> { export(routine) } },
+                            )
+                        }
                     }
 
                     // --- Grouped sections ---
@@ -322,50 +357,54 @@ fun RoutinesTab(
                         val isExpanded = collapsedGroups[group.id] != true // default expanded
 
                         item(key = "group_header_${group.id}") {
-                            RoutineGroupHeader(
-                                group = group,
-                                routineCount = groupRoutines.size,
-                                isExpanded = isExpanded,
-                                onToggleExpand = {
-                                    collapsedGroups[group.id] = isExpanded // toggle
-                                },
-                                onRename = { renameGroupTarget = group },
-                                onDelete = { deleteGroupTarget = group },
-                            )
+                            Box(modifier = widthModifier) {
+                                RoutineGroupHeader(
+                                    group = group,
+                                    routineCount = groupRoutines.size,
+                                    isExpanded = isExpanded,
+                                    onToggleExpand = {
+                                        collapsedGroups[group.id] = isExpanded // toggle
+                                    },
+                                    onRename = { renameGroupTarget = group },
+                                    onDelete = { deleteGroupTarget = group },
+                                )
+                            }
                         }
 
                         if (isExpanded) {
                             items(groupRoutines, key = { it.id }) { routine ->
-                                RoutineCardWithActions(
-                                    routine = routine,
-                                    routines = routines,
-                                    selectionMode = selectionMode,
-                                    selectedIds = selectedIds,
-                                    targetProfiles = targetProfiles,
-                                    onSelectionModeActivate = { selectionMode = true },
-                                    onSelectionModeDeactivate = { selectionMode = false },
-                                    onStartWorkout = onStartWorkout,
-                                    onStartActiveRecovery = { selectedRoutine ->
-                                        modifierDialogRoutine = selectedRoutine
-                                        modifierDialogType = RoutineModifierType.ACTIVE_RECOVERY
-                                    },
-                                    onStartHeavyDeload = { selectedRoutine ->
-                                        modifierDialogRoutine = selectedRoutine
-                                        modifierDialogType = RoutineModifierType.HEAVY_DELOAD
-                                    },
-                                    onEditRoutine = onEditRoutine,
-                                    onDeleteRoutine = onDeleteRoutine,
-                                    onSaveRoutine = onSaveRoutine,
-                                    profilePickerRoutineId = { profilePickerRoutineId = it },
-                                    profilePickerIsMoveAction = { profilePickerIsMoveAction = it },
-                                    hasGroups = routineGroups.isNotEmpty(),
-                                    onMoveToGroup = {
-                                        moveToGroupRoutineId = routine.id
-                                        showMoveToGroupDialog = true
-                                    },
-                                    historicalTimeEstimate = timeEstimates[routine.id],
-                                    onExportCsv = onExportRoutineCsv?.let { export -> { export(routine) } },
-                                )
+                                Box(modifier = widthModifier) {
+                                    RoutineCardWithActions(
+                                        routine = routine,
+                                        routines = routines,
+                                        selectionMode = selectionMode,
+                                        selectedIds = selectedIds,
+                                        targetProfiles = targetProfiles,
+                                        onSelectionModeActivate = { selectionMode = true },
+                                        onSelectionModeDeactivate = { selectionMode = false },
+                                        onStartWorkout = onStartWorkout,
+                                        onStartActiveRecovery = { selectedRoutine ->
+                                            modifierDialogRoutine = selectedRoutine
+                                            modifierDialogType = RoutineModifierType.ACTIVE_RECOVERY
+                                        },
+                                        onStartHeavyDeload = { selectedRoutine ->
+                                            modifierDialogRoutine = selectedRoutine
+                                            modifierDialogType = RoutineModifierType.HEAVY_DELOAD
+                                        },
+                                        onEditRoutine = onEditRoutine,
+                                        onDeleteRoutine = onDeleteRoutine,
+                                        onSaveRoutine = onSaveRoutine,
+                                        profilePickerRoutineId = { profilePickerRoutineId = it },
+                                        profilePickerIsMoveAction = { profilePickerIsMoveAction = it },
+                                        hasGroups = routineGroups.isNotEmpty(),
+                                        onMoveToGroup = {
+                                            moveToGroupRoutineId = routine.id
+                                            showMoveToGroupDialog = true
+                                        },
+                                        historicalTimeEstimate = timeEstimates[routine.id],
+                                        onExportCsv = onExportRoutineCsv?.let { export -> { export(routine) } },
+                                    )
+                                }
                             }
                         }
                     }
@@ -924,66 +963,64 @@ private fun ProfilePickerDialog(
     onProfileSelected: (UserProfile) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = {
-            if (profiles.isEmpty()) {
-                Text(stringResource(Res.string.no_other_profiles))
-            } else {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        text = subtitle,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    profiles.forEach { profile ->
-                        val profileColor = ProfileColors.getOrElse(profile.colorIndex) { ProfileColors[0] }
-                        Surface(
-                            onClick = { onProfileSelected(profile) },
-                            shape = MaterialTheme.shapes.small,
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    PhoenixModalDialogFrame(
+        title = title,
+        subtitle = if (profiles.isNotEmpty()) subtitle else null,
+        onDismiss = onDismiss,
+        actions = {
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier.heightIn(min = 48.dp),
+            ) {
+                Text(stringResource(Res.string.action_cancel))
+            }
+        },
+    ) {
+        if (profiles.isEmpty()) {
+            Text(stringResource(Res.string.no_other_profiles))
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                profiles.forEach { profile ->
+                    val profileColor = ProfileColors.getOrElse(profile.colorIndex) { ProfileColors[0] }
+                    Surface(
+                        onClick = { onProfileSelected(profile) },
+                        shape = MaterialTheme.shapes.small,
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        modifier = Modifier.heightIn(min = 48.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
+                            // Profile color dot
+                            Surface(
+                                shape = androidx.compose.foundation.shape.CircleShape,
+                                color = profileColor,
+                                modifier = Modifier.size(32.dp),
                             ) {
-                                // Profile color dot
-                                Surface(
-                                    shape = androidx.compose.foundation.shape.CircleShape,
-                                    color = profileColor,
-                                    modifier = Modifier.size(32.dp),
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Text(
-                                            text = profile.name.take(1).uppercase(),
-                                            style = MaterialTheme.typography.labelMedium,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.onPrimary,
-                                        )
-                                    }
+                                Box(contentAlignment = Alignment.Center) {
+                                    Text(
+                                        text = profile.name.take(1).uppercase(),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onPrimary,
+                                    )
                                 }
-                                Text(
-                                    text = profile.name,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    fontWeight = FontWeight.Medium,
-                                )
                             }
+                            Text(
+                                text = profile.name,
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Medium,
+                            )
                         }
                     }
                 }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(Res.string.action_cancel))
-            }
-        },
-    )
+        }
+    }
 }
 
 /**
@@ -1221,92 +1258,13 @@ private fun RoutineCard(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        OutlinedButton(
-                            onClick = onEdit,
-                            modifier = Modifier.weight(1f),
-                            shape = MaterialTheme.shapes.small,
-                            contentPadding = if (useCompactAccessibility) {
-                                PaddingValues(horizontal = 6.dp, vertical = 10.dp)
-                            } else {
-                                PaddingValues(horizontal = 12.dp, vertical = 8.dp)
-                            },
-                        ) {
-                            Icon(
-                                Icons.Default.Edit,
-                                contentDescription = null,
-                                modifier = Modifier.size(20.dp),
-                            )
-                            Spacer(Modifier.width(4.dp))
-                            Text(
-                                stringResource(Res.string.action_edit),
-                                style = MaterialTheme.typography.labelMedium,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                        Spacer(Modifier.width(6.dp))
-                        OutlinedButton(
-                            onClick = onDuplicate,
-                            modifier = Modifier.weight(1f),
-                            shape = MaterialTheme.shapes.small,
-                            contentPadding = if (useCompactAccessibility) {
-                                PaddingValues(horizontal = 6.dp, vertical = 10.dp)
-                            } else {
-                                PaddingValues(horizontal = 12.dp, vertical = 8.dp)
-                            },
-                        ) {
-                            Icon(
-                                Icons.Default.ContentCopy,
-                                contentDescription = null,
-                                modifier = Modifier.size(20.dp),
-                            )
-                            Spacer(Modifier.width(4.dp))
-                            Text(
-                                stringResource(Res.string.action_copy),
-                                style = MaterialTheme.typography.labelMedium,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                        Spacer(Modifier.width(6.dp))
-                        OutlinedButton(
-                            onClick = { showDeleteDialog = true },
-                            modifier = Modifier.weight(1f),
-                            shape = MaterialTheme.shapes.small,
-                            contentPadding = if (useCompactAccessibility) {
-                                PaddingValues(horizontal = 6.dp, vertical = 10.dp)
-                            } else {
-                                PaddingValues(horizontal = 12.dp, vertical = 8.dp)
-                            },
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                        ) {
-                            Icon(
-                                Icons.Default.Delete,
-                                contentDescription = null,
-                                modifier = Modifier.size(20.dp),
-                            )
-                            Spacer(Modifier.width(4.dp))
-                            Text(
-                                stringResource(Res.string.action_delete),
-                                style = MaterialTheme.typography.labelMedium,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-
-                        // Overflow menu for Move/Copy to Profile, Move to Group and Export CSV
+                    val overflowMenu: @Composable () -> Unit = {
                         if (hasGroups || hasOtherProfiles || onExportCsv != null) {
                             var showOverflow by remember { mutableStateOf(false) }
-                            Spacer(Modifier.width(2.dp))
                             Box {
                                 IconButton(
                                     onClick = { showOverflow = true },
-                                    modifier = Modifier.size(36.dp),
+                                    modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
                                 ) {
                                     Icon(
                                         Icons.Default.MoreVert,
@@ -1383,6 +1341,116 @@ private fun RoutineCard(
                                     }
                                 }
                             }
+                        }
+                    }
+
+                    if (useCompactAccessibility) {
+                        @OptIn(ExperimentalLayoutApi::class)
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            OutlinedButton(
+                                onClick = onEdit,
+                                modifier = Modifier.heightIn(min = 48.dp),
+                                shape = MaterialTheme.shapes.small,
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
+                            ) {
+                                Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(20.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text(stringResource(Res.string.action_edit), style = MaterialTheme.typography.labelMedium)
+                            }
+                            OutlinedButton(
+                                onClick = onDuplicate,
+                                modifier = Modifier.heightIn(min = 48.dp),
+                                shape = MaterialTheme.shapes.small,
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
+                            ) {
+                                Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(20.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text(stringResource(Res.string.action_copy), style = MaterialTheme.typography.labelMedium)
+                            }
+                            OutlinedButton(
+                                onClick = { showDeleteDialog = true },
+                                modifier = Modifier.heightIn(min = 48.dp),
+                                shape = MaterialTheme.shapes.small,
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                            ) {
+                                Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(20.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text(stringResource(Res.string.action_delete), style = MaterialTheme.typography.labelMedium)
+                            }
+                            overflowMenu()
+                        }
+                    } else {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceEvenly,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            OutlinedButton(
+                                onClick = onEdit,
+                                modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                                shape = MaterialTheme.shapes.small,
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                            ) {
+                                Icon(
+                                    Icons.Default.Edit,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    stringResource(Res.string.action_edit),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            Spacer(Modifier.width(6.dp))
+                            OutlinedButton(
+                                onClick = onDuplicate,
+                                modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                                shape = MaterialTheme.shapes.small,
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                            ) {
+                                Icon(
+                                    Icons.Default.ContentCopy,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    stringResource(Res.string.action_copy),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            Spacer(Modifier.width(6.dp))
+                            OutlinedButton(
+                                onClick = { showDeleteDialog = true },
+                                modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                                shape = MaterialTheme.shapes.small,
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                            ) {
+                                Icon(
+                                    Icons.Default.Delete,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    stringResource(Res.string.action_delete),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            overflowMenu()
                         }
                     }
                 }

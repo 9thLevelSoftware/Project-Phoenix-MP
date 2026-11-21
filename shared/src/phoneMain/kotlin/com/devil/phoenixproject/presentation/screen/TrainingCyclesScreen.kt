@@ -12,16 +12,20 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -74,6 +78,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import co.touchlab.kermit.Logger
@@ -102,6 +107,8 @@ import com.devil.phoenixproject.presentation.components.cycle.TemplatePreviewEdi
 import com.devil.phoenixproject.presentation.components.cycle.UnifiedCycleCreationSheet
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
+import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
+import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.presentation.viewmodel.RoutineResumeEntryPoint
 import com.devil.phoenixproject.ui.theme.ExpressiveMotion
@@ -390,81 +397,90 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel)
                 )
             }
         } else {
+            val contentMaxWidth = ResponsiveDimensions.contentMaxWidth()
+            val widthModifier = if (contentMaxWidth != null) {
+                Modifier.widthIn(max = contentMaxWidth).fillMaxWidth()
+            } else {
+                Modifier.fillMaxWidth()
+            }
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 88.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 // Active Cycle Section
                 if (activeCycle != null) {
                     item {
-                        ActiveCycleCard(
-                            cycle = activeCycle!!,
-                            progress = cycleProgress[activeCycle!!.id],
-                            routines = allRoutines,
-                            missingTrainingMaxes = missingTrainingMaxes,
-                            onSetTrainingMaxes = {
-                                activeCycle?.let { cycle ->
-                                    val missing = missingTrainingMaxes
-                                    scope.launch {
-                                        trainingMaxRepair = TrainingMaxRepair(
-                                            profileId = cycle.profileId,
-                                            exerciseByName = missing.associate { lift ->
-                                                lift.exerciseName to exerciseRepository.findByIdOrName(lift.exerciseId, lift.exerciseName)
-                                            },
+                        Box(modifier = widthModifier) {
+                            ActiveCycleCard(
+                                cycle = activeCycle!!,
+                                progress = cycleProgress[activeCycle!!.id],
+                                routines = allRoutines,
+                                missingTrainingMaxes = missingTrainingMaxes,
+                                onSetTrainingMaxes = {
+                                    activeCycle?.let { cycle ->
+                                        val missing = missingTrainingMaxes
+                                        scope.launch {
+                                            trainingMaxRepair = TrainingMaxRepair(
+                                                profileId = cycle.profileId,
+                                                exerciseByName = missing.associate { lift ->
+                                                    lift.exerciseName to exerciseRepository.findByIdOrName(lift.exerciseId, lift.exerciseName)
+                                                },
+                                            )
+                                        }
+                                    }
+                                },
+                                selectedDayNumber = selectedDayNumber,
+                                onDaySelected = { dayNumber ->
+                                    selectedDayNumber = dayNumber
+                                },
+                                onStartWorkout = { routineId, cycleId, dayNumber ->
+                                    routineId?.let { rid ->
+                                        val routine = allRoutines.find { it.id == rid } ?: return@let
+                                        routineResume.launchCycleRoutine(
+                                            routine = routine,
+                                            cycleId = cycleId,
+                                            dayNumber = dayNumber,
                                         )
                                     }
-                                }
-                            },
-                            selectedDayNumber = selectedDayNumber,
-                            onDaySelected = { dayNumber ->
-                                selectedDayNumber = dayNumber
-                            },
-                            onStartWorkout = { routineId, cycleId, dayNumber ->
-                                routineId?.let { rid ->
-                                    val routine = allRoutines.find { it.id == rid } ?: return@let
-                                    routineResume.launchCycleRoutine(
-                                        routine = routine,
-                                        cycleId = cycleId,
-                                        dayNumber = dayNumber,
-                                    )
-                                }
-                            },
-                            onAdvanceDay = {
-                                scope.launch {
-                                    val activeId = activeCycle!!.id
-                                    cycleRepository.advanceToNextDay(activeId)
-                                    cycleRepository.getCycleProgress(activeId)?.let { updated ->
-                                        cycleProgress = cycleProgress.toMutableMap().apply {
-                                            this[activeId] = updated
+                                },
+                                onAdvanceDay = {
+                                    scope.launch {
+                                        val activeId = activeCycle!!.id
+                                        cycleRepository.advanceToNextDay(activeId)
+                                        cycleRepository.getCycleProgress(activeId)?.let { updated ->
+                                            cycleProgress = cycleProgress.toMutableMap().apply {
+                                                this[activeId] = updated
+                                            }
+                                            selectedDayNumber = updated.currentDayNumber
                                         }
-                                        selectedDayNumber = updated.currentDayNumber
                                     }
-                                }
-                            },
-                            onJumpToDay = { dayNumber ->
-                                scope.launch {
-                                    val activeId = activeCycle!!.id
-                                    cycleRepository.jumpToDay(activeId, dayNumber)
-                                    cycleRepository.getCycleProgress(activeId)?.let { updated ->
-                                        cycleProgress = cycleProgress.toMutableMap().apply {
-                                            this[activeId] = updated
+                                },
+                                onJumpToDay = { dayNumber ->
+                                    scope.launch {
+                                        val activeId = activeCycle!!.id
+                                        cycleRepository.jumpToDay(activeId, dayNumber)
+                                        cycleRepository.getCycleProgress(activeId)?.let { updated ->
+                                            cycleProgress = cycleProgress.toMutableMap().apply {
+                                                this[activeId] = updated
+                                            }
+                                            selectedDayNumber = updated.currentDayNumber
                                         }
-                                        selectedDayNumber = updated.currentDayNumber
                                     }
-                                }
-                            },
-                            onEditCycle = {
-                                navController.navigate(NavigationRoutes.CycleEditor.createRoute(activeCycle!!.id))
-                            },
-                        )
+                                },
+                                onEditCycle = {
+                                    navController.navigate(NavigationRoutes.CycleEditor.createRoute(activeCycle!!.id))
+                                },
+                            )
+                        }
                     }
                 }
 
                 // All Cycles Header
                 item {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = widthModifier,
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -488,28 +504,30 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel)
 
                 // Cycle List
                 items(cycles, key = { it.id }) { cycle ->
-                    CycleListItem(
-                        cycle = cycle,
-                        progress = cycleProgress[cycle.id],
-                        routines = allRoutines,
-                        isActive = cycle.id == activeCycle?.id,
-                        onActivate = {
-                            scope.launch {
-                                cycleRepository.setActiveCycle(cycle.id, profileId)
-                            }
-                        },
-                        onDeactivate = {
-                            scope.launch {
-                                cycleRepository.clearActiveCycle(profileId)
-                            }
-                        },
-                        onEdit = {
-                            navController.navigate(NavigationRoutes.CycleEditor.createRoute(cycle.id))
-                        },
-                        onDelete = {
-                            showDeleteConfirmDialog = cycle
-                        },
-                    )
+                    Box(modifier = widthModifier) {
+                        CycleListItem(
+                            cycle = cycle,
+                            progress = cycleProgress[cycle.id],
+                            routines = allRoutines,
+                            isActive = cycle.id == activeCycle?.id,
+                            onActivate = {
+                                scope.launch {
+                                    cycleRepository.setActiveCycle(cycle.id, profileId)
+                                }
+                            },
+                            onDeactivate = {
+                                scope.launch {
+                                    cycleRepository.clearActiveCycle(profileId)
+                                }
+                            },
+                            onEdit = {
+                                navController.navigate(NavigationRoutes.CycleEditor.createRoute(cycle.id))
+                            },
+                            onDelete = {
+                                showDeleteConfirmDialog = cycle
+                            },
+                        )
+                    }
                 }
             }
         }
@@ -1168,10 +1186,11 @@ private fun ActiveCycleCard(
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
                 )
                 Text(
-                    routine.exercises.joinToString(", ") { it.exercise.name }.take(50) +
-                        if (routine.exercises.size > 3) "..." else "",
+                    text = routine.exercises.joinToString(", ") { it.exercise.name },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                 )
             } else if (isUnassignedWorkout) {
                 Spacer(Modifier.height(8.dp))
@@ -1467,73 +1486,146 @@ private fun CycleListItem(
                     HorizontalDivider()
                     Spacer(Modifier.height(12.dp))
 
-                    // Action buttons - use filled tonal for visibility
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        // Show Activate or Deactivate based on current state
-                        FilledTonalButton(
-                            onClick = if (isActive) onDeactivate else onActivate,
-                            modifier = Modifier.weight(1f),
-                            shape = MaterialTheme.shapes.extraSmall,
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
-                            colors = ButtonDefaults.filledTonalButtonColors(
-                                containerColor = if (isActive) {
-                                    MaterialTheme.colorScheme.surfaceVariant
-                                } else {
-                                    MaterialTheme.colorScheme.primaryContainer
-                                },
-                                contentColor = if (isActive) {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                } else {
-                                    MaterialTheme.colorScheme.onPrimaryContainer
-                                },
-                            ),
+                    // Action buttons - use FlowRow when compact/scaled so text never clips
+                    val compactActions = isCompactAccessibilityLayout()
+                    @OptIn(ExperimentalLayoutApi::class)
+                    if (compactActions) {
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            Icon(
-                                if (isActive) Icons.Default.Cancel else Icons.Default.CheckCircle,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                            )
-                            Spacer(Modifier.width(4.dp))
-                            Text(if (isActive) "Deactivate" else "Activate", maxLines = 1)
+                            FilledTonalButton(
+                                onClick = if (isActive) onDeactivate else onActivate,
+                                modifier = Modifier.heightIn(min = 48.dp),
+                                shape = MaterialTheme.shapes.extraSmall,
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = if (isActive) {
+                                        MaterialTheme.colorScheme.surfaceVariant
+                                    } else {
+                                        MaterialTheme.colorScheme.primaryContainer
+                                    },
+                                    contentColor = if (isActive) {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    } else {
+                                        MaterialTheme.colorScheme.onPrimaryContainer
+                                    },
+                                ),
+                            ) {
+                                Icon(
+                                    if (isActive) Icons.Default.Cancel else Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(if (isActive) "Deactivate" else "Activate")
+                            }
+                            FilledTonalButton(
+                                onClick = onEdit,
+                                modifier = Modifier.heightIn(min = 48.dp),
+                                shape = MaterialTheme.shapes.extraSmall,
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                ),
+                            ) {
+                                Icon(
+                                    Icons.Default.Edit,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(stringResource(Res.string.action_edit))
+                            }
+                            FilledTonalButton(
+                                onClick = onDelete,
+                                modifier = Modifier.heightIn(min = 48.dp),
+                                shape = MaterialTheme.shapes.extraSmall,
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                                ),
+                            ) {
+                                Icon(
+                                    Icons.Default.Delete,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(stringResource(Res.string.action_delete))
+                            }
                         }
-                        FilledTonalButton(
-                            onClick = onEdit,
-                            modifier = Modifier.weight(1f),
-                            shape = MaterialTheme.shapes.extraSmall,
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
-                            colors = ButtonDefaults.filledTonalButtonColors(
-                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                            ),
+                    } else {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            Icon(
-                                Icons.Default.Edit,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                            )
-                            Spacer(Modifier.width(4.dp))
-                            Text(stringResource(Res.string.action_edit), maxLines = 1)
-                        }
-                        FilledTonalButton(
-                            onClick = onDelete,
-                            modifier = Modifier.weight(1f),
-                            shape = MaterialTheme.shapes.extraSmall,
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
-                            colors = ButtonDefaults.filledTonalButtonColors(
-                                containerColor = MaterialTheme.colorScheme.errorContainer,
-                                contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                            ),
-                        ) {
-                            Icon(
-                                Icons.Default.Delete,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                            )
-                            Spacer(Modifier.width(4.dp))
-                            Text(stringResource(Res.string.action_delete), maxLines = 1)
+                            // Show Activate or Deactivate based on current state
+                            FilledTonalButton(
+                                onClick = if (isActive) onDeactivate else onActivate,
+                                modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                                shape = MaterialTheme.shapes.extraSmall,
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = if (isActive) {
+                                        MaterialTheme.colorScheme.surfaceVariant
+                                    } else {
+                                        MaterialTheme.colorScheme.primaryContainer
+                                    },
+                                    contentColor = if (isActive) {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    } else {
+                                        MaterialTheme.colorScheme.onPrimaryContainer
+                                    },
+                                ),
+                            ) {
+                                Icon(
+                                    if (isActive) Icons.Default.Cancel else Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(if (isActive) "Deactivate" else "Activate", maxLines = 1)
+                            }
+                            FilledTonalButton(
+                                onClick = onEdit,
+                                modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                                shape = MaterialTheme.shapes.extraSmall,
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                ),
+                            ) {
+                                Icon(
+                                    Icons.Default.Edit,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(stringResource(Res.string.action_edit), maxLines = 1)
+                            }
+                            FilledTonalButton(
+                                onClick = onDelete,
+                                modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                                shape = MaterialTheme.shapes.extraSmall,
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                                ),
+                            ) {
+                                Icon(
+                                    Icons.Default.Delete,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(stringResource(Res.string.action_delete), maxLines = 1)
+                            }
                         }
                     }
                 }

@@ -11,7 +11,9 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -402,6 +404,7 @@ fun ExercisePickerDialog(
                 isLoading = isCompletedFilterLoading,
                 mediaRefreshTick = mediaRefreshTick,
                 fullScreen = false,
+                onDismiss = onDismiss,
             )
         }
     }
@@ -458,6 +461,7 @@ fun ExercisePickerContent(
     rowNameStyle: TextStyle = MaterialTheme.typography.titleMedium,
     /** Issue #1358 SD9: forwarded to rows so a same-id media edit re-queries images. */
     mediaRefreshTick: Int = 0,
+    onDismiss: (() -> Unit)? = null,
 ) {
     var showVideoDialog by remember { mutableStateOf(false) }
     var videoDialogExercise by remember { mutableStateOf<Exercise?>(null) }
@@ -490,6 +494,7 @@ fun ExercisePickerContent(
     Box(
         modifier = Modifier
             .fillMaxWidth()
+            .navigationBarsPadding()
             .imePadding()
             .then(if (fullScreen) Modifier.fillMaxHeight() else Modifier.fillMaxHeight(0.9f))
             // Tap outside search field dismisses keyboard
@@ -498,21 +503,34 @@ fun ExercisePickerContent(
         Column(
             modifier = Modifier.fillMaxSize(),
         ) {
-            // Title row: shown only when showTitle is true, not in fullScreen mode, and not in
-            // compact accessibility mode (to preserve space above the iOS keyboard).
-            if (showTitle && !fullScreen && !useCompactAccessibility) {
+            if (showTitle && !fullScreen) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp)
-                        .padding(bottom = 16.dp),
+                        .padding(bottom = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = "Select Exercise",
-                        style = MaterialTheme.typography.headlineMedium,
+                        text = stringResource(Res.string.select_exercise),
+                        style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
                     )
+                    if (onDismiss != null) {
+                        IconButton(
+                            onClick = onDismiss,
+                            modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = stringResource(Res.string.cd_close),
+                            )
+                        }
+                    }
                 }
             }
 
@@ -647,8 +665,10 @@ private fun ExerciseImageDialog(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(
         onDismissRequest = onDismiss,
+        sheetState = sheetState,
         modifier = modifier,
         containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
@@ -656,7 +676,7 @@ private fun ExerciseImageDialog(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.9f)
+                .navigationBarsPadding()
                 .padding(16.dp),
         ) {
             Row(
@@ -668,11 +688,16 @@ private fun ExerciseImageDialog(
             ) {
                 Text(
                     text = exerciseName,
-                    style = MaterialTheme.typography.headlineMedium,
+                    style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
-                IconButton(onClick = onDismiss) {
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
+                ) {
                     Icon(Icons.Default.Close, contentDescription = stringResource(Res.string.cd_close))
                 }
             }
