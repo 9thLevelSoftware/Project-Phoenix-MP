@@ -185,7 +185,16 @@ fun AnimatedRepCounter(
 
                 when (phase) {
                     RepPhase.IDLE -> {
-                        // Show NOTHING during idle - the stable X/Y counter shows confirmed reps
+                        // D-6 #4: Render confirmed rep count cleanly during idle so no dark void appears below "REP"
+                        Text(
+                            text = confirmedReps.toString(),
+                            style = MaterialTheme.typography.displayLarge.copy(
+                                fontSize = (size.value * 0.7f).sp,
+                                fontWeight = FontWeight.Black,
+                            ),
+                            color = MaterialTheme.colorScheme.onSurface,
+                            textAlign = TextAlign.Center,
+                        )
                     }
 
                     RepPhase.CONCENTRIC -> {

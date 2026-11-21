@@ -3,13 +3,14 @@ package com.devil.phoenixproject.presentation.components
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -18,11 +19,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.devil.phoenixproject.presentation.util.ContentAwareFit
+import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
+import com.devil.phoenixproject.presentation.util.LocalWeightTextScale
+import com.devil.phoenixproject.presentation.util.scaledForWeightValue
 import kotlin.math.min
 
 /**
@@ -51,34 +58,55 @@ fun CircularForceGauge(
     val isConcentric = velocity > 0.05
     val isEccentric = velocity < -0.05
 
+    val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
     val phaseColor = when {
         isConcentric -> MaterialTheme.colorScheme.primary
-
         isEccentric -> MaterialTheme.colorScheme.tertiary
-
-        // Commonly used for Eccentric in Phoenix context
-        else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
+    val trackColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
 
     // Animate the progress
     val progress = (currentForce / maxForce).coerceIn(0f, 1f)
     val animatedProgress by animateFloatAsState(
         targetValue = progress,
-        animationSpec = tween(durationMillis = 100),
+        animationSpec = tween(durationMillis = if (reduceMotion) 0 else 100),
     )
 
-    Box(
+    BoxWithConstraints(
         contentAlignment = Alignment.Center,
         modifier = modifier.aspectRatio(1f),
     ) {
+        val diameterDp = min(maxWidth.value, maxHeight.value)
+        // Center text sits inside the inner ring chord so multi-digit lbs values stay clear of the arc
+        val innerAvailableDp = ((diameterDp - 32f) * 0.68f).coerceAtLeast(48f)
+        val textMeasurer = rememberTextMeasurer()
+        val density = LocalDensity.current
+        val weightTextScale = LocalWeightTextScale.current
+
+        val baseValueStyle = MaterialTheme.typography.displayMedium
+            .scaledForWeightValue(weightTextScale)
+            .copy(fontWeight = FontWeight.Bold)
+        val valueFitScale = ContentAwareFit.singleLineFitFontScale(
+            text = label,
+            style = baseValueStyle,
+            availableDp = innerAvailableDp,
+            measurer = textMeasurer,
+            density = density,
+        )
+        val valueStyle = if (valueFitScale < 1f) {
+            baseValueStyle.copy(fontSize = baseValueStyle.fontSize * valueFitScale)
+        } else {
+            baseValueStyle
+        }
+
         Canvas(modifier = Modifier.fillMaxSize().padding(16.dp)) {
             val strokeWidth = size.width * 0.08f
             val diameter = min(size.width, size.height) - strokeWidth
-            val radius = diameter / 2f
 
             // Background Track
             drawArc(
-                color = Color.Gray.copy(alpha = 0.2f),
+                color = trackColor,
                 startAngle = 135f,
                 sweepAngle = 270f,
                 useCenter = false,
@@ -100,20 +128,40 @@ fun CircularForceGauge(
         }
 
         // Center Text
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(
+            modifier = Modifier.widthIn(max = innerAvailableDp.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
             Text(
                 text = label,
-                style = MaterialTheme.typography.displayMedium,
-                fontWeight = FontWeight.Bold,
+                style = valueStyle,
                 color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
             )
             if (subLabel != null) {
+                val baseSubStyle = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
+                val subFitScale = ContentAwareFit.singleLineFitFontScale(
+                    text = subLabel,
+                    style = baseSubStyle,
+                    availableDp = innerAvailableDp,
+                    measurer = textMeasurer,
+                    density = density,
+                )
+                val subStyle = if (subFitScale < 1f) {
+                    baseSubStyle.copy(fontSize = baseSubStyle.fontSize * subFitScale)
+                } else {
+                    baseSubStyle
+                }
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = subLabel,
-                    style = MaterialTheme.typography.titleMedium,
+                    style = subStyle,
                     color = phaseColor, // Color the label with phase color
-                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }

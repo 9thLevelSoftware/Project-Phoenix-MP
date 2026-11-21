@@ -61,8 +61,10 @@ import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WindowHeightSizeClass
+import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.presentation.viewmodel.RoutineResumeEntryPoint
+import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import com.devil.phoenixproject.util.KmpUtils
 import kotlin.time.Clock
 import kotlin.time.Instant
@@ -159,7 +161,7 @@ fun HomeScreen(navController: NavController, viewModel: MainViewModel) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
+            .background(screenBackgroundBrush()),
     ) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
@@ -330,6 +332,7 @@ private fun HomeLaunchPad(
 
 @Composable
 private fun ShortcutActions(actions: List<HomeActionSpec>, stacked: Boolean, buttonHeight: androidx.compose.ui.unit.Dp) {
+    val isWideScreen = LocalWindowSizeClass.current.widthSizeClass != WindowWidthSizeClass.Compact
     if (stacked) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             actions.forEach { action ->
@@ -346,28 +349,63 @@ private fun ShortcutActions(actions: List<HomeActionSpec>, stacked: Boolean, but
                 )
             }
         }
+    } else if (isWideScreen && actions.size <= 3) {
+        // C-14: Balanced equal-width 3-up pill row on Medium/Expanded widths
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            actions.forEach { action ->
+                AnimatedActionButton(
+                    label = action.label,
+                    icon = action.icon,
+                    onClick = action.onClick,
+                    isPrimary = false,
+                    iconAnimation = action.iconAnimation,
+                    contentDescription = action.contentDescription,
+                    heightOverride = buttonHeight,
+                    allowTwoLineLabel = true,
+                    enabled = action.enabled,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
     } else {
+        // C-14: On compact phones, pair the top 2 and span any trailing odd action cleanly full width
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             actions.chunked(2).forEach { rowActions ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    rowActions.forEach { action ->
-                        AnimatedActionButton(
-                            label = action.label,
-                            icon = action.icon,
-                            onClick = action.onClick,
-                            isPrimary = false,
-                            iconAnimation = action.iconAnimation,
-                            contentDescription = action.contentDescription,
-                            heightOverride = buttonHeight,
-                            enabled = action.enabled,
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
-                    if (rowActions.size == 1) {
-                        Spacer(Modifier.weight(1f))
+                if (rowActions.size == 1) {
+                    val action = rowActions.first()
+                    AnimatedActionButton(
+                        label = action.label,
+                        icon = action.icon,
+                        onClick = action.onClick,
+                        isPrimary = false,
+                        iconAnimation = action.iconAnimation,
+                        contentDescription = action.contentDescription,
+                        heightOverride = buttonHeight,
+                        allowTwoLineLabel = true,
+                        enabled = action.enabled,
+                    )
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        rowActions.forEach { action ->
+                            AnimatedActionButton(
+                                label = action.label,
+                                icon = action.icon,
+                                onClick = action.onClick,
+                                isPrimary = false,
+                                iconAnimation = action.iconAnimation,
+                                contentDescription = action.contentDescription,
+                                heightOverride = buttonHeight,
+                                allowTwoLineLabel = true,
+                                enabled = action.enabled,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
                     }
                 }
             }
@@ -449,24 +487,36 @@ private fun WeeklyComplianceStrip(
             }
         }
 
-        if (!compact && workoutStreak != null && workoutStreak > 0) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(top = 6.dp),
+        if (workoutStreak != null && workoutStreak > 0) {
+            val streakTopPadding = if (compact) 4.dp else 6.dp
+            val streakIconSize = if (compact) 16.dp else 20.dp
+            val streakLabelStyle = if (compact) MaterialTheme.typography.labelMedium else MaterialTheme.typography.labelLarge
+            Surface(
+                modifier = Modifier.padding(top = streakTopPadding),
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
             ) {
-                Icon(
-                    Icons.Default.LocalFireDepartment,
-                    contentDescription = stringResource(Res.string.cd_streak),
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp),
-                )
-                Spacer(Modifier.width(4.dp))
-                Text(
-                    "$workoutStreak",
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(
+                        horizontal = if (compact) 10.dp else 12.dp,
+                        vertical = if (compact) 3.dp else 4.dp,
+                    ),
+                ) {
+                    Icon(
+                        Icons.Default.LocalFireDepartment,
+                        contentDescription = stringResource(Res.string.cd_streak),
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(streakIconSize),
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        "$workoutStreak",
+                        style = streakLabelStyle,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
             }
         }
     }
@@ -481,7 +531,7 @@ private fun ComplianceDot(letter: String, isActive: Boolean, isToday: Boolean) {
             color = if (isToday) {
                 MaterialTheme.colorScheme.primary
             } else {
-                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                MaterialTheme.colorScheme.onSurfaceVariant
             },
             fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal,
         )

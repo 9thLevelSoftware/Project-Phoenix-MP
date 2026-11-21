@@ -296,7 +296,11 @@ fun SingleExerciseScreen(
         contentWindowInsets = WindowInsets.navigationBars,
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
-        Box(modifier = Modifier.padding(padding)) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
+        ) {
             // Always show the picker content as the background
             ExercisePickerContent(
                 exercises = exercises,

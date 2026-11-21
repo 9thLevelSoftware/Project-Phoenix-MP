@@ -18,7 +18,9 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
@@ -88,6 +90,7 @@ import com.devil.phoenixproject.presentation.navigation.safePopOrNavigate
 import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
 import com.devil.phoenixproject.presentation.util.LocalWeightTextScale
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
+import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
 import com.devil.phoenixproject.presentation.util.TestTags
 import com.devil.phoenixproject.presentation.util.WindowHeightSizeClass
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
@@ -257,17 +260,24 @@ fun RoutineOverviewScreen(navController: NavController, viewModel: MainViewModel
             )
         },
     ) { padding ->
+        val contentMaxWidth = ResponsiveDimensions.contentMaxWidth()
+        val widthConstraint = if (contentMaxWidth != null) {
+            Modifier.widthIn(max = contentMaxWidth)
+        } else {
+            Modifier
+        }
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
                 .background(screenBackgroundBrush()),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             // Time estimate badge (Issue #225)
             timeEstimate?.let { estimate ->
                 if (routine.exercises.isNotEmpty() && estimate.totalSeconds > 0) {
                     Row(
-                        modifier = Modifier
+                        modifier = widthConstraint
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp, vertical = 4.dp),
                         horizontalArrangement = Arrangement.Center,
@@ -297,7 +307,7 @@ fun RoutineOverviewScreen(navController: NavController, viewModel: MainViewModel
             // Horizontal pager for exercises
             HorizontalPager(
                 state = pagerState,
-                modifier = Modifier
+                modifier = widthConstraint
                     .fillMaxWidth()
                     .weight(1f),
                 contentPadding = PaddingValues(horizontal = 16.dp),
@@ -508,7 +518,10 @@ private fun RoutineOverviewActionBar(
             FilledTonalIconButton(
                 onClick = onStopRoutine,
                 modifier = Modifier
-                    .size(sizing.actionButtonMinHeight)
+                    .sizeIn(
+                        minWidth = sizing.actionButtonMinHeight,
+                        minHeight = sizing.actionButtonMinHeight,
+                    )
                     .testTag(TestTags.ACTION_STOP_ROUTINE_OVERVIEW),
                 colors = IconButtonDefaults.filledTonalIconButtonColors(
                     containerColor = MaterialTheme.colorScheme.errorContainer,
@@ -615,7 +628,8 @@ private fun ExerciseOverviewCard(
                         exercise.exercise.muscleGroups,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
+                        textAlign = TextAlign.Center,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
@@ -706,7 +720,11 @@ private fun ExerciseOverviewCard(
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically,
                                     ) {
-                                        Text(stringResource(Res.string.target_reps), style = MaterialTheme.typography.bodyLarge)
+                                        Text(
+                                            stringResource(Res.string.target_reps),
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            modifier = Modifier.weight(1f),
+                                        )
                                         Text(
                                             "AMRAP",
                                             style = MaterialTheme.typography.titleMedium,
@@ -736,7 +754,11 @@ private fun ExerciseOverviewCard(
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically,
                                     ) {
-                                        Text(stringResource(Res.string.target_reps), style = MaterialTheme.typography.bodyLarge)
+                                        Text(
+                                            stringResource(Res.string.target_reps),
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            modifier = Modifier.weight(1f),
+                                        )
                                         Text(
                                             "AMRAP",
                                             style = MaterialTheme.typography.titleMedium,

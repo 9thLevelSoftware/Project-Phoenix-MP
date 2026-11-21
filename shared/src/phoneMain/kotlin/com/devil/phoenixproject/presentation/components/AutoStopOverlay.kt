@@ -15,6 +15,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.devil.phoenixproject.data.repository.AutoStopUiState
+import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import org.jetbrains.compose.resources.stringResource
@@ -29,13 +30,23 @@ import projectphoenix.shared.generated.resources.Res
  */
 @Composable
 fun AutoStopOverlay(autoStopState: AutoStopUiState, isJustLift: Boolean, modifier: Modifier = Modifier) {
+    val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
+
     // Only show when auto-stop is active
     AnimatedVisibility(
         visible = autoStopState.isActive,
-        enter = fadeIn(animationSpec = tween(200)) +
-            scaleIn(initialScale = 0.8f, animationSpec = tween(200)),
-        exit = fadeOut(animationSpec = tween(150)) +
-            scaleOut(targetScale = 0.8f, animationSpec = tween(150)),
+        enter = if (reduceMotion) {
+            EnterTransition.None
+        } else {
+            fadeIn(animationSpec = tween(200)) +
+                scaleIn(initialScale = 0.8f, animationSpec = tween(200))
+        },
+        exit = if (reduceMotion) {
+            ExitTransition.None
+        } else {
+            fadeOut(animationSpec = tween(150)) +
+                scaleOut(targetScale = 0.8f, animationSpec = tween(150))
+        },
         modifier = modifier,
     ) {
         // Responsive dialog width based on screen size
@@ -46,17 +57,22 @@ fun AutoStopOverlay(autoStopState: AutoStopUiState, isJustLift: Boolean, modifie
             WindowWidthSizeClass.Compact -> 280.dp
         }
 
-        // Pulsing animation for urgency
-        val infiniteTransition = rememberInfiniteTransition(label = "autostop-pulse")
-        val pulse by infiniteTransition.animateFloat(
-            initialValue = 1f,
-            targetValue = 1.05f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(500, easing = FastOutSlowInEasing),
-                repeatMode = RepeatMode.Reverse,
-            ),
-            label = "pulse",
-        )
+        // Pulsing animation for urgency (skipped when reduceMotion is active)
+        val pulse = if (reduceMotion) {
+            1f
+        } else {
+            val infiniteTransition = rememberInfiniteTransition(label = "autostop-pulse")
+            val animatedPulse by infiniteTransition.animateFloat(
+                initialValue = 1f,
+                targetValue = 1.05f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(500, easing = FastOutSlowInEasing),
+                    repeatMode = RepeatMode.Reverse,
+                ),
+                label = "pulse",
+            )
+            animatedPulse
+        }
 
         Card(
             modifier = Modifier
@@ -118,7 +134,7 @@ fun AutoStopOverlay(autoStopState: AutoStopUiState, isJustLift: Boolean, modifie
                         "Lift to continue set"
                     },
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f),
+                    color = MaterialTheme.colorScheme.onErrorContainer,
                     textAlign = TextAlign.Center,
                 )
             }

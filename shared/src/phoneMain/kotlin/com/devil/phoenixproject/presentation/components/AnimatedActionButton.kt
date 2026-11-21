@@ -2,6 +2,7 @@ package com.devil.phoenixproject.presentation.components
 
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.LocalIndication
@@ -13,9 +14,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -40,12 +40,14 @@ import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.text.font.FontWeight
@@ -53,6 +55,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
@@ -89,31 +92,33 @@ private fun createFlameParticle(): FlameParticle = FlameParticle(
     speedY = Random.nextFloat() * 0.015f + 0.006f,
 )
 
-private fun Modifier.onFire(): Modifier = composed {
+private fun Modifier.onFire(reduceMotion: Boolean): Modifier = composed {
     val particles = remember { mutableStateListOf<FlameParticle>() }
     var time by remember { mutableLongStateOf(0L) }
 
-    LaunchedEffect(Unit) {
-        val startTime = withFrameNanos { it }
-        while (isActive) {
-            withFrameNanos { now ->
-                time = now - startTime
+    if (!reduceMotion) {
+        LaunchedEffect(Unit) {
+            val startTime = withFrameNanos { it }
+            while (isActive) {
+                withFrameNanos { now ->
+                    time = now - startTime
 
-                val iterator = particles.listIterator()
-                while (iterator.hasNext()) {
-                    val particle = iterator.next()
-                    particle.y -= particle.speedY
-                    particle.life -= 0.02f
-                    particle.radius *= 0.97f
+                    val iterator = particles.listIterator()
+                    while (iterator.hasNext()) {
+                        val particle = iterator.next()
+                        particle.y -= particle.speedY
+                        particle.life -= 0.02f
+                        particle.radius *= 0.97f
 
-                    if (particle.life <= 0f || particle.radius < 1f) {
-                        iterator.remove()
+                        if (particle.life <= 0f || particle.radius < 1f) {
+                            iterator.remove()
+                        }
                     }
-                }
 
-                if (particles.size < 80) {
-                    repeat(2) {
-                        particles.add(createFlameParticle())
+                    if (particles.size < 80) {
+                        repeat(2) {
+                            particles.add(createFlameParticle())
+                        }
                     }
                 }
             }
@@ -121,31 +126,40 @@ private fun Modifier.onFire(): Modifier = composed {
     }
 
     drawWithCache {
+        val baseGradient = Brush.verticalGradient(
+            colors = listOf(
+                Color(0xFF1A0800),
+                Color(0xFF331000),
+                Color(0xFF4D1800),
+            ),
+        )
         onDrawBehind {
-            drawRect(Color(0xFF1A0800))
+            drawRect(baseGradient)
 
-            particles.forEach { particle ->
-                val drift = sin((time / 800_000_000f) + particle.driftOffset) * 4f
-                val color = when {
-                    particle.life > 0.7f -> Color(0xFFFFD700)
-                    particle.life > 0.4f -> Color(0xFFFF6B00)
-                    else -> Color(0xFFFF4500).copy(alpha = (particle.life * 2f).coerceIn(0f, 1f))
-                }
+            if (!reduceMotion) {
+                particles.forEach { particle ->
+                    val drift = sin((time / 800_000_000f) + particle.driftOffset) * 4f
+                    val color = when {
+                        particle.life > 0.7f -> Color(0xFFFFD700)
+                        particle.life > 0.4f -> Color(0xFFFF6B00)
+                        else -> Color(0xFFFF4500).copy(alpha = (particle.life * 2f).coerceIn(0f, 1f))
+                    }
 
-                drawCircle(
-                    color = color,
-                    radius = particle.radius,
-                    center = Offset((particle.x * size.width) + drift, particle.y * size.height),
-                    blendMode = BlendMode.Plus,
-                )
-
-                if (particle.life > 0.5f) {
                     drawCircle(
-                        color = Color.White.copy(alpha = (particle.life - 0.5f) * 0.6f),
-                        radius = particle.radius * 0.4f,
+                        color = color,
+                        radius = particle.radius,
                         center = Offset((particle.x * size.width) + drift, particle.y * size.height),
                         blendMode = BlendMode.Plus,
                     )
+
+                    if (particle.life > 0.5f) {
+                        drawCircle(
+                            color = Color.White.copy(alpha = (particle.life - 0.5f) * 0.45f),
+                            radius = particle.radius * 0.4f,
+                            center = Offset((particle.x * size.width) + drift, particle.y * size.height),
+                            blendMode = BlendMode.Plus,
+                        )
+                    }
                 }
             }
         }
@@ -175,6 +189,7 @@ fun AnimatedActionButton(
     val indication = LocalIndication.current
     val windowSizeClass = LocalWindowSizeClass.current
     val useCompactAccessibility = isCompactAccessibilityLayout()
+    val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
 
     val defaultHeight = remember(useCompactAccessibility, windowSizeClass.widthSizeClass, isPrimary) {
         if (useCompactAccessibility) {
@@ -197,36 +212,40 @@ fun AnimatedActionButton(
     }
 
     val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.97f else 1f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMediumLow,
-        ),
+        targetValue = if (enabled && isPressed && !reduceMotion) 0.97f else 1f,
+        animationSpec = if (reduceMotion) {
+            snap()
+        } else {
+            spring(
+                dampingRatio = Spring.DampingRatioMediumBouncy,
+                stiffness = Spring.StiffnessMediumLow,
+            )
+        },
         label = "homeActionPressScale",
     )
     val iconRotation by animateFloatAsState(
         targetValue = when {
-            !isPressed -> 0f
+            !enabled || !isPressed || reduceMotion -> 0f
             iconAnimation == IconAnimation.ROTATE -> 18f
             iconAnimation == IconAnimation.TILT -> -8f
             else -> 0f
         },
-        animationSpec = spring(stiffness = Spring.StiffnessMedium),
+        animationSpec = if (reduceMotion) snap() else spring(stiffness = Spring.StiffnessMedium),
         label = "homeActionIconRotation",
     )
     val iconScale by animateFloatAsState(
-        targetValue = if (isPressed && (iconAnimation == IconAnimation.PULSE || iconAnimation == IconAnimation.FIRE || isFireButton)) {
+        targetValue = if (enabled && isPressed && !reduceMotion && (iconAnimation == IconAnimation.PULSE || iconAnimation == IconAnimation.FIRE || isFireButton)) {
             0.94f
         } else {
             1f
         },
-        animationSpec = spring(stiffness = Spring.StiffnessMedium),
+        animationSpec = if (reduceMotion) snap() else spring(stiffness = Spring.StiffnessMedium),
         label = "homeActionIconScale",
     )
 
     val containerColor = when {
         !enabled -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
-        isFireButton -> Color.Transparent
+        isFireButton -> Color(0xFF1A0800)
         isPrimary -> MaterialTheme.colorScheme.primary
         else -> MaterialTheme.colorScheme.surfaceContainerHigh
     }
@@ -245,9 +264,10 @@ fun AnimatedActionButton(
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .height(buttonHeight)
+            .heightIn(min = buttonHeight)
             .scale(scale)
             .clickable(
+                enabled = enabled,
                 interactionSource = interactionSource,
                 indication = indication,
                 role = Role.Button,
@@ -256,9 +276,13 @@ fun AnimatedActionButton(
             .clearAndSetSemantics {
                 this.contentDescription = semanticContentDescription
                 role = Role.Button
-                this.onClick(label = semanticContentDescription) {
-                    onClick()
-                    true
+                if (!enabled) {
+                    disabled()
+                } else {
+                    this.onClick(label = semanticContentDescription) {
+                        onClick()
+                        true
+                    }
                 }
             },
         shape = shape,
@@ -276,8 +300,9 @@ fun AnimatedActionButton(
     ) {
         Box(
             modifier = Modifier
-                .fillMaxSize()
-                .then(if (isFireButton) Modifier.clip(shape).onFire() else Modifier)
+                .fillMaxWidth()
+                .heightIn(min = buttonHeight)
+                .then(if (isFireButton && enabled) Modifier.clip(shape).onFire(reduceMotion) else Modifier)
                 .padding(horizontal = if (isPrimary) 18.dp else 12.dp, vertical = 8.dp),
             contentAlignment = Alignment.Center,
         ) {
@@ -314,7 +339,7 @@ fun AnimatedActionButton(
                         Text(
                             text = supportingText,
                             style = MaterialTheme.typography.labelMedium,
-                            color = contentColor.copy(alpha = 0.78f),
+                            color = contentColor.copy(alpha = if (enabled) 0.9f else 0.7f),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             textAlign = TextAlign.Center,
