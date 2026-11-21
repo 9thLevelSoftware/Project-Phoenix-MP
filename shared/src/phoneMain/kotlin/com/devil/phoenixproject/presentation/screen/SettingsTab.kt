@@ -752,7 +752,7 @@ fun SettingsTab(
                         .heightIn(min = 48.dp)
                         .clickable(role = Role.Button) {
                             runCatching {
-                                uriHandler.openUri("https://github.com/phoenixredux/Project-Phoenix-MP/issues")
+                                uriHandler.openUri("https://github.com/9thLevelSoftware/Project-Phoenix-MP/issues")
                             }
                         },
                     contentAlignment = Alignment.CenterStart,
