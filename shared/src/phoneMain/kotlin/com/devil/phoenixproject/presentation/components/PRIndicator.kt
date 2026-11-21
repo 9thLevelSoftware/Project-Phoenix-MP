@@ -14,6 +14,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
 /**
@@ -40,7 +42,7 @@ fun PRIndicator(
             text = "No PR",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = modifier,
+            modifier = modifier.semantics(mergeDescendants = true) {},
         )
         return
     }
@@ -51,18 +53,21 @@ fun PRIndicator(
     val isAtPR = kotlin.math.abs(currentWeight - prWeight) < 0.01f
 
     Row(
-        modifier = modifier,
+        modifier = modifier.semantics(mergeDescendants = true) {},
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center,
     ) {
         Text(
             text = "$percentage% PR${phaseLabel?.let { " · $it" } ?: ""}",
             style = MaterialTheme.typography.labelMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
             color = when {
                 isAbovePR -> MaterialTheme.colorScheme.primary
                 percentage >= 90 -> MaterialTheme.colorScheme.tertiary
                 else -> MaterialTheme.colorScheme.onSurfaceVariant
             },
+            modifier = Modifier.weight(1f, fill = false),
         )
 
         Spacer(Modifier.width(4.dp))
