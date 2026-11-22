@@ -289,7 +289,7 @@ private struct ConnectScreen: View {
                                         .padding(.horizontal, 18).padding(.vertical, 12)
                                         .background(phoenixOrange.opacity(0.15), in: Capsule())
                                 }
-                                .frame(maxWidth: .infinity, height: 88, alignment: .leading)
+                                .frame(maxWidth: .infinity, minHeight: 88, alignment: .leading)
                                 .padding(.horizontal, 18)
                             }
                             .buttonStyle(.card)
@@ -410,63 +410,15 @@ private struct JustLiftScreen: View {
         }
     }
 
+    @ViewBuilder
     private var setup: some View {
         VStack(alignment: .leading, spacing: 20) {
             Text("Choose exercise").font(.title2.weight(.semibold))
             if exercises.isEmpty {
                 emptyState("Exercise library unavailable", detail: "Phoenix could not load the exercise library. Try restarting the app.")
             } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
-                        ForEach(muscleGroups, id: \.self) { group in
-                            Button(group) {
-                                selectedMuscleGroup = group
-                            }
-                            .buttonStyle(.bordered)
-                            .tint(activeMuscleGroup == group ? phoenixOrange : .secondary)
-                            .focused($focusedControl, equals: "muscle.\(group)")
-                            .accessibilityIdentifier("justlift.muscle.\(group)")
-                        }
-                    }
-                    .padding(.vertical, 4)
-                }
-                .focusSection()
-                ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(spacing: 18) {
-                        ForEach(filteredExercises, id: \.id) { exercise in
-                            Button {
-                                selectedExerciseId = exercise.id
-                                model.bridge.selectJustLiftExercise(id: exercise.id); model.refresh()
-                            } label: {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text(exercise.name)
-                                        .font(.headline)
-                                        .lineLimit(2)
-                                        .multilineTextAlignment(.leading)
-                                    Spacer(minLength: 0)
-                                    HStack {
-                                        Text(exercise.muscleGroup.isEmpty ? "Cable exercise" : exercise.muscleGroup)
-                                            .font(.caption)
-                                            .foregroundStyle(selectedExerciseId == exercise.id ? phoenixOrange : .secondary)
-                                            .lineLimit(1)
-                                        Spacer(minLength: 4)
-                                        if selectedExerciseId == exercise.id {
-                                            Image(systemName: "checkmark.circle.fill")
-                                                .font(.caption)
-                                                .foregroundStyle(phoenixOrange)
-                                        }
-                                    }
-                                }
-                                .padding(20)
-                                .frame(width: 280, height: 120, alignment: .topLeading)
-                            }
-                            .buttonStyle(.card)
-                            .focused($focusedControl, equals: "exercise.\(exercise.id)")
-                            .accessibilityIdentifier("justlift.exercise.\(exercise.id)")
-                        }
-                    }
-                }
-                .focusSection()
+                exerciseStrip
+                muscleFilterStrip
             }
             Text("\(state?.exerciseName ?? "No exercise selected") · \(formatWeightPerCable(state?.weightPerCableKg ?? 0, unit: state?.weightUnit))")
                 .font(.title3.weight(.semibold))
@@ -487,6 +439,69 @@ private struct JustLiftScreen: View {
                 .focused($focusedControl, equals: "start")
                 .disabled(selectedExerciseId.isEmpty || state?.selectedExerciseId != selectedExerciseId)
                 .accessibilityIdentifier("justlift.start")
+        }
+        .focusSection()
+    }
+
+    private var exerciseStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            LazyHStack(spacing: 18) {
+                ForEach(filteredExercises, id: \.id) { exercise in
+                    exerciseCard(exercise)
+                }
+            }
+        }
+        .focusSection()
+    }
+
+    private func exerciseCard(_ exercise: TvExerciseRow) -> some View {
+        let isSelected = selectedExerciseId == exercise.id
+        return Button {
+            selectedExerciseId = exercise.id
+            model.bridge.selectJustLiftExercise(id: exercise.id)
+            model.refresh()
+        } label: {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(exercise.name)
+                    .font(.headline)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                Spacer(minLength: 0)
+                HStack {
+                    Text(exercise.muscleGroup.isEmpty ? "Cable exercise" : exercise.muscleGroup)
+                        .font(.caption)
+                        .foregroundStyle(isSelected ? phoenixOrange : .secondary)
+                        .lineLimit(1)
+                    Spacer(minLength: 4)
+                    if isSelected {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.caption)
+                            .foregroundStyle(phoenixOrange)
+                    }
+                }
+            }
+            .padding(20)
+            .frame(width: 280, height: 120, alignment: .topLeading)
+        }
+        .buttonStyle(.card)
+        .focused($focusedControl, equals: "exercise.\(exercise.id)")
+        .accessibilityIdentifier("justlift.exercise.\(exercise.id)")
+    }
+
+    private var muscleFilterStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 12) {
+                ForEach(muscleGroups, id: \.self) { group in
+                    Button(group) {
+                        selectedMuscleGroup = group
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(activeMuscleGroup == group ? phoenixOrange : .secondary)
+                    .focused($focusedControl, equals: "muscle.\(group)")
+                    .accessibilityIdentifier("justlift.muscle.\(group)")
+                }
+            }
+            .padding(.vertical, 4)
         }
         .focusSection()
     }
@@ -602,7 +617,7 @@ private struct RoutinesScreen: View {
                                     Image(systemName: "chevron.right").foregroundStyle(phoenixOrange)
                                 }
                                 .padding(.horizontal, 22)
-                                .frame(maxWidth: .infinity, height: 104, alignment: .leading)
+                                .frame(maxWidth: .infinity, minHeight: 104, alignment: .leading)
                             }
                             .buttonStyle(.card)
                             .accessibilityIdentifier("routine.\(routine.id)")
@@ -729,51 +744,7 @@ private struct RoutineOverviewScreen: View {
                         errorText(error)
                     }
                 } else {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Button("Begin Routine") { model.bridge.beginSelectedRoutine(); model.refresh() }
-                            .buttonStyle(.borderedProminent).tint(phoenixOrange).accessibilityIdentifier("routine.begin")
-                        Text("Press Start Set before each set. Bodyweight exercises use an on-screen timer and manual rep entry.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    if state?.connectionState != "connected" && exercises.contains(where: { !$0.isBodyweight }) {
-                        errorText("Connect to a selected trainer before starting a cable set.")
-                    }
-                    if let error = displayError(actionError: state?.actionError, excluding: []) {
-                        errorText(error)
-                    }
-                    Text("Exercises (\(exercises.count))")
-                        .font(.title3.weight(.semibold))
-                        .padding(.top, 8)
-                    LazyVStack(alignment: .leading, spacing: 12) {
-                        ForEach(Array(exercises.enumerated()), id: \.offset) { index, exercise in
-                            Button {} label: {
-                                HStack(spacing: 20) {
-                                    Text(String(format: "%02d", index + 1))
-                                        .font(.title2.weight(.bold))
-                                        .foregroundStyle(phoenixOrange)
-                                        .frame(width: 44, alignment: .leading)
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text(exercise.name)
-                                            .font(.title3.weight(.semibold))
-                                            .lineLimit(2)
-                                            .multilineTextAlignment(.leading)
-                                        Text(
-                                            exercise.isBodyweight
-                                                ? "\(exercise.setCount) sets · \(exercise.reps) planned reps · Bodyweight"
-                                                : "\(exercise.setCount) sets · \(exercise.reps) reps · \(formatWeightPerCable(exercise.weightPerCableKg, unit: state?.weightUnit))"
-                                        )
-                                        .font(.subheadline)
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(2)
-                                    }
-                                    Spacer(minLength: 0)
-                                }
-                                .padding(.horizontal, 16)
-                                .frame(maxWidth: .infinity, height: 92, alignment: .leading)
-                            }
-                            .buttonStyle(.card)
-                        }
-                    }
+                    routinePreview
                 }
             }
             .padding(60)
@@ -785,6 +756,62 @@ private struct RoutineOverviewScreen: View {
             if state?.sessionOpen == true { model.bridge.handleBackDuringSession(); model.refresh() }
             else { dismiss() }
         }
+    }
+
+    private var routinePreview: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 12) {
+                Button("Begin Routine") { model.bridge.beginSelectedRoutine(); model.refresh() }
+                    .buttonStyle(.borderedProminent)
+                    .tint(phoenixOrange)
+                    .accessibilityIdentifier("routine.begin")
+                Text("Press Start Set before each set. Bodyweight exercises use an on-screen timer and manual rep entry.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if state?.connectionState != "connected" && exercises.contains(where: { !$0.isBodyweight }) {
+                errorText("Connect to a selected trainer before starting a cable set.")
+            }
+            if let error = displayError(actionError: state?.actionError, excluding: []) {
+                errorText(error)
+            }
+            Text("Exercises (\(exercises.count))")
+                .font(.title3.weight(.semibold))
+                .padding(.top, 8)
+            LazyVStack(alignment: .leading, spacing: 12) {
+                ForEach(Array(exercises.enumerated()), id: \.offset) { index, exercise in
+                    routinePreviewRow(index: index, exercise: exercise)
+                }
+            }
+        }
+    }
+
+    private func routinePreviewRow(index: Int, exercise: TvRoutineExerciseRow) -> some View {
+        let subtitle: String = exercise.isBodyweight
+            ? "\(exercise.setCount) sets · \(exercise.reps) planned reps · Bodyweight"
+            : "\(exercise.setCount) sets · \(exercise.reps) reps · \(formatWeightPerCable(exercise.weightPerCableKg, unit: state?.weightUnit))"
+        return Button {} label: {
+            HStack(spacing: 20) {
+                Text(String(format: "%02d", index + 1))
+                    .font(.title2.weight(.bold))
+                    .foregroundStyle(phoenixOrange)
+                    .frame(width: 44, alignment: .leading)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(exercise.name)
+                        .font(.title3.weight(.semibold))
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                    Text(subtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 16)
+            .frame(maxWidth: .infinity, minHeight: 92, alignment: .leading)
+        }
+        .buttonStyle(.card)
     }
 }
 
