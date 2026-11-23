@@ -136,6 +136,7 @@ class SqlDelightWorkoutRepository(
         maxTorsoRollDeg: Double?,
         routineModifierApplied: Long,
         metricUnitVersion: Long,
+        workoutCompletedAtMs: Long?,
     ): WorkoutSession = WorkoutSession(
         id = id,
         timestamp = timestamp,
@@ -157,6 +158,7 @@ class SqlDelightWorkoutRepository(
         routineName = routineName,
         routineId = routineId,
         routineModifierApplied = routineModifierApplied == 1L,
+        workoutCompletedAtMs = workoutCompletedAtMs,
         safetyFlags = safetyFlags.toInt(),
         deloadWarningCount = deloadWarningCount.toInt(),
         romViolationCount = romViolationCount.toInt(),
@@ -590,6 +592,12 @@ class SqlDelightWorkoutRepository(
                 repMetrics.forEach { metric -> queries.insertRepMetricRow(session.id, metric) }
                 queries.deleteRepBiomechanicsBySession(session.id)
                 repBiomechanics.forEach { result -> queries.insertRepBiomechanicsRow(session.id, result) }
+                if (session.routineSessionId == null) {
+                    queries.markStandaloneWorkoutComplete(
+                        completedAtMs = currentTimeMillis().coerceAtLeast(session.timestamp),
+                        id = session.id,
+                    )
+                }
                 // Main's newer sync-dirty contract: every child write marks its
                 // session. The atomic commit writes those children in one
                 // transaction, so it must dirty the session the same way the
@@ -1665,6 +1673,20 @@ class SqlDelightWorkoutRepository(
             routineSessionId = routineSessionId,
             mapper = ::mapToSession,
         ).executeAsList()
+    }
+
+    override suspend fun markRoutineWorkoutComplete(
+        profileId: String,
+        routineSessionId: String,
+        completedAtMs: Long,
+    ) {
+        withContext(Dispatchers.IO) {
+            queries.markRoutineWorkoutComplete(
+                completedAtMs = completedAtMs,
+                profileId = profileId,
+                routineSessionId = routineSessionId,
+            )
+        }
     }
 
     override suspend fun getCompletedHealthExportCandidates(profileId: String): List<WorkoutSession> = withContext(Dispatchers.IO) {

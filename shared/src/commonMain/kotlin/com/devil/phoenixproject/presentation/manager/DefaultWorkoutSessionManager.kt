@@ -354,6 +354,7 @@ class DefaultWorkoutSessionManager(
         equipmentRackRepository = equipmentRackRepository,
         applyEquipmentRackLoadUseCase = applyEquipmentRackLoadUseCase,
         scope = scope,
+        syncTriggerManager = syncTriggerManager,
     ).also { rfm ->
         rfm.lifecycleDelegate = object : RoutineFlowManager.WorkoutLifecycleDelegate {
             override fun resetRepCounter() {

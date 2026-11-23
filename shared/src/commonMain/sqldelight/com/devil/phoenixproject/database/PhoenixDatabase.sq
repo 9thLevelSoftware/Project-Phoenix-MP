@@ -137,7 +137,8 @@ CREATE TABLE WorkoutSession (
     -- whether a one-shot routine modifier was applied. Fail closed for 1RM inputs.
     routineModifierApplied INTEGER NOT NULL DEFAULT 1 CHECK(routineModifierApplied IN (0, 1)),
     -- Issue #1400 (migration 65): 1 = legacy cm/cm-s scale, 2 = mm/mm-s. Insert paths write 2.
-    metric_unit_version INTEGER NOT NULL DEFAULT 1 CHECK(metric_unit_version IN (1, 2))
+    metric_unit_version INTEGER NOT NULL DEFAULT 1 CHECK(metric_unit_version IN (1, 2)),
+    workout_completed_at_ms INTEGER
 );
 
 CREATE INDEX idx_workout_session_timestamp ON WorkoutSession(timestamp);
@@ -3424,6 +3425,20 @@ markWorkoutComponentDirty:
 UPDATE WorkoutSession
 SET local_sync_generation = local_sync_generation + 1
 WHERE id = :id AND deletedAt IS NULL;
+
+markStandaloneWorkoutComplete:
+UPDATE WorkoutSession
+SET workout_completed_at_ms = :completedAtMs
+WHERE id = :id AND routineSessionId IS NULL AND deletedAt IS NULL
+  AND workout_completed_at_ms IS NULL;
+
+markRoutineWorkoutComplete:
+UPDATE WorkoutSession
+SET workout_completed_at_ms = :completedAtMs,
+    updatedAt = MAX(COALESCE(updatedAt, 0), :completedAtMs),
+    local_sync_generation = local_sync_generation + 1
+WHERE profile_id = :profileId AND routineSessionId = :routineSessionId AND deletedAt IS NULL
+  AND workout_completed_at_ms IS NULL;
 
 markWorkoutPortalParentDirty:
 UPDATE WorkoutSession

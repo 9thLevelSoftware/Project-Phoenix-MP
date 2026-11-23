@@ -1173,7 +1173,8 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 maxTorsoPitchDeg REAL,
                 maxTorsoRollDeg REAL,
                 routineModifierApplied INTEGER NOT NULL DEFAULT 1 CHECK(routineModifierApplied IN (0, 1)),
-                metric_unit_version INTEGER NOT NULL DEFAULT 1 CHECK(metric_unit_version IN (1, 2))
+                metric_unit_version INTEGER NOT NULL DEFAULT 1 CHECK(metric_unit_version IN (1, 2)),
+                workout_completed_at_ms INTEGER
             )
         """.trimIndent(),
     ),
@@ -2037,6 +2038,11 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
         "WorkoutSession",
         "metric_unit_version",
         "ALTER TABLE WorkoutSession ADD COLUMN metric_unit_version INTEGER NOT NULL DEFAULT 1 CHECK(metric_unit_version IN (1, 2))",
+    ),
+    SchemaHealOperation(
+        "WorkoutSession",
+        "workout_completed_at_ms",
+        "ALTER TABLE WorkoutSession ADD COLUMN workout_completed_at_ms INTEGER",
     ),
     SchemaHealOperation(
         "PhaseStatistics",
