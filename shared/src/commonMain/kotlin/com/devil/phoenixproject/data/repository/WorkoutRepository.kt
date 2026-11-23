@@ -132,6 +132,9 @@ interface WorkoutRepository {
      */
     suspend fun getSessionsForRoutineSession(profileId: String, routineSessionId: String): List<WorkoutSession>
 
+    /** Persist the finish of a routine and make its saved sets eligible for push. */
+    suspend fun markRoutineWorkoutComplete(profileId: String, routineSessionId: String, completedAtMs: Long) = Unit
+
     /**
      * Get completed local sessions that can be exported to platform health stores.
      */

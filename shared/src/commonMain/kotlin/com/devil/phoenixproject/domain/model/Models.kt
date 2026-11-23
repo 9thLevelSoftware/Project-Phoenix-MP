@@ -639,6 +639,8 @@ data class WorkoutSession(
     val profileId: String = "default",
     /** Domain last-edit epoch millis used as the portal LWW wire timestamp. */
     val updatedAt: Long? = null,
+    /** Explicit finish of the portal workout, shared by all its routine sets. */
+    val workoutCompletedAtMs: Long? = null,
     // Polar H10 cardiac & torso biomechanics summary (added in migration 59)
     val avgHeartRateBpm: Int? = null,
     val maxHeartRateBpm: Int? = null,

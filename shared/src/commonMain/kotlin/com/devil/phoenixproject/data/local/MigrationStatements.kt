@@ -1577,6 +1577,10 @@ WHERE gs.rowid = (
         "DROP TABLE IF EXISTS IntervalsConnection",
     )
 
+    67 -> listOf(
+        "ALTER TABLE WorkoutSession ADD COLUMN workout_completed_at_ms INTEGER",
+    )
+
     else -> emptyList()
 }
 

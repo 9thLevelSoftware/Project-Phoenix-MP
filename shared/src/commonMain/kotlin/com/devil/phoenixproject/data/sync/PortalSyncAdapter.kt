@@ -392,6 +392,8 @@ object PortalSyncAdapter {
                 ?: first.exerciseName
                 ?: "Just Lift".takeIf { first.isJustLift },
             startedAt = epochToIso8601(wireTiming.startedAtMs),
+            completedAt = sorted.mapNotNull { it.session.workoutCompletedAtMs }
+                .maxOrNull()?.coerceAtLeast(wireTiming.startedAtMs)?.let(::epochToIso8601),
             // LWW gate: wire the domain last-edit, never encode-time wall clock.
             // Stamping NOW() at push time made every mobile sync win against a
             // later portal edit of the same session id. The one exception is a
@@ -453,7 +455,9 @@ object PortalSyncAdapter {
         // Use stable mobile session ID as exercise ID so repeated syncs
         // upsert the same row instead of creating duplicates (issue #33).
         val exerciseId = session.id
-        val setId = generateUUID()
+        // Each persisted mobile session maps to one exercise row and one set.
+        // Their primary keys live in separate tables, so both can use the durable session UUID.
+        val setId = session.id
 
         // Build rep summaries from RepMetricData + RepBiomechanics
         val repSummaries = buildRepSummaries(swr, setId)

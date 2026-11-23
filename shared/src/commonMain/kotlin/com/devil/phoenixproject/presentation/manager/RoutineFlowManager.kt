@@ -6,6 +6,7 @@ import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.SqlDelightWorkoutRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
+import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.domain.model.AppliedRoutineModifier
 import com.devil.phoenixproject.domain.model.EccentricLoad
 import com.devil.phoenixproject.domain.model.EchoLevel
@@ -35,6 +36,7 @@ import com.devil.phoenixproject.util.CommandLimits
 import com.devil.phoenixproject.util.Constants
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
@@ -98,6 +100,7 @@ class RoutineFlowManager(
     private val equipmentRackRepository: EquipmentRackRepository,
     private val applyEquipmentRackLoadUseCase: ApplyEquipmentRackLoadUseCase,
     private val scope: CoroutineScope,
+    private val syncTriggerManager: SyncTriggerManager? = null,
 ) {
 
     // Issue #534: Same JSON config as ActiveSessionEngine for serialising the resolved
@@ -1501,9 +1504,26 @@ class RoutineFlowManager(
             Logger.d(tag = "RoutineFlowManager") { "showRoutineComplete: already complete, ignoring duplicate call" }
             return
         }
+        val routine = coordinator._loadedRoutine.value
+        val routineSessionId = coordinator.currentRoutineSessionId
+        val completedAtMs = currentTimeMillis()
+        if (routine != null && routineSessionId != null) {
+            val profileId = userProfileRepository.activeProfile.value?.id ?: routine.profileId ?: "default"
+            scope.launch(start = CoroutineStart.UNDISPATCHED) {
+                try {
+                    workoutRepository.markRoutineWorkoutComplete(profileId, routineSessionId, completedAtMs)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    Logger.e(error) { "Failed to save routine completion for portal sync" }
+                    return@launch
+                }
+                syncTriggerManager?.onWorkoutCompleted()
+            }
+        }
         lifecycleDelegate.beginRoutineCompletedRuntimeCleanup()
         supersedeConfigurationInputIntent()
-        val routine = coordinator._loadedRoutine.value ?: return
+        if (routine == null) return
         val skippedIndices = coordinator._skippedExercises.value
         val completedSetKeys = coordinator._completedRoutineSetKeys.value
             .filterNot { it.first in skippedIndices }
@@ -1517,7 +1537,7 @@ class RoutineFlowManager(
             ?: completedExerciseIndices.sumOf { index -> routine.exercises.getOrNull(index)?.setReps?.size ?: 0 }
         // Issue #195: Use coordinator.routineStartTime (set on first set) for total duration
         val duration = if (coordinator.routineStartTime > 0) {
-            currentTimeMillis() - coordinator.routineStartTime
+            completedAtMs - coordinator.routineStartTime
         } else {
             0L
         }

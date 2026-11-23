@@ -89,6 +89,28 @@ class PortalSyncAdapterTest {
     }
 
     @Test
+    fun `finishing a routine keeps the workout and set identities from its partial snapshots`() {
+        val routineId = "routine-run-1"
+        val first = makeSessionWithReps(sessionId = "s1", routineSessionId = routineId)
+        val second = makeSessionWithReps(sessionId = "s2", routineSessionId = routineId)
+
+        val inProgress = PortalSyncAdapter.toPortalWorkoutSessions(listOf(first), "user-1").single()
+        val completion = 1700000180000L
+        val finished = PortalSyncAdapter.toPortalWorkoutSessions(
+            listOf(first, second).map {
+                it.copy(session = it.session.copy(workoutCompletedAtMs = completion))
+            },
+            "user-1",
+        ).single()
+
+        assertNull(inProgress.completedAt)
+        assertEquals("2023-11-14T22:16:20Z", finished.completedAt)
+        assertEquals(inProgress.id, finished.id)
+        assertEquals(inProgress.exercises.single().sets.single().id, finished.exercises.first().sets.single().id)
+        assertEquals(setOf("s1", "s2"), finished.exercises.flatMap { it.sets }.map { it.id }.toSet())
+    }
+
+    @Test
     fun `mixed standalone and routine sessions are separated correctly`() {
         val sessions = listOf(
             makeSessionWithReps(sessionId = "standalone-1", routineSessionId = null),
