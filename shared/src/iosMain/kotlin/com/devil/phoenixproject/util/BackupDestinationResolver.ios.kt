@@ -153,6 +153,15 @@ internal class IosBackupDestinationResolver(
         }
     }
 
+    /**
+     * Resolve the custom destination's folder path for a file-manager handoff.
+     * Reuses [resolveBookmark]; no security-scoped access is held — the Files
+     * app handoff and the folder picker browse are performed by the system
+     * (issue #1423).
+     */
+    override suspend fun resolveFolderPath(destination: BackupDestination.Custom): String? =
+        resolveBookmark(destination)?.path
+
     override suspend fun isAccessible(destination: BackupDestination.Custom): Boolean = withContext(Dispatchers.IO) {
         val url = resolveBookmark(destination) ?: return@withContext false
 

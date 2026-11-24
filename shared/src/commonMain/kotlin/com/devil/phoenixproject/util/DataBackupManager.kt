@@ -156,7 +156,9 @@ interface DataBackupManager {
     /**
      * Open the backup folder in the platform's file manager.
      * - Android: launches an ACTION_VIEW intent for the directory
-     * - iOS: not directly supported; implementations may show a share sheet for the folder
+     * - iOS: hands the active backup folder to the Files app via a
+     *   `shareddocuments://` URL, falling back to a folder document picker;
+     *   never a share sheet (issue #1423)
      */
     fun openBackupFolder()
 }
