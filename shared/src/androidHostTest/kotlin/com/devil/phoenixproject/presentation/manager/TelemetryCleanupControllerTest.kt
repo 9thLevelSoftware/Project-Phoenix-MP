@@ -13,9 +13,12 @@ import com.devil.phoenixproject.data.repository.ProfileRecoveryActivityTracker
 import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.testutil.FakePreferencesManager
 import com.devil.phoenixproject.testutil.createTestSchema
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import java.io.File
@@ -37,8 +40,16 @@ class TelemetryCleanupControllerTest {
         val controller = fixture.controller
 
         runBlocking {
+            // Subscribe before open: StateFlow is conflated and Checking can finish before
+            // a later subscriber starts. Unconfined resumes the observer at publication.
+            val checking = CompletableDeferred<Unit>()
+            val observer = launch(Dispatchers.Unconfined, start = CoroutineStart.UNDISPATCHED) {
+                controller.state.first { it is TelemetryCleanupUiState.Checking }
+                checking.complete(Unit)
+            }
             controller.open()
-            withTimeout(10_000) { controller.state.first { it is TelemetryCleanupUiState.Checking } }
+            withTimeout(10_000) { checking.await() }
+            observer.join()
             val ready = withTimeout(10_000) { controller.state.first { it is TelemetryCleanupUiState.Ready } }
             assertIs<TelemetryCleanupUiState.Ready>(ready)
 
