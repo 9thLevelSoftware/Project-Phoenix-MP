@@ -17,10 +17,21 @@ class FakeBackupDestinationResolver : BackupDestinationResolver {
     /** Controls what [writeFile] returns. */
     var writeFileResult: Result<String> = Result.success("fake://written")
 
+    /** Controls what [resolveFolderPath] returns; null = bookmark unresolvable. */
+    var resolveFolderPathResult: String? = null
+
     /** Captures all [writeFile] invocations as (destination, fileName, tempFilePath). */
     val writtenFiles = mutableListOf<Triple<BackupDestination.Custom, String, String>>()
 
+    /** Captures all [resolveFolderPath] invocations. */
+    val resolvedFolderPaths = mutableListOf<BackupDestination.Custom>()
+
     override suspend fun isAccessible(destination: BackupDestination.Custom): Boolean = isAccessibleResult
+
+    override suspend fun resolveFolderPath(destination: BackupDestination.Custom): String? {
+        resolvedFolderPaths.add(destination)
+        return resolveFolderPathResult
+    }
 
     override suspend fun writeFile(
         destination: BackupDestination.Custom,

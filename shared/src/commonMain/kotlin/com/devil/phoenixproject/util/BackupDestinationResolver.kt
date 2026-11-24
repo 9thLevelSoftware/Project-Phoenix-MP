@@ -37,4 +37,15 @@ interface BackupDestinationResolver {
         fileName: String,
         tempFilePath: String,
     ): Result<String>
+
+    /**
+     * Resolve [destination] to a filesystem folder path for a file-manager
+     * handoff (iOS Files app `shareddocuments://` URL or folder document-picker
+     * `directoryURL`), or null when the folder cannot be resolved.
+     *
+     * Defaults to null so platform resolvers that only write files (Android)
+     * and test fakes stay unchanged. The iOS implementation reuses its
+     * security-scoped bookmark resolution (issue #1423).
+     */
+    suspend fun resolveFolderPath(destination: BackupDestination.Custom): String? = null
 }
