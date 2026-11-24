@@ -34,9 +34,9 @@ class TelemetryCompactionIosVacuumTest {
         seedEligibleSet(database, writer)
 
         // Concurrent open reader: hold a read transaction on the second connection.
-        writer.execute(null, "PRAGMA journal_mode = WAL", 0)
+        writer.executeQuery(null, "PRAGMA journal_mode = WAL", { QueryResult.Value(Unit) }, 0)
         reader.execute(null, "BEGIN", 0)
-        reader.execute(null, "SELECT COUNT(*) FROM MetricSample", 0)
+        reader.executeQuery(null, "SELECT COUNT(*) FROM MetricSample", { QueryResult.Value(Unit) }, 0)
 
         // Direct guarded VACUUM: Ran (busy allowed) or typed Skipped, never an exception.
         val outcome = maintenance.vacuum()
