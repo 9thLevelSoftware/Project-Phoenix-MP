@@ -1267,6 +1267,54 @@ VALUES (
 deleteMetricsBySession:
 DELETE FROM MetricSample WHERE sessionId = ?;
 
+-- ==================== TELEMETRY COMPACTION (issue #1425) ====================
+-- Retroactive pre-ROM idle-prefix trimming. Queries only: no table, column or index
+-- change (SchemaManifest / MigrationStatements / schema version untouched).
+
+-- Keyset pages over live sessions that hold at least one metric sample. The (timestamp, id)
+-- keyset walks idx_workout_session_timestamp; never rowid (I6: VACUUM may renumber rowids).
+-- exerciseIsBodyweight is the raw column (NULL for unknown or unflagged exercises); the
+-- caller resolves the domain fallback from exerciseEquipment before planning.
+selectTelemetryCompactionCandidates:
+SELECT
+    s.id AS sessionId,
+    s.timestamp AS timestamp,
+    s.targetReps AS targetReps,
+    s.exerciseId AS exerciseId,
+    e.isBodyweight AS exerciseIsBodyweight,
+    e.equipment AS exerciseEquipment
+FROM WorkoutSession AS s
+LEFT JOIN Exercise AS e ON e.id = s.exerciseId
+WHERE (s.timestamp > :afterTimestamp OR (s.timestamp = :afterTimestamp AND s.id > :afterSessionId))
+    AND EXISTS (SELECT 1 FROM MetricSample AS m WHERE m.sessionId = s.id)
+ORDER BY s.timestamp ASC, s.id ASC
+LIMIT :limitCount;
+
+-- Archival read in arrival order (I2): timestamp ordering hides arrival order and defeats
+-- the policy's non-monotonic guard, so the planner and the in-transaction re-plan use id order.
+selectArchivalMetricsBySession:
+SELECT * FROM MetricSample WHERE sessionId = ? ORDER BY id ASC;
+
+selectMinMetricUnitVersionBySession:
+SELECT MIN(metric_unit_version) FROM MetricSample WHERE sessionId = ?;
+
+-- G5 (signoff #4): MIN over ALL rep starts, deliberately no zero filtering.
+selectFirstRepStartBySession:
+SELECT MIN(startTimestamp) FROM RepMetric WHERE sessionId = ?;
+
+countMetricsBySession:
+SELECT COUNT(*) FROM MetricSample WHERE sessionId = ?;
+
+-- Range delete exact only together with the id-ordered in-transaction re-plan (signoff #3):
+-- boundaryTs comes from the id-ordered policy decision, and the predicate keeps every
+-- boundary-timestamp tie and every (status & safetyMask) != 0 row.
+deleteIdlePrefixMetrics:
+DELETE FROM MetricSample
+WHERE sessionId = :sessionId AND timestamp < :boundaryTs AND (status & :safetyMask) = 0;
+
+selectChangesCount:
+SELECT changes();
+
 -- Polar Queries (added in migration 59)
 updateSessionPolarSummary:
 UPDATE WorkoutSession SET

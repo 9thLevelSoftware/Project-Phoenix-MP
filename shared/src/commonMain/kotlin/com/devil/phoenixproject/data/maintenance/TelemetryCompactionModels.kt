@@ -71,6 +71,12 @@ data class DatabaseSizeSnapshot(
     val logicalBytes: Long get() = pageSize * pageCount
 }
 
+/** Guarded VACUUM precheck (issue #1425 P3). */
+sealed class VacuumPrecheck {
+    data object Ready : VacuumPrecheck()
+    data class Blocked(val reason: VacuumSkipReason) : VacuumPrecheck()
+}
+
 /** Guarded VACUUM outcome. Never thrown out of the service. */
 sealed class VacuumOutcome {
     data class Ran(

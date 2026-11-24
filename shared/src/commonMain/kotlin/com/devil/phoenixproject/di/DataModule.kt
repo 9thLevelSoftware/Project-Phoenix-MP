@@ -17,6 +17,11 @@ import com.devil.phoenixproject.data.integration.SqlDelightExternalProgramReposi
 import com.devil.phoenixproject.data.integration.SqlDelightExternalRoutineRepository
 import com.devil.phoenixproject.data.integration.SqlDelightIntegrationSyncCursorRepository
 import com.devil.phoenixproject.data.local.DriverFactory
+import com.devil.phoenixproject.data.maintenance.DatabaseMaintenance
+import com.devil.phoenixproject.data.maintenance.TelemetryBackupBytesEstimator
+import com.devil.phoenixproject.data.maintenance.TelemetryCompactionService
+import com.devil.phoenixproject.data.maintenance.WorkoutSessionGuardBinding
+import com.devil.phoenixproject.data.maintenance.availableDatabaseVolumeBytes
 import com.devil.phoenixproject.data.local.ExerciseImporter
 import com.devil.phoenixproject.data.preferences.LegacyProfilePreferencesReader
 import com.devil.phoenixproject.data.preferences.PendingProfileDeletionStore
@@ -174,4 +179,25 @@ val dataModule = module {
 
     // HRM BLE Manager
     single { HrmBleManager(settings = get(), telemetryRepository = get()) } onClose { (it as? HrmBleManager)?.shutdown() }
+
+    // Issue #1425: retroactive cable-telemetry compaction (local DB maintenance only).
+    single {
+        DatabaseMaintenance(
+            driver = get(),
+            availableVolumeBytes = ::availableDatabaseVolumeBytes,
+            workoutSessionGuard = { WorkoutSessionGuardBinding.isInWorkoutSession() },
+        )
+    }
+    single { TelemetryBackupBytesEstimator(backupManager = get()) }
+    single {
+        TelemetryCompactionService(
+            database = get(),
+            preferencesManager = get(),
+            barrier = get(),
+            activityTracker = get(),
+            workoutSessionGuard = { WorkoutSessionGuardBinding.isInWorkoutSession() },
+            databaseMaintenance = get(),
+            backupBytesEstimator = get(),
+        )
+    }
 }

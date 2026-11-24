@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.testutil
 
+import com.devil.phoenixproject.data.maintenance.TelemetryCompactionWatermark
 import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.domain.model.PhoenixModel
 import com.devil.phoenixproject.domain.model.UserPreferences
@@ -26,6 +27,8 @@ class FakePreferencesManager : PreferencesManager {
         _preferencesFlow.value = UserPreferences()
         _adultsOnlyPrompted = false
         exerciseCatalogSource = ""
+        telemetryCompactionWatermark = null
+        cleanUpTelemetryBeforeBackupEnabled = true
     }
 
     fun setPreferences(preferences: UserPreferences) {
@@ -40,6 +43,26 @@ class FakePreferencesManager : PreferencesManager {
 
     override suspend fun setExerciseCatalogSource(source: String) {
         exerciseCatalogSource = source
+    }
+
+    // Issue #1425: telemetry compaction watermark + pre-backup cleanup switch (device-local).
+    private var telemetryCompactionWatermark: TelemetryCompactionWatermark? = null
+    private var cleanUpTelemetryBeforeBackupEnabled: Boolean = true
+
+    override fun telemetryCompactionWatermark(): TelemetryCompactionWatermark? = telemetryCompactionWatermark
+
+    override suspend fun setTelemetryCompactionWatermark(watermark: TelemetryCompactionWatermark) {
+        telemetryCompactionWatermark = watermark
+    }
+
+    override suspend fun clearTelemetryCompactionWatermark() {
+        telemetryCompactionWatermark = null
+    }
+
+    override fun cleanUpTelemetryBeforeBackup(): Boolean = cleanUpTelemetryBeforeBackupEnabled
+
+    override suspend fun setCleanUpTelemetryBeforeBackup(enabled: Boolean) {
+        cleanUpTelemetryBeforeBackupEnabled = enabled
     }
 
     override suspend fun setLastConnectedModel(model: PhoenixModel) {
