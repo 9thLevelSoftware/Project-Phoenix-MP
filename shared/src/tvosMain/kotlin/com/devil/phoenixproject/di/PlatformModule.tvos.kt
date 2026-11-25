@@ -88,7 +88,7 @@ actual val platformModule: Module = module {
         secure
     }
     single { OAuthLauncher() }
-    single<BleRepository> { createTvosBleRepository() }
+    single<BleRepository> { createTvosBleRepository(get()) }
     single { ConnectivityChecker() }
     single { HealthIntegration() }
     single<HealthWorkoutWriter> { get<HealthIntegration>() }

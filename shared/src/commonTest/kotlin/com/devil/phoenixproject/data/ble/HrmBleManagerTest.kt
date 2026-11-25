@@ -25,13 +25,16 @@ import kotlin.uuid.ExperimentalUuidApi
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.toList
@@ -1337,6 +1340,220 @@ class HrmBleManagerTest {
         // strongest-signal auto-pairing under any state).
         assertEquals(0, peripheralCreations)
         assertFalse(manager.isConnected.value)
+        assertEquals(ConnectionState.Disconnected, manager.connectionState.value)
+        manager.shutdown()
+    }
+
+    @Test
+    fun `connect fails and disconnects peripheral lacking 0x2A37`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val advertisement = CompositionAdvertisement(
+            name = "Fake HRM Missing 2A37",
+            uuids = listOf(BleConstants.Hrm.HR_SERVICE_UUID),
+        )
+        val fake = CompositionGattFake(advertisement, dispatcher)
+        fake.profileOverride = listOf(
+            fakeDiscoveredService(BleConstants.Hrm.BATTERY_SERVICE_UUID, listOf(BleConstants.Hrm.BATTERY_LEVEL_UUID)),
+        )
+        val manager = HrmBleManager(
+            settings = MapSettings(),
+            scope = backgroundScope,
+            advertisements = { flowOf(advertisement) },
+            createPeripheral = { fake },
+        )
+        manager.startScanning()
+        runCurrent()
+
+        val result = manager.connect(ScannedDevice("Fake HRM Missing 2A37", advertisement.identifier.toString()))
+        runCurrent()
+
+        assertTrue(result.isFailure)
+        assertTrue(fake.disconnectCalls > 0, "Peripheral lacking 0x2A37 must be disconnected")
+        assertFalse(manager.isConnected.value)
+        assertTrue(manager.connectionState.value is ConnectionState.Error)
+        assertNull(manager.rememberedAddress.value)
+        manager.shutdown()
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `State Disconnected processes immediately during blocked ensurePmdSubscribed`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val advertisement = CompositionAdvertisement(
+            name = "Polar H10 Blocked PMD",
+            uuids = listOf(BleConstants.Hrm.HR_SERVICE_UUID),
+        )
+        val fake = CompositionGattFake(advertisement, dispatcher)
+        val pmdSubscribeStarted = CompletableDeferred<Unit>()
+        val peripheral = object : Peripheral by fake {
+            override fun observe(characteristic: Characteristic, onSubscription: suspend () -> Unit): Flow<ByteArray> = flow {
+                if (characteristic.serviceUuid == BleConstants.PolarPmd.PMD_SERVICE_UUID) {
+                    pmdSubscribeStarted.complete(Unit)
+                    awaitCancellation()
+                }
+                onSubscription()
+                awaitCancellation()
+            }
+        }
+        val manager = HrmBleManager(
+            scope = backgroundScope,
+            advertisements = { flowOf(advertisement) },
+            createPeripheral = { peripheral },
+        )
+        manager.startScanning()
+        runCurrent()
+
+        val connectJob = async {
+            manager.connect(ScannedDevice("Polar H10 Blocked PMD", advertisement.identifier.toString()))
+        }
+        pmdSubscribeStarted.await()
+        assertTrue(connectJob.await().isSuccess)
+
+        // Drop the link while setupJob is still blocked in ensurePmdSubscribed (without advancing 5s timeout).
+        fake.dropConnection()
+        runCurrent()
+
+        assertEquals(ConnectionState.Disconnected, manager.connectionState.value)
+        assertFalse(manager.isConnected.value)
+        manager.shutdown()
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `State Disconnected processes immediately during blocked service discovery`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val advertisement = CompositionAdvertisement(
+            name = "HRM Slow Discovery",
+            uuids = listOf(BleConstants.Hrm.HR_SERVICE_UUID),
+        )
+        val fake = CompositionGattFake(advertisement, dispatcher)
+        val servicesFlow = MutableStateFlow<List<com.juul.kable.DiscoveredService>?>(null)
+        val peripheral = object : Peripheral by fake {
+            override val services = servicesFlow
+            override suspend fun connect(): CoroutineScope {
+                val connected = fake.connect()
+                servicesFlow.value = null // keep discovery stalled
+                return connected
+            }
+        }
+        val manager = HrmBleManager(
+            scope = backgroundScope,
+            advertisements = { flowOf(advertisement) },
+            createPeripheral = { peripheral },
+        )
+        manager.startScanning()
+        runCurrent()
+
+        val connectJob = async {
+            manager.connect(ScannedDevice("HRM Slow Discovery", advertisement.identifier.toString()))
+        }
+        runCurrent()
+        assertFalse(connectJob.isCompleted)
+
+        // Drop without waiting out the 3s discovery timeout.
+        fake.dropConnection()
+        runCurrent()
+
+        assertTrue(connectJob.isCompleted)
+        assertTrue(connectJob.await().isFailure)
+        assertFalse(manager.isConnected.value)
+        manager.shutdown()
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `explicit disconnect during connect readyGate keeps Disconnected state instead of Error`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val advertisement = CompositionAdvertisement(
+            name = "Polar H10 Disconnect",
+            uuids = listOf(BleConstants.Hrm.HR_SERVICE_UUID),
+        )
+        val fake = CompositionGattFake(advertisement, dispatcher)
+        val servicesFlow = MutableStateFlow<List<com.juul.kable.DiscoveredService>?>(null)
+        val peripheral = object : Peripheral by fake {
+            override val services = servicesFlow
+            override suspend fun connect(): CoroutineScope {
+                val connected = fake.connect()
+                servicesFlow.value = null
+                return connected
+            }
+        }
+        val manager = HrmBleManager(
+            scope = backgroundScope,
+            advertisements = { flowOf(advertisement) },
+            createPeripheral = { peripheral },
+        )
+        manager.startScanning()
+        runCurrent()
+
+        val connectJob = async {
+            manager.connect(ScannedDevice("Polar H10 Disconnect", advertisement.identifier.toString()))
+        }
+        runCurrent()
+        assertFalse(connectJob.isCompleted)
+
+        manager.disconnect()
+        runCurrent()
+
+        val result = connectJob.await()
+        assertTrue(result.isFailure)
+        assertFalse(manager.isConnected.value)
+        assertTrue(manager.isExplicitDisconnectForTesting)
+        assertEquals(ConnectionState.Disconnected, manager.connectionState.value)
+        manager.shutdown()
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `explicit disconnect during autoReconnectIfRemembered cached connect stops without fallback scan`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val advertisement = CompositionAdvertisement(
+            id = "00000000-0000-0000-0000-0000000000dd",
+            name = "Polar H10 Auto",
+            uuids = listOf(BleConstants.Hrm.HR_SERVICE_UUID),
+        )
+        val settings = MapSettings()
+        settings.putString(HrmSettingsKeys.KEY_HRM_REMEMBERED_ADDRESS, advertisement.identifier.toString())
+        settings.putString(HrmSettingsKeys.KEY_HRM_REMEMBERED_NAME, "Polar H10 Auto")
+
+        var createCount = 0
+        val servicesFlow = MutableStateFlow<List<com.juul.kable.DiscoveredService>?>(null)
+        val manager = HrmBleManager(
+            settings = settings,
+            scope = backgroundScope,
+            advertisements = { flowOf(advertisement) },
+            createPeripheral = { ad ->
+                createCount++
+                val fake = CompositionGattFake(ad, dispatcher)
+                object : Peripheral by fake {
+                    override val services = servicesFlow
+                    override suspend fun connect(): CoroutineScope {
+                        val connected = fake.connect()
+                        servicesFlow.value = null
+                        return connected
+                    }
+                }
+            },
+        )
+        // Populate advertisement cache so autoReconnectIfRemembered attempts cached connect first.
+        manager.startScanning()
+        runCurrent()
+        manager.stopScanning()
+        runCurrent()
+
+        val reconnectJob = async { manager.autoReconnectIfRemembered() }
+        runCurrent()
+        assertEquals(1, createCount)
+        assertFalse(reconnectJob.isCompleted)
+
+        manager.disconnect()
+        runCurrent()
+
+        val result = reconnectJob.await()
+        assertTrue(result.isSuccess)
+        assertEquals(1, createCount, "Explicit disconnect during cached connect must not fall back to scan/reconnect")
+        assertFalse(manager.isConnected.value)
+        assertTrue(manager.isExplicitDisconnectForTesting)
         assertEquals(ConnectionState.Disconnected, manager.connectionState.value)
         manager.shutdown()
     }

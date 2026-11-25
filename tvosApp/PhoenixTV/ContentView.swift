@@ -39,6 +39,12 @@ struct ContentView: View {
             set: { _ in } // Buttons resolve the shared exit request; SwiftUI dismisses before invoking actions.
         )
     }
+    private var hasSafetyHazard: Binding<Bool> {
+        Binding(
+            get: { snapshot?.safetyHazardVisible == true },
+            set: { _ in }
+        )
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -84,6 +90,9 @@ struct ContentView: View {
                 .accessibilityIdentifier("session.confirm-end")
         } message: {
             Text("Phoenix stops any active load before leaving. Keep your trainer's physical controls within reach.")
+        }
+        .fullScreenCover(isPresented: hasSafetyHazard) {
+            safetyHazardModal
         }
         .onAppear { if scenePhase == .active { model.bridge.onForeground() } }
         .onChange(of: snapshot?.sessionOpen) { wasOpen, isOpen in
@@ -234,6 +243,110 @@ struct ContentView: View {
 
     private var background: some View { Color(red: 0.04, green: 0.06, blue: 0.09).ignoresSafeArea() }
     private var phoenixOrange: Color { Color(red: 1.0, green: 0.39, blue: 0.12) }
+
+    private var safetyHazardTitle: String {
+        switch snapshot?.safetyHazardCause {
+        case "SET_END_UNCONFIRMED": return "Set End Not Confirmed"
+        case "UNKNOWN": return "Trainer Load Unconfirmed"
+        default: return "Connection Lost"
+        }
+    }
+
+    private var safetyHazardBody: String {
+        let loadUnknown = "Phoenix cannot confirm whether resistance is still engaged. Do not assume the machine is unloaded."
+        switch snapshot?.safetyHazardCause {
+        case "SET_END_UNCONFIRMED":
+            return "Phoenix did not get confirmation that your last set on this trainer ended with a stop command. \(loadUnknown)"
+        case "UNKNOWN":
+            return "Phoenix has an unresolved safety record for this trainer. \(loadUnknown)"
+        default:
+            return "Bluetooth to the trainer was lost. \(loadUnknown)"
+        }
+    }
+
+    private var safetyRecoveryStatus: String? {
+        switch snapshot?.safetyHazardPhase {
+        case "CONNECTING":
+            return "Looking for the trainer and requesting a software stop…"
+        case "RELEASE_REQUEST_SENT":
+            return "Stop requested over Bluetooth and acknowledged by the trainer. That is not proof the cables are unloaded: check the handles, then confirm below."
+        case "RELEASE_REQUEST_FAILED":
+            if snapshot?.safetyHazardConnectResult == "WRONG_TRAINER" {
+                return "A different trainer is connected, so no stop was requested. Connect to the original trainer, or check it yourself and confirm below."
+            } else if snapshot?.safetyHazardWriteResult == "DISCONNECTED_DURING_WRITE" {
+                return "Bluetooth dropped while the stop was being sent. Try again, or check the trainer yourself and confirm below."
+            } else if snapshot?.safetyHazardWriteResult == "TRANSPORT_FAIL" {
+                return "The stop request failed to send. Try again, or check the trainer yourself and confirm below."
+            } else {
+                return "Could not reach the trainer over Bluetooth, so no stop was requested. If it is powered off or asleep, check the handles yourself and confirm below."
+            }
+        default:
+            return nil
+        }
+    }
+
+    private var safetyHazardModal: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                Label(safetyHazardTitle, systemImage: "exclamationmark.triangle.fill")
+                    .font(.system(size: 38, weight: .bold, design: .rounded))
+                    .foregroundStyle(.orange)
+                    .accessibilityIdentifier("safety.title")
+                Text(safetyHazardBody)
+                    .font(.title3)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("A successful reconnect can request a software stop, but that is not proof the cables are unloaded. Follow the trainer's safety guidance; powering the trainer off is a valid last resort.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("New sets stay blocked until you confirm. Check the trainer yourself: handles back at rest and cables not pulling beyond their normal light resting tension.")
+                    .font(.callout)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let status = safetyRecoveryStatus {
+                    Text(status)
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(phoenixOrange)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("safety.status")
+                }
+                if snapshot?.safetyRecoveryInProgress == true {
+                    ProgressView().tint(phoenixOrange)
+                }
+                HStack(spacing: 20) {
+                    Button("Reconnect & Request Stop") {
+                        model.bridge.requestMachineSafetyRecovery()
+                        model.refresh()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(phoenixOrange)
+                    .disabled(snapshot?.safetyRecoveryInProgress == true)
+                    .accessibilityIdentifier("safety.reconnect")
+
+                    Button("Confirm Handles Are At Rest") {
+                        model.bridge.acknowledgeMachineSafetyUnloaded()
+                        model.refresh()
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("safety.acknowledge")
+
+                    Button("Remind Me Later") {
+                        model.bridge.dismissMachineSafetyWarning()
+                        model.refresh()
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("safety.dismiss")
+                }
+            }
+            .padding(72)
+            .frame(maxWidth: 1100, alignment: .leading)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(background)
+        .onExitCommand {
+            model.bridge.dismissMachineSafetyWarning()
+            model.refresh()
+        }
+    }
 }
 
 private struct ConnectScreen: View {

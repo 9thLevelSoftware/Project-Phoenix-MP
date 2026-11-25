@@ -3,6 +3,7 @@ package com.devil.phoenixproject.di
 import co.touchlab.kermit.Logger
 import co.touchlab.sqliter.DatabaseFileContext
 import com.devil.phoenixproject.data.auth.OAuthLauncher
+import com.devil.phoenixproject.data.ble.BleScannerCoordinator
 import com.devil.phoenixproject.data.integration.HealthIntegration
 import com.devil.phoenixproject.data.integration.HealthWorkoutWriter
 import com.devil.phoenixproject.data.local.DatabaseFileNames
@@ -100,7 +101,7 @@ actual val platformModule: Module = module {
         keychainSettings
     }
     single { OAuthLauncher() }
-    single<BleRepository> { KableBleRepository() }
+    single<BleRepository> { KableBleRepository(get<BleScannerCoordinator>()) }
     single<CsvExporter> { IosCsvExporter() }
     single<CsvImporter> { IosCsvImporter(get()) }
     single<BackupDestinationResolver> { IosBackupDestinationResolver(get()) }

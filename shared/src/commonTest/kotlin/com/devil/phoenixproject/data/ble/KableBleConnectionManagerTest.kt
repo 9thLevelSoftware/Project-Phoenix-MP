@@ -49,7 +49,7 @@ class KableBleConnectionManagerTest {
                 onHeuristicData = {},
                 onConnectionLost = {},
             ),
-            discoMode = DiscoMode(scope = scope, sendCommand = {}),
+            discoMode = DiscoMode(scope = scope, sendCommand = { Result.success(Unit) }),
             handleDetector = HandleStateDetector(),
             onConnectionStateChanged = { state -> tracker.connectionStates.add(state) },
             onScannedDevicesChanged = { devices -> tracker.scannedDevicesUpdates.add(devices) },

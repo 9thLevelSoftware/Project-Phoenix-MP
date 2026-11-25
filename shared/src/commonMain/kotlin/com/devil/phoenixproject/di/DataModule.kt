@@ -2,6 +2,7 @@ package com.devil.phoenixproject.di
 
 import app.cash.sqldelight.db.SqlDriver
 import com.devil.phoenixproject.data.csv.CsvImportInbox
+import com.devil.phoenixproject.data.ble.BleScannerCoordinator
 import com.devil.phoenixproject.data.ble.HrmBleManager
 import com.devil.phoenixproject.data.integration.ExternalActivityRepository
 import com.devil.phoenixproject.data.integration.ExternalExerciseTemplateRepository
@@ -172,6 +173,15 @@ val dataModule = module {
     single<IntegrationSyncCursorRepository> { SqlDelightIntegrationSyncCursorRepository(get()) }
     single { HealthBackfillManager(get(), get(), get(), get()) }
 
+    // Shared BLE Scanner Coordinator (AUD-021: prevents concurrent Trainer & HRM scans from cancelling CBCentralManager)
+    single { BleScannerCoordinator() } onClose { it?.shutdown() }
+
     // HRM BLE Manager
-    single { HrmBleManager(settings = get(), telemetryRepository = get()) } onClose { (it as? HrmBleManager)?.shutdown() }
+    single {
+        HrmBleManager(
+            settings = get(),
+            telemetryRepository = get(),
+            advertisements = { get<BleScannerCoordinator>().advertisements() },
+        )
+    } onClose { (it as? HrmBleManager)?.shutdown() }
 }

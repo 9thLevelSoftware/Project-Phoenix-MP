@@ -5,7 +5,12 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 
 /**
@@ -329,5 +334,35 @@ class MetricPollingEngineTest {
         assertEquals(4, packet.faultWords[0])
         assertEquals(25, packet.temperatures[0])
         assertTrue(packet.receivedAtMillis > 0L)
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `startMonitorPolling forAutoStart followed synchronously by handleDetector disable keeps handleDetector disabled`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val handleDetector = HandleStateDetector()
+        val engine = MetricPollingEngine(
+            scope = CoroutineScope(SupervisorJob() + dispatcher),
+            bleQueue = BleOperationQueue(),
+            monitorProcessor = MonitorDataProcessor(),
+            handleDetector = handleDetector,
+            onMetricEmit = { true },
+            onHeuristicData = {},
+            onConnectionLost = {},
+            isDebugBuild = { false },
+        )
+        val fake = CompositionGattFake(CompositionAdvertisement(), dispatcher)
+
+        engine.startMonitorPolling(fake, forAutoStart = true)
+        handleDetector.disable()
+        runCurrent()
+
+        assertFalse(
+            handleDetector.isEnabled,
+            "Deferred startMonitorPolling(forAutoStart=true) must not re-enable handleDetector after synchronous disable()",
+        )
+
+        engine.stopAll()
+        runCurrent()
     }
 }

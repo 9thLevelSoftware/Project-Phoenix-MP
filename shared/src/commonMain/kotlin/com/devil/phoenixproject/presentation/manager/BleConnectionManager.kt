@@ -64,6 +64,7 @@ class BleConnectionManager(
 
     private var connectionJob: Job? = null
     private var recoveryConnectionJob: Job? = null
+    private var pendingCancelJob: Job? = null
 
     init {
         // CRITICAL: All scope.launch coroutines in init must have try-catch.
@@ -76,6 +77,8 @@ class BleConnectionManager(
                 bleErrorEvents.collect { message ->
                     _connectionError.value = message
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Logger.e(e) { "Error collecting BLE error events" }
             }
@@ -136,6 +139,8 @@ class BleConnectionManager(
                         }
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Logger.e(e) { "Error in connection state observer" }
             }
@@ -166,6 +171,8 @@ class BleConnectionManager(
                         Logger.d { "Ignoring reconnection request — no active workout" }
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Logger.e(e) { "Error collecting reconnection requests" }
             }
@@ -185,7 +192,13 @@ class BleConnectionManager(
     }
 
     fun cancelScanOrConnection() {
-        scope.launch {
+        val activeConnectionJob = connectionJob
+        connectionJob = null
+        activeConnectionJob?.cancel()
+        val previousCancel = pendingCancelJob
+        pendingCancelJob = scope.launch {
+            previousCancel?.join()
+            activeConnectionJob?.join()
             bleRepository.stopScanning()
             // Only cancel connection if we're actually connecting
             val state = connectionState.value
@@ -250,13 +263,20 @@ class BleConnectionManager(
 
         // Start new connection
         val staleJob = connectionJob
+        val previousCancel = pendingCancelJob
         connectionJob = null
 
         connectionJob = scope.launch {
             try {
-                // Deterministic sequencing: previous attempt fully unwound first.
+                // Deterministic sequencing: previous attempt and pending cancel teardown fully unwind first.
                 staleJob?.cancelAndJoin()
-                if (staleAttemptInProgress) {
+                previousCancel?.join()
+                if (pendingCancelJob === previousCancel) {
+                    pendingCancelJob = null
+                }
+                if (staleAttemptInProgress &&
+                    (connectionState.value is ConnectionState.Connecting || connectionState.value is ConnectionState.Scanning)
+                ) {
                     bleRepository.stopScanning()
                     bleRepository.cancelConnection()
                 }
@@ -312,10 +332,15 @@ class BleConnectionManager(
         onFailed: () -> Unit,
     ) {
         if (recoveryConnectionJob?.isActive == true) return
+        val previousCancel = pendingCancelJob
         recoveryConnectionJob = scope.launch {
             try {
                 connectionJob?.cancelAndJoin()
                 connectionJob = null
+                previousCancel?.join()
+                if (pendingCancelJob === previousCancel) {
+                    pendingCancelJob = null
+                }
                 _connectionError.value = null
                 bleRepository.stopScanning()
                 bleRepository.cancelConnection()
@@ -341,9 +366,13 @@ class BleConnectionManager(
      */
     fun cancelConnection() {
         Logger.d { "cancelConnection: Cancelling connection attempt" }
-        connectionJob?.cancel()
+        val activeConnectionJob = connectionJob
         connectionJob = null
-        scope.launch {
+        activeConnectionJob?.cancel()
+        val previousCancel = pendingCancelJob
+        pendingCancelJob = scope.launch {
+            previousCancel?.join()
+            activeConnectionJob?.join()
             bleRepository.stopScanning()
             bleRepository.cancelConnection()
         }

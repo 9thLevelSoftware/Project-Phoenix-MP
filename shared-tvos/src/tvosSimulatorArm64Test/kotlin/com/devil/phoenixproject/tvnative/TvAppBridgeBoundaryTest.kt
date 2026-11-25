@@ -19,6 +19,7 @@ import com.devil.phoenixproject.domain.model.SingleExerciseDefaultsDocument
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.presentation.manager.MachineTeardownState
 import com.devil.phoenixproject.presentation.manager.MachineSafetyCoordinator
+import com.devil.phoenixproject.presentation.manager.MachineSafetyUiState
 import com.devil.phoenixproject.presentation.manager.NoOpWorkoutServiceController
 import com.devil.phoenixproject.presentation.manager.WorkoutServiceController
 import com.devil.phoenixproject.presentation.tv.createTvMainViewModel
@@ -28,7 +29,9 @@ import com.devil.phoenixproject.util.TvosUnavailableDataBackupManager
 import com.russhwolf.settings.NSUserDefaultsSettings
 import com.russhwolf.settings.Settings
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.*
@@ -325,6 +328,136 @@ class TvAppBridgeBoundaryTest {
         }
     }
 
+    @Test
+    fun unexpectedDisconnectArmsSafetyHazardAndBlocksStartUntilAcknowledged() = runTest {
+        withBridge { f ->
+            f.startCableSet()
+            val programsAfterStart = f.programCommands.size
+
+            f.connection.value = ConnectionState.Disconnected
+            f.reconnectionRequests.tryEmit(
+                ReconnectionRequest(
+                    deviceName = "Vee_Boundary",
+                    deviceAddress = "boundary",
+                    reason = "test_drop",
+                ),
+            )
+            withContext(Dispatchers.Default) {
+                withTimeout(5_000) {
+                    f.main.machineSafetyUiState.first { it is MachineSafetyUiState.Visible }
+                }
+            }
+            runCurrent()
+
+            val hazardSnapshot = f.bridge.snapshot()
+            assertTrue(hazardSnapshot.safetyHazardVisible)
+            assertEquals("CONNECTION_LOST", hazardSnapshot.safetyHazardCause)
+            assertEquals("UNRESOLVED", hazardSnapshot.safetyHazardPhase)
+            assertFalse(hazardSnapshot.safetyRecoveryInProgress)
+
+            // Reconnect transport without acknowledging; the safety barrier must still block new sets.
+            f.connection.value = ConnectionState.Connected("Vee_Boundary", "boundary")
+            runCurrent()
+            f.bridge.startNextJustLiftSet()
+            withContext(Dispatchers.Default) { delay(50) }
+            runCurrent()
+            assertEquals(programsAfterStart, f.programCommands.size, "Safety barrier must block set start until acknowledged")
+
+            f.bridge.acknowledgeMachineSafetyUnloaded()
+            withContext(Dispatchers.Default) {
+                withTimeout(5_000) {
+                    f.main.machineSafetyUiState.first { it is MachineSafetyUiState.Hidden }
+                }
+            }
+            runCurrent()
+            assertFalse(f.bridge.snapshot().safetyHazardVisible)
+
+            f.bridge.startNextJustLiftSet()
+            withContext(Dispatchers.Default) {
+                withTimeout(5_000) { f.main.workoutState.first { it is WorkoutState.Active } }
+            }
+            runCurrent()
+            assertTrue(f.programCommands.size > programsAfterStart, "Set start must succeed once hazard is acknowledged")
+            assertTrue(f.uncaught.isEmpty())
+        }
+    }
+
+    @Test
+    fun safetyRecoveryAndDismissalThroughBridgeUpdateSnapshotAndKeepBarrierArmed() = runTest {
+        withBridge { f ->
+            f.startCableSet()
+            val programsAfterStart = f.programCommands.size
+            val stopCallsBefore = f.stopCalls
+
+            f.connection.value = ConnectionState.Disconnected
+            f.reconnectionRequests.tryEmit(
+                ReconnectionRequest(
+                    deviceName = "Vee_Boundary",
+                    deviceAddress = "boundary",
+                    reason = "test_drop",
+                ),
+            )
+            withContext(Dispatchers.Default) {
+                withTimeout(5_000) {
+                    f.main.machineSafetyUiState.first { it is MachineSafetyUiState.Visible }
+                }
+            }
+            runCurrent()
+            assertTrue(f.bridge.snapshot().safetyHazardVisible)
+
+            // Dismissing hides the modal, but the durable barrier must stay armed and block starts.
+            f.bridge.dismissMachineSafetyWarning()
+            withContext(Dispatchers.Default) {
+                withTimeout(5_000) {
+                    f.main.machineSafetyUiState.first { it is MachineSafetyUiState.Hidden }
+                }
+            }
+            runCurrent()
+            assertFalse(f.bridge.snapshot().safetyHazardVisible)
+
+            f.connection.value = ConnectionState.Connected("Vee_Boundary", "boundary")
+            runCurrent()
+            f.bridge.startNextJustLiftSet()
+            withContext(Dispatchers.Default) {
+                withTimeout(5_000) {
+                    f.main.machineSafetyUiState.first { it is MachineSafetyUiState.Visible }
+                }
+            }
+            runCurrent()
+            assertEquals(programsAfterStart, f.programCommands.size, "Dismissed safety barrier must still block new sets")
+            assertTrue(f.bridge.snapshot().safetyHazardVisible, "Blocked start must re-surface the safety warning")
+
+            // Request release recovery via bridge and verify snapshot + stopWorkout transport call.
+            f.bridge.requestMachineSafetyRecovery()
+            withContext(Dispatchers.Default) {
+                withTimeout(5_000) {
+                    f.main.machineSafetyUiState.first {
+                        (it as? MachineSafetyUiState.Visible)?.document?.phase == MachineSafetyPhase.RELEASE_REQUEST_SENT
+                    }
+                }
+            }
+            runCurrent()
+
+            val afterRecovery = f.bridge.snapshot()
+            assertEquals(stopCallsBefore + 1, f.stopCalls)
+            assertEquals("RELEASE_REQUEST_SENT", afterRecovery.safetyHazardPhase)
+            assertEquals("MATCHING_READY", afterRecovery.safetyHazardConnectResult)
+            assertEquals("TRANSPORT_ACK", afterRecovery.safetyHazardWriteResult)
+            assertFalse(afterRecovery.safetyRecoveryInProgress)
+
+            // Physical unload acknowledgement is still required to clear the barrier.
+            f.bridge.acknowledgeMachineSafetyUnloaded()
+            withContext(Dispatchers.Default) {
+                withTimeout(5_000) {
+                    f.main.machineSafetyUiState.first { it is MachineSafetyUiState.Hidden }
+                }
+            }
+            runCurrent()
+            assertFalse(f.bridge.snapshot().safetyHazardVisible)
+            assertTrue(f.uncaught.isEmpty())
+        }
+    }
+
     private suspend fun TestScope.withBridge(block: suspend TestScope.(BridgeFixture) -> Unit) {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         val fixture = BridgeFixture(this)
@@ -359,6 +492,7 @@ private class BridgeFixture(private val test: TestScope) {
     })
     private val phantom = PhantomBleRepository()
     val connection = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
+    val reconnectionRequests = MutableSharedFlow<ReconnectionRequest>(extraBufferCapacity = 4)
     val programCommands = mutableListOf<ByteArray>()
     var stopCalls = 0
         private set
@@ -366,6 +500,7 @@ private class BridgeFixture(private val test: TestScope) {
     var stopResult: suspend () -> Result<Unit> = { Result.success(Unit) }
     private val ble = object : BleRepository by phantom {
         override val connectionState = connection
+        override val reconnectionRequested = reconnectionRequests.asSharedFlow()
         override val scannedDevices = MutableStateFlow(listOf(ScannedDevice("Vee_Boundary", "boundary", -40)))
         override suspend fun connect(device: ScannedDevice): Result<Unit> {
             connection.value = ConnectionState.Connected(device.name, device.address)

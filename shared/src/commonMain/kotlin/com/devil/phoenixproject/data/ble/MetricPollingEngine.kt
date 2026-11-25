@@ -44,6 +44,7 @@ class MetricPollingEngine(
     private val onHeuristicData: (HeuristicStatistics) -> Unit,
     private val onConnectionLost: suspend () -> Unit,
     private val onDiagnosticData: (DiagnosticPacket) -> Unit = {},
+    private val isDebugBuild: () -> Boolean = { DeviceInfo.isDebugBuild },
 ) {
     private val log = Logger.withTag("MetricPollingEngine")
 
@@ -218,25 +219,26 @@ class MetricPollingEngine(
      * @param forAutoStart If true, enables handle detection for Just Lift auto-start.
      */
     fun startMonitorPolling(peripheral: Peripheral, forAutoStart: Boolean = false) {
-        // Reset monitor processing state for new session
-        val previousCount = monitorProcessor.notificationCount
-        monitorProcessor.resetForNewSession()
-        log.i { "Monitor processor reset (previous session: $previousCount notifications)" }
-
-        if (forAutoStart) {
-            handleDetector.enable(autoStart = true)
-            log.i {
-                "Monitor polling for AUTO-START - waiting for handles at rest (pos < ${BleConstants.Thresholds.HANDLE_REST_THRESHOLD}mm), vel threshold=${BleConstants.Thresholds.AUTO_START_VELOCITY_THRESHOLD}mm/s"
-            }
-        }
-
-        // Cancel existing job before starting new one
+        // Cancel existing job before launching the mutex-guarded reset/start sequence.
         monitorPollingJob?.cancel()
+        val startDisableEpoch = if (forAutoStart) handleDetector.currentDisableEpoch() else 0L
 
         monitorPollingJob = scope.launch {
             // Mutex ensures only one polling loop runs at a time.
             // Do NOT add `if (mutex.isLocked) return` — causes race condition (pitfall #4).
             monitorPollingMutex.withLock {
+                // Reset monitor processing state for new session inside the mutex so
+                // an outgoing polling iteration cannot race resetForNewSession() or enable().
+                val previousCount = monitorProcessor.notificationCount
+                monitorProcessor.resetForNewSession()
+                log.i { "Monitor processor reset (previous session: $previousCount notifications)" }
+
+                if (forAutoStart && handleDetector.enableIfUnchanged(autoStart = true, expectedDisableEpoch = startDisableEpoch)) {
+                    log.i {
+                        "Monitor polling for AUTO-START - waiting for handles at rest (pos < ${BleConstants.Thresholds.HANDLE_REST_THRESHOLD}mm), vel threshold=${BleConstants.Thresholds.AUTO_START_VELOCITY_THRESHOLD}mm/s"
+                    }
+                }
+
                 var failCount = 0
                 var successCount = 0L
                 consecutiveTimeouts = 0
@@ -245,7 +247,7 @@ class MetricPollingEngine(
                 }
 
                 // Auto-start packet capture in debug builds for hardware validation
-                if (DeviceInfo.isDebugBuild && !BlePacketCapture.isCapturing) {
+                if (isDebugBuild() && !BlePacketCapture.isCapturing) {
                     BlePacketCapture.startCapture(desc = "auto-capture on monitor poll start")
                     log.i { "BlePacketCapture auto-started (debug build). Use adb logcat | grep CAPTURE_HEX to view." }
                 }
@@ -273,9 +275,9 @@ class MetricPollingEngine(
                                         "Monitor read timed out (${BleConstants.Timing.HEARTBEAT_READ_TIMEOUT_MS}ms) - consecutive: $consecutiveTimeouts"
                                     }
                                 }
-                                // POLL-03: Disconnect after too many consecutive timeouts
-                                if (consecutiveTimeouts >= BleConstants.Timing.MAX_CONSECUTIVE_TIMEOUTS) {
-                                    log.e { "Too many consecutive timeouts ($consecutiveTimeouts), triggering disconnect" }
+                                // POLL-03: Disconnect after too many consecutive failures/timeouts
+                                if (consecutiveTimeouts + failCount >= BleConstants.Timing.MAX_CONSECUTIVE_TIMEOUTS) {
+                                    log.e { "Too many consecutive monitor failures (timeouts=$consecutiveTimeouts, errors=$failCount), triggering connection lost" }
                                     scope.launch { onConnectionLost() }
                                     return@withLock
                                 }
@@ -284,8 +286,8 @@ class MetricPollingEngine(
                         } catch (_: kotlinx.coroutines.TimeoutCancellationException) {
                             consecutiveTimeouts++
                             log.w { "Monitor read timeout exception - consecutive: $consecutiveTimeouts" }
-                            if (consecutiveTimeouts >= BleConstants.Timing.MAX_CONSECUTIVE_TIMEOUTS) {
-                                log.e { "Too many consecutive timeouts ($consecutiveTimeouts), triggering disconnect" }
+                            if (consecutiveTimeouts + failCount >= BleConstants.Timing.MAX_CONSECUTIVE_TIMEOUTS) {
+                                log.e { "Too many consecutive monitor failures (timeouts=$consecutiveTimeouts, errors=$failCount), triggering connection lost" }
                                 scope.launch { onConnectionLost() }
                                 return@withLock
                             }
@@ -293,9 +295,13 @@ class MetricPollingEngine(
                         } catch (e: Exception) {
                             e.rethrowIfCancellation()
                             failCount++
-                            consecutiveTimeouts = 0
                             if (failCount <= 5 || failCount % 50 == 0) {
                                 log.w { "Monitor poll FAILED #$failCount: ${e.message}" }
+                            }
+                            if (consecutiveTimeouts + failCount >= BleConstants.Timing.MAX_CONSECUTIVE_TIMEOUTS) {
+                                log.e { "Too many consecutive monitor failures (timeouts=$consecutiveTimeouts, errors=$failCount), triggering connection lost" }
+                                scope.launch { onConnectionLost() }
+                                return@withLock
                             }
                             delay(50)
                         }
@@ -444,6 +450,19 @@ class MetricPollingEngine(
                 "heartbeat=${heartbeatJob?.isActive}"
         }
 
+        monitorPollingJob?.cancel()
+        diagnosticPollingJob?.cancel()
+        heuristicPollingJob?.cancel()
+        heartbeatJob?.cancel()
+
+        monitorPollingJob = null
+        diagnosticPollingJob = null
+        heuristicPollingJob = null
+        heartbeatJob = null
+        diagnosticPollCount = 0
+        lastDiagnosticFaults = null
+        consecutiveTimeouts = 0
+
         // Log workout analysis once both extremes have left their unset sentinels.
         if (handleDetector.hasObservedPositionRange()) {
             log.i { "========== WORKOUT ANALYSIS ==========" }
@@ -460,19 +479,6 @@ class MetricPollingEngine(
         if (BlePacketCapture.isCapturing) {
             BlePacketCapture.stopCapture()
         }
-
-        monitorPollingJob?.cancel()
-        diagnosticPollingJob?.cancel()
-        heuristicPollingJob?.cancel()
-        heartbeatJob?.cancel()
-
-        monitorPollingJob = null
-        diagnosticPollingJob = null
-        heuristicPollingJob = null
-        heartbeatJob = null
-        diagnosticPollCount = 0
-        lastDiagnosticFaults = null
-        consecutiveTimeouts = 0
 
         val afterCancel = currentTimeMillis()
         log.d { "STOP_DEBUG: [$afterCancel] Jobs cancelled (took ${afterCancel - timestamp}ms)" }

@@ -26,6 +26,7 @@ import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutState
+import com.devil.phoenixproject.data.repository.MachineSafetyPhase
 import com.devil.phoenixproject.presentation.manager.MachineSafetyUiState
 import com.devil.phoenixproject.presentation.manager.MachineTeardownState
 import com.devil.phoenixproject.presentation.tv.TvRemoteInput
@@ -124,6 +125,11 @@ data class TvAppSnapshot(
     val exitConfirmationPending: Boolean,
     val teardownState: String,
     val safetyHazardVisible: Boolean,
+    val safetyHazardCause: String?,
+    val safetyHazardPhase: String?,
+    val safetyRecoveryInProgress: Boolean,
+    val safetyHazardConnectResult: String?,
+    val safetyHazardWriteResult: String?,
     val telemetryTimeoutMs: Long,
     val actionError: String?,
 )
@@ -331,6 +337,8 @@ class TvAppBridge internal constructor(
             is ConnectionState.Error -> connection.message
             else -> main?.bleConnectionManager?.connectionError?.value
         }
+        val visibleHazard = main?.machineSafetyCoordinator?.uiState?.value as? MachineSafetyUiState.Visible
+        val hazardDoc = visibleHazard?.document
         return TvAppSnapshot(
             startupState = startupState,
             startupErrorCode = startupError,
@@ -405,7 +413,12 @@ class TvAppBridge internal constructor(
             sessionOpen = sessionIsOpen,
             exitConfirmationPending = controller?.exitConfirmationPending == true,
             teardownState = teardownName,
-            safetyHazardVisible = main?.machineSafetyCoordinator?.uiState?.value is MachineSafetyUiState.Visible,
+            safetyHazardVisible = visibleHazard != null,
+            safetyHazardCause = hazardDoc?.cause?.name,
+            safetyHazardPhase = hazardDoc?.phase?.name,
+            safetyRecoveryInProgress = hazardDoc?.phase == MachineSafetyPhase.CONNECTING,
+            safetyHazardConnectResult = hazardDoc?.lastConnectResult?.name,
+            safetyHazardWriteResult = hazardDoc?.lastWriteResult?.name,
             telemetryTimeoutMs = TV_TELEMETRY_TIMEOUT_MS,
             actionError = controller?.error ?: actionError ?: main?.bleConnectionManager?.connectionError?.value ?: (state as? WorkoutState.Error)?.message ?: syncError,
         )
@@ -615,6 +628,27 @@ class TvAppBridge internal constructor(
         if (before is MachineTeardownState.RecoveryRequired && main.machineTeardownState.value != before) {
             actionError = null
         }
+    }
+
+    fun requestMachineSafetyRecovery() {
+        val main = deps?.main ?: return fail("Phoenix core is unavailable.")
+        actionError = null
+        val identity = (main.machineSafetyCoordinator.uiState.value as? MachineSafetyUiState.Visible)?.identity
+        main.requestMachineSafetyRecovery(identity)
+    }
+
+    fun acknowledgeMachineSafetyUnloaded() {
+        val main = deps?.main ?: return fail("Phoenix core is unavailable.")
+        val visible = main.machineSafetyCoordinator.uiState.value as? MachineSafetyUiState.Visible
+            ?: return fail("No machine safety warning is active.")
+        actionError = null
+        main.acknowledgeMachineSafetyUnloaded(visible.identity)
+    }
+
+    fun dismissMachineSafetyWarning() {
+        val main = deps?.main ?: return fail("Phoenix core is unavailable.")
+        actionError = null
+        main.dismissMachineSafetyWarning()
     }
     fun handlePlayPause() { controller?.handleRemote(TvRemoteInput.PLAY_PAUSE) }
     fun handleBackDuringSession() { controller?.handleRemote(TvRemoteInput.MENU) }
