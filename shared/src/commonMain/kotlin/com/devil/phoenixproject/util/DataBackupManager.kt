@@ -1186,10 +1186,8 @@ abstract class BaseDataBackupManager(
                         }
                         return@committedTransaction
                     }
-                    val stableId = stats.profileId.hashCode().toLong()
                     val inserted = tryImport("gamificationStats", stats.profileId) {
                         queries.insertGamificationStatsRestoreIfAbsent(
-                            id = stableId,
                             totalWorkouts = stats.totalWorkouts.toLong(),
                             totalReps = stats.totalReps.toLong(),
                             totalVolumeKg = stats.totalVolumeKg.toLong(),

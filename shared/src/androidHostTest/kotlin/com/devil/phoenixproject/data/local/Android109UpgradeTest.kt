@@ -45,7 +45,7 @@ class Android109UpgradeTest {
 
     @Test
     fun v108Database_upgradesThroughProductionDriver_andReopensWithOldAndNewData() {
-        assertEquals(68L, PhoenixDatabase.Schema.version, "Revisit this release-specific fixture when the schema advances")
+        assertEquals(70L, PhoenixDatabase.Schema.version, "Revisit this release-specific fixture when the schema advances")
         seedReleased108Database()
 
         val upgraded = DriverFactory(context).createDriver()
@@ -136,7 +136,7 @@ class Android109UpgradeTest {
     }
 
     private fun assertHealthyUpgrade(driver: SqlDriver) {
-        assertEquals(68L, driver.longValue("PRAGMA user_version"))
+        assertEquals(70L, driver.longValue("PRAGMA user_version"))
         assertEquals("ok", driver.textValue("PRAGMA quick_check"))
         assertEquals(1L, driver.longValue("PRAGMA foreign_keys"))
         driver.executeQuery(null, "PRAGMA foreign_key_check", { cursor ->

@@ -45,6 +45,77 @@ internal fun applyMigrationResilient(
     }
 }
 
+internal fun isMissingSchemaTargetError(message: String?): Boolean {
+    val normalized = message.orEmpty().lowercase()
+    return normalized.contains("no such column") || normalized.contains("no such table")
+}
+
+private fun executeStepAtomic(driver: SqlDriver, stepTo: Long, migrateStep: () -> Unit) {
+    val savepoint = "phoenix_migrate_step_$stepTo"
+    driver.execute(identifier = null, sql = "SAVEPOINT \"$savepoint\"", parameters = 0)
+    try {
+        migrateStep()
+        driver.execute(identifier = null, sql = "RELEASE \"$savepoint\"", parameters = 0)
+    } catch (t: Throwable) {
+        runCatching { driver.execute(identifier = null, sql = "ROLLBACK TO \"$savepoint\"", parameters = 0) }
+        runCatching { driver.execute(identifier = null, sql = "RELEASE \"$savepoint\"", parameters = 0) }
+        throw t
+    }
+}
+
+internal fun migrateStepWithPreHeal(
+    driver: SqlDriver,
+    fromVersion: Long,
+    stepTo: Long,
+    migrateStep: () -> Unit,
+    onLog: (String) -> Unit = {},
+): List<MigrationStatementResult> {
+    try {
+        executeStepAtomic(driver, stepTo, migrateStep)
+        return emptyList()
+    } catch (e: Exception) {
+        onLog("Migration $stepTo failed (${e.message?.take(120)}), applying resilient fallback")
+        if (isMissingSchemaTargetError(e.message)) {
+            val healReport = healSchemaTablesAndColumns(driver)
+            if (healReport.hasFailures) {
+                throw DatabaseFileMigrationException(
+                    DatabaseMigrationFailureCode.TARGET_VALIDATION_FAILED,
+                    "Schema pre-heal before migration $stepTo failed: ${healReport.logSummary()}",
+                    e,
+                )
+            }
+            try {
+                executeStepAtomic(driver, stepTo, migrateStep)
+                return emptyList()
+            } catch (retryError: Exception) {
+                onLog("Migration $stepTo retry after pre-heal failed (${retryError.message?.take(120)}), replaying statements")
+            }
+        }
+        var results = applyMigrationResilient(driver, fromVersion.toInt())
+        if (results.any { !it.success && !it.recoverable && isMissingSchemaTargetError(it.error) }) {
+            val healReport = healSchemaTablesAndColumns(driver)
+            if (healReport.hasFailures) {
+                throw DatabaseFileMigrationException(
+                    DatabaseMigrationFailureCode.TARGET_VALIDATION_FAILED,
+                    "Schema pre-heal during fallback for migration $stepTo failed: ${healReport.logSummary()}",
+                    e,
+                )
+            }
+            results = applyMigrationResilient(driver, fromVersion.toInt())
+        }
+        val failures = results.count { !it.success && !it.recoverable }
+        if (failures > 0) {
+            onLog("Migration $stepTo had $failures non-recoverable failures")
+            throw DatabaseFileMigrationException(
+                DatabaseMigrationFailureCode.TARGET_VALIDATION_FAILED,
+                "The Phoenix database migration to version $stepTo could not be completed safely.",
+                e,
+            )
+        }
+        return results
+    }
+}
+
 /**
  * Get the SQL statements for a specific migration version.
  *
@@ -321,7 +392,131 @@ internal fun getMigrationStatements(version: Int): List<String> = when (version)
             rotation_count INTEGER NOT NULL DEFAULT 0,
             FOREIGN KEY (cycle_id) REFERENCES TrainingCycle(id) ON DELETE CASCADE
         )""",
+        """CREATE TABLE IF NOT EXISTS CycleProgression (
+            cycle_id TEXT PRIMARY KEY NOT NULL,
+            frequency_cycles INTEGER NOT NULL DEFAULT 2,
+            weight_increase_percent REAL,
+            echo_level_increase INTEGER NOT NULL DEFAULT 0,
+            eccentric_load_increase_percent INTEGER,
+            FOREIGN KEY (cycle_id) REFERENCES TrainingCycle(id) ON DELETE CASCADE
+        )""",
+        // Rebuild RoutineExercise with FKs (via PlannedSet_temp and CompletedSet_temp so child FKs don't block DROP TABLE RoutineExercise)
+        """CREATE TABLE PlannedSet_temp (
+            id TEXT PRIMARY KEY NOT NULL,
+            routine_exercise_id TEXT NOT NULL,
+            set_number INTEGER NOT NULL,
+            set_type TEXT NOT NULL DEFAULT 'STANDARD',
+            target_reps INTEGER,
+            target_weight_kg REAL,
+            target_rpe INTEGER,
+            rest_seconds INTEGER
+        )""",
         """CREATE TABLE IF NOT EXISTS PlannedSet (
+            id TEXT PRIMARY KEY NOT NULL,
+            routine_exercise_id TEXT NOT NULL,
+            set_number INTEGER NOT NULL,
+            set_type TEXT NOT NULL DEFAULT 'STANDARD',
+            target_reps INTEGER,
+            target_weight_kg REAL,
+            target_rpe INTEGER,
+            rest_seconds INTEGER
+        )""",
+        """INSERT OR IGNORE INTO PlannedSet_temp (id, routine_exercise_id, set_number, set_type, target_reps, target_weight_kg, target_rpe, rest_seconds)
+        SELECT id, routine_exercise_id, set_number, COALESCE(set_type, 'STANDARD'), target_reps, target_weight_kg, target_rpe, rest_seconds
+        FROM PlannedSet""",
+        "DROP TABLE IF EXISTS PlannedSet",
+        """CREATE TABLE CompletedSet_temp (
+            id TEXT PRIMARY KEY NOT NULL,
+            session_id TEXT NOT NULL,
+            planned_set_id TEXT,
+            set_number INTEGER NOT NULL,
+            set_type TEXT NOT NULL DEFAULT 'STANDARD',
+            actual_reps INTEGER NOT NULL,
+            actual_weight_kg REAL NOT NULL,
+            logged_rpe INTEGER,
+            is_pr INTEGER NOT NULL DEFAULT 0,
+            completed_at INTEGER NOT NULL
+        )""",
+        """CREATE TABLE IF NOT EXISTS CompletedSet (
+            id TEXT PRIMARY KEY NOT NULL,
+            session_id TEXT NOT NULL,
+            planned_set_id TEXT,
+            set_number INTEGER NOT NULL,
+            set_type TEXT NOT NULL DEFAULT 'STANDARD',
+            actual_reps INTEGER NOT NULL,
+            actual_weight_kg REAL NOT NULL,
+            logged_rpe INTEGER,
+            is_pr INTEGER NOT NULL DEFAULT 0,
+            completed_at INTEGER NOT NULL
+        )""",
+        """INSERT OR IGNORE INTO CompletedSet_temp (id, session_id, planned_set_id, set_number, set_type, actual_reps, actual_weight_kg, logged_rpe, is_pr, completed_at)
+        SELECT id, session_id, planned_set_id, set_number, COALESCE(set_type, 'STANDARD'), actual_reps, actual_weight_kg, logged_rpe, COALESCE(is_pr, 0), completed_at
+        FROM CompletedSet""",
+        "DROP TABLE IF EXISTS CompletedSet",
+        """CREATE TABLE RoutineExercise_v10 (
+            id TEXT NOT NULL PRIMARY KEY,
+            routineId TEXT NOT NULL,
+            exerciseName TEXT NOT NULL,
+            exerciseMuscleGroup TEXT NOT NULL DEFAULT '',
+            exerciseEquipment TEXT NOT NULL DEFAULT '',
+            exerciseDefaultCableConfig TEXT NOT NULL DEFAULT 'DOUBLE',
+            exerciseId TEXT,
+            cableConfig TEXT NOT NULL DEFAULT 'DOUBLE',
+            orderIndex INTEGER NOT NULL,
+            setReps TEXT NOT NULL DEFAULT '10,10,10',
+            weightPerCableKg REAL NOT NULL DEFAULT 0.0,
+            setWeights TEXT NOT NULL DEFAULT '',
+            mode TEXT NOT NULL DEFAULT 'OldSchool',
+            eccentricLoad INTEGER NOT NULL DEFAULT 100,
+            echoLevel INTEGER NOT NULL DEFAULT 1,
+            progressionKg REAL NOT NULL DEFAULT 0.0,
+            restSeconds INTEGER NOT NULL DEFAULT 60,
+            duration INTEGER,
+            setRestSeconds TEXT NOT NULL DEFAULT '[]',
+            perSetRestTime INTEGER NOT NULL DEFAULT 0,
+            isAMRAP INTEGER NOT NULL DEFAULT 0,
+            supersetId TEXT,
+            orderInSuperset INTEGER NOT NULL DEFAULT 0,
+            usePercentOfPR INTEGER NOT NULL DEFAULT 0,
+            weightPercentOfPR INTEGER NOT NULL DEFAULT 80,
+            prTypeForScaling TEXT NOT NULL DEFAULT 'MAX_WEIGHT',
+            setWeightsPercentOfPR TEXT,
+            FOREIGN KEY (routineId) REFERENCES Routine(id) ON DELETE CASCADE,
+            FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE SET NULL,
+            FOREIGN KEY (supersetId) REFERENCES Superset(id) ON DELETE SET NULL
+        )""",
+        """INSERT INTO RoutineExercise_v10 (
+            id, routineId, exerciseName, exerciseMuscleGroup, exerciseEquipment,
+            exerciseDefaultCableConfig, exerciseId, cableConfig, orderIndex, setReps,
+            weightPerCableKg, setWeights, mode, eccentricLoad, echoLevel, progressionKg,
+            restSeconds, duration, setRestSeconds, perSetRestTime, isAMRAP,
+            supersetId, orderInSuperset,
+            usePercentOfPR, weightPercentOfPR, prTypeForScaling, setWeightsPercentOfPR
+        )
+        SELECT
+            id, routineId, exerciseName,
+            COALESCE(exerciseMuscleGroup, ''), COALESCE(exerciseEquipment, ''),
+            COALESCE(exerciseDefaultCableConfig, 'DOUBLE'),
+            CASE WHEN exerciseId IN (SELECT id FROM Exercise) THEN exerciseId ELSE NULL END,
+            COALESCE(cableConfig, 'DOUBLE'), orderIndex, COALESCE(setReps, '10,10,10'),
+            COALESCE(weightPerCableKg, 0.0), COALESCE(setWeights, ''),
+            COALESCE(mode, 'OldSchool'), COALESCE(eccentricLoad, 100),
+            COALESCE(echoLevel, 1), COALESCE(progressionKg, 0.0),
+            COALESCE(restSeconds, 60), duration, COALESCE(setRestSeconds, '[]'),
+            COALESCE(perSetRestTime, 0), COALESCE(isAMRAP, 0),
+            CASE WHEN supersetId IN (SELECT id FROM Superset) THEN supersetId ELSE NULL END,
+            COALESCE(orderInSuperset, 0),
+            COALESCE(usePercentOfPR, 0),
+            COALESCE(weightPercentOfPR, 80),
+            COALESCE(prTypeForScaling, 'MAX_WEIGHT'),
+            setWeightsPercentOfPR
+        FROM RoutineExercise
+        WHERE routineId IN (SELECT id FROM Routine)""",
+        "DROP TABLE RoutineExercise",
+        "ALTER TABLE RoutineExercise_v10 RENAME TO RoutineExercise",
+        "CREATE INDEX IF NOT EXISTS idx_routine_exercise_routine ON RoutineExercise(routineId)",
+        "CREATE INDEX IF NOT EXISTS idx_routine_exercise_superset ON RoutineExercise(supersetId)",
+        """CREATE TABLE PlannedSet (
             id TEXT PRIMARY KEY NOT NULL,
             routine_exercise_id TEXT NOT NULL,
             set_number INTEGER NOT NULL,
@@ -332,7 +527,12 @@ internal fun getMigrationStatements(version: Int): List<String> = when (version)
             rest_seconds INTEGER,
             FOREIGN KEY (routine_exercise_id) REFERENCES RoutineExercise(id) ON DELETE CASCADE
         )""",
-        """CREATE TABLE IF NOT EXISTS CompletedSet (
+        """INSERT OR IGNORE INTO PlannedSet (id, routine_exercise_id, set_number, set_type, target_reps, target_weight_kg, target_rpe, rest_seconds)
+        SELECT id, routine_exercise_id, set_number, set_type, target_reps, target_weight_kg, target_rpe, rest_seconds
+        FROM PlannedSet_temp WHERE routine_exercise_id IN (SELECT id FROM RoutineExercise)""",
+        "DROP TABLE PlannedSet_temp",
+        "CREATE INDEX IF NOT EXISTS idx_planned_set_exercise ON PlannedSet(routine_exercise_id)",
+        """CREATE TABLE CompletedSet (
             id TEXT PRIMARY KEY NOT NULL,
             session_id TEXT NOT NULL,
             planned_set_id TEXT,
@@ -346,11 +546,12 @@ internal fun getMigrationStatements(version: Int): List<String> = when (version)
             FOREIGN KEY (session_id) REFERENCES WorkoutSession(id) ON DELETE CASCADE,
             FOREIGN KEY (planned_set_id) REFERENCES PlannedSet(id) ON DELETE SET NULL
         )""",
-        // Create indexes
-        "CREATE INDEX IF NOT EXISTS idx_routine_exercise_routine ON RoutineExercise(routineId)",
-        "CREATE INDEX IF NOT EXISTS idx_routine_exercise_superset ON RoutineExercise(supersetId)",
-        "CREATE INDEX IF NOT EXISTS idx_planned_set_exercise ON PlannedSet(routine_exercise_id)",
+        """INSERT OR IGNORE INTO CompletedSet (id, session_id, planned_set_id, set_number, set_type, actual_reps, actual_weight_kg, logged_rpe, is_pr, completed_at)
+        SELECT id, session_id, planned_set_id, set_number, set_type, actual_reps, actual_weight_kg, logged_rpe, is_pr, completed_at
+        FROM CompletedSet_temp WHERE session_id IN (SELECT id FROM WorkoutSession)""",
+        "DROP TABLE CompletedSet_temp",
         "CREATE INDEX IF NOT EXISTS idx_completed_set_session ON CompletedSet(session_id)",
+        // Create remaining indexes
         "CREATE INDEX IF NOT EXISTS idx_cycle_day_cycle ON CycleDay(cycle_id)",
         "CREATE INDEX IF NOT EXISTS idx_cycle_progress_cycle ON CycleProgress(cycle_id)",
         // Cleanup orphaned references
@@ -1579,6 +1780,37 @@ WHERE gs.rowid = (
 
     67 -> listOf(
         "ALTER TABLE WorkoutSession ADD COLUMN workout_completed_at_ms INTEGER",
+    )
+
+    68 -> listOf(
+        "DROP INDEX IF EXISTS idx_rpg_attributes_profile",
+        """DELETE FROM RpgAttributes
+        WHERE id IN (
+            SELECT duplicate.id
+            FROM RpgAttributes AS duplicate
+            WHERE EXISTS (
+                SELECT 1
+                FROM RpgAttributes AS keeper
+                WHERE keeper.profile_id = duplicate.profile_id
+                  AND (
+                      COALESCE(keeper.lastComputed, 0) > COALESCE(duplicate.lastComputed, 0)
+                      OR (
+                          COALESCE(keeper.lastComputed, 0) = COALESCE(duplicate.lastComputed, 0)
+                          AND keeper.id > duplicate.id
+                      )
+                  )
+            )
+        )""".trimIndent(),
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_rpg_attributes_profile ON RpgAttributes(profile_id)",
+    )
+
+    69 -> listOf(
+        "CREATE INDEX IF NOT EXISTS idx_assessment_result_session ON AssessmentResult(assessmentSessionId)",
+        "CREATE INDEX IF NOT EXISTS idx_completed_set_planned_set ON CompletedSet(planned_set_id)",
+        "CREATE INDEX IF NOT EXISTS idx_cycle_day_routine ON CycleDay(routine_id)",
+        "CREATE INDEX IF NOT EXISTS idx_routine_group ON Routine(groupId)",
+        "CREATE INDEX IF NOT EXISTS idx_polar_ecg_segment_wall ON PolarEcgSegment(wallClockTimestampMs)",
+        "CREATE INDEX IF NOT EXISTS idx_session_server_id ON WorkoutSession(serverId)",
     )
 
     else -> emptyList()

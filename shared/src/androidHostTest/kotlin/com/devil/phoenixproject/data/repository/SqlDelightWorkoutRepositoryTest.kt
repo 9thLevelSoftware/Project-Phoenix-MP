@@ -15,6 +15,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
@@ -1004,5 +1005,35 @@ class SqlDelightWorkoutRepositoryTest {
             repository.getSessionCountForExercise(exerciseId, profileId),
             "Rows with both totalReps == 0 and workingReps == 0 must not be counted",
         )
+    }
+
+    @Test
+    fun `getAllRoutines_rethrowsCancellationWhenExerciseLookupCancels`() = runTest {
+        database.seedExercise("bench", name = "Bench Press")
+        val routine = Routine(
+            id = "routine-cancel-test",
+            name = "Push",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "rex-cancel-1",
+                    exercise = Exercise(id = "bench", name = "Bench Press", muscleGroup = "Chest"),
+                    orderIndex = 0,
+                    setReps = listOf(10),
+                    weightPerCableKg = 40f,
+                ),
+            ),
+            profileId = "default",
+        )
+        repository.saveRoutine(routine)
+
+        val cancellingExerciseRepo = object : ExerciseRepository by FakeExerciseRepository() {
+            override suspend fun getExerciseById(id: String): Exercise? =
+                throw CancellationException("cancelled lookup")
+        }
+        val cancellingRepo = SqlDelightWorkoutRepository(database, cancellingExerciseRepo)
+
+        assertFailsWith<CancellationException> {
+            cancellingRepo.getAllRoutines("default").first()
+        }
     }
 }

@@ -428,9 +428,8 @@ class MultiProfileSyncIntegrationTest {
     @Test
     fun twoProfilesWithDifferentBadgesAndRpgKeepBUnchangedWhenAPullsUserScopedData() = runTest {
         val q = database.phoenixDatabaseQueries
-        // SqlDelightGamificationRepository keys the row on profileId.hashCode().
+        // SqlDelightGamificationRepository keys the row on profile_id (unique index).
         q.upsertRpgAttributes(
-            id = profileB.hashCode().toLong(),
             strength = 11L,
             power = 11L,
             stamina = 11L,
@@ -443,7 +442,6 @@ class MultiProfileSyncIntegrationTest {
         q.insertEarnedBadge(badgeId = "b-badge", earnedAt = baseTime, profileId = profileB)
         // S-2: gamification stats are the third user-scoped singleton. B keeps its own row.
         q.upsertGamificationStats(
-            id = profileB.hashCode().toLong(),
             totalWorkouts = 7L,
             totalReps = 70L,
             // volume/dates are INTEGER columns in the schema

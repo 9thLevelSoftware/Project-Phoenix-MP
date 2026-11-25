@@ -1,0 +1,21 @@
+DROP INDEX IF EXISTS idx_rpg_attributes_profile;
+
+DELETE FROM RpgAttributes
+WHERE id IN (
+    SELECT duplicate.id
+    FROM RpgAttributes AS duplicate
+    WHERE EXISTS (
+        SELECT 1
+        FROM RpgAttributes AS keeper
+        WHERE keeper.profile_id = duplicate.profile_id
+          AND (
+              COALESCE(keeper.lastComputed, 0) > COALESCE(duplicate.lastComputed, 0)
+              OR (
+                  COALESCE(keeper.lastComputed, 0) = COALESCE(duplicate.lastComputed, 0)
+                  AND keeper.id > duplicate.id
+              )
+          )
+    )
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_rpg_attributes_profile ON RpgAttributes(profile_id);

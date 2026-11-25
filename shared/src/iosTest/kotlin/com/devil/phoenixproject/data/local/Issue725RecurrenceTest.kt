@@ -490,6 +490,67 @@ class Issue725RecurrenceTest {
     }
 
     @Test
+    fun upgradeFromPreV21Database_healsBeforeDependentMigrations() {
+        val setupDriver = rawDriver(DatabaseFileNames.TARGET)
+        try {
+            // Seed a pre-v21 database missing heal-only profile_id columns and bootstrap tables.
+            setupDriver.execute(
+                null,
+                "CREATE TABLE Exercise (id TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', created INTEGER NOT NULL DEFAULT 0, muscleGroup TEXT NOT NULL DEFAULT '', muscleGroups TEXT NOT NULL DEFAULT '[]', muscles TEXT NOT NULL DEFAULT '[]', equipment TEXT NOT NULL DEFAULT '', movement TEXT NOT NULL DEFAULT '', sidedness TEXT NOT NULL DEFAULT '', grip TEXT NOT NULL DEFAULT '', gripWidth TEXT NOT NULL DEFAULT '', minRepRange INTEGER NOT NULL DEFAULT 1, popularity INTEGER NOT NULL DEFAULT 0, archived INTEGER NOT NULL DEFAULT 0, isFavorite INTEGER NOT NULL DEFAULT 0, isCustom INTEGER NOT NULL DEFAULT 0, timesPerformed INTEGER NOT NULL DEFAULT 0, lastPerformed INTEGER, aliases TEXT NOT NULL DEFAULT '[]', defaultCableConfig TEXT NOT NULL DEFAULT 'DOUBLE')",
+                0,
+            )
+            setupDriver.execute(
+                null,
+                "CREATE TABLE ExerciseVideo (id INTEGER PRIMARY KEY AUTOINCREMENT, exerciseId TEXT NOT NULL, angle TEXT NOT NULL DEFAULT '', videoUrl TEXT NOT NULL DEFAULT '', thumbnailUrl TEXT NOT NULL DEFAULT '', isTutorial INTEGER NOT NULL DEFAULT 0, FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE CASCADE)",
+                0,
+            )
+            setupDriver.execute(
+                null,
+                "CREATE TABLE WorkoutSession (id TEXT NOT NULL PRIMARY KEY, timestamp INTEGER NOT NULL, mode TEXT NOT NULL, targetReps INTEGER NOT NULL, weightPerCableKg REAL NOT NULL, progressionKg REAL NOT NULL DEFAULT 0.0, duration INTEGER NOT NULL DEFAULT 0, totalReps INTEGER NOT NULL DEFAULT 0, warmupReps INTEGER NOT NULL DEFAULT 0, workingReps INTEGER NOT NULL DEFAULT 0, isJustLift INTEGER NOT NULL DEFAULT 0, stopAtTop INTEGER NOT NULL DEFAULT 0, eccentricLoad INTEGER NOT NULL DEFAULT 100, echoLevel INTEGER NOT NULL DEFAULT 1, exerciseId TEXT, exerciseName TEXT, routineSessionId TEXT, routineName TEXT)",
+                0,
+            )
+            setupDriver.execute(
+                null,
+                "CREATE TABLE MetricSample (id INTEGER PRIMARY KEY AUTOINCREMENT, sessionId TEXT NOT NULL, timestamp INTEGER NOT NULL, position REAL, positionB REAL, velocity REAL, velocityB REAL, load REAL, loadB REAL, power REAL, status INTEGER NOT NULL DEFAULT 0, FOREIGN KEY (sessionId) REFERENCES WorkoutSession(id) ON DELETE CASCADE)",
+                0,
+            )
+            setupDriver.execute(
+                null,
+                "CREATE TABLE PersonalRecord (id INTEGER PRIMARY KEY AUTOINCREMENT, exerciseId TEXT NOT NULL, exerciseName TEXT NOT NULL DEFAULT '', weight REAL NOT NULL DEFAULT 0.0, reps INTEGER NOT NULL DEFAULT 0, oneRepMax REAL NOT NULL DEFAULT 0.0, achievedAt INTEGER NOT NULL DEFAULT 0, workoutMode TEXT NOT NULL DEFAULT '', prType TEXT NOT NULL DEFAULT 'MAX_WEIGHT', volume REAL)",
+                0,
+            )
+            setupDriver.execute(
+                null,
+                "CREATE TABLE Routine (id TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', createdAt INTEGER NOT NULL DEFAULT 0, lastUsed INTEGER, useCount INTEGER NOT NULL DEFAULT 0)",
+                0,
+            )
+            setupDriver.execute(
+                null,
+                "CREATE TABLE RoutineExercise (id TEXT NOT NULL PRIMARY KEY, routineId TEXT NOT NULL, exerciseName TEXT NOT NULL, exerciseMuscleGroup TEXT NOT NULL DEFAULT '', exerciseEquipment TEXT NOT NULL DEFAULT '', exerciseDefaultCableConfig TEXT NOT NULL DEFAULT 'DOUBLE', exerciseId TEXT, cableConfig TEXT NOT NULL DEFAULT 'DOUBLE', orderIndex INTEGER NOT NULL, setReps TEXT NOT NULL DEFAULT '10,10,10', weightPerCableKg REAL NOT NULL DEFAULT 0.0, setWeights TEXT NOT NULL DEFAULT '', mode TEXT NOT NULL DEFAULT 'OldSchool', eccentricLoad INTEGER NOT NULL DEFAULT 100, echoLevel INTEGER NOT NULL DEFAULT 1, progressionKg REAL NOT NULL DEFAULT 0.0, restSeconds INTEGER NOT NULL DEFAULT 60, duration INTEGER, setRestSeconds TEXT NOT NULL DEFAULT '[]', perSetRestTime INTEGER NOT NULL DEFAULT 0, isAMRAP INTEGER NOT NULL DEFAULT 0)",
+                0,
+            )
+            for (v in 1L until 20L) {
+                PhoenixDatabase.Schema.migrate(setupDriver, v, v + 1)
+            }
+            setupDriver.execute(null, "PRAGMA user_version = 20", 0)
+        } finally {
+            setupDriver.close()
+        }
+
+        val driver = DriverFactory().createDriver()
+        try {
+            assertEquals(PhoenixDatabase.Schema.version, queryLong(driver, "PRAGMA user_version"))
+            assertEquals(1L, driver.writerForeignKeys())
+            assertTrue(tableExists(driver, "EarnedBadge"))
+            assertTrue(tableExists(driver, "GamificationStats"))
+            assertTrue(indexExists(driver, "idx_rpg_attributes_profile"))
+            assertTrue(indexExists(driver, "idx_session_server_id"))
+        } finally {
+            driver.close()
+        }
+    }
+
+    @Test
     fun backupExclusionFailureIsBestEffort() {
         var continued = false
 

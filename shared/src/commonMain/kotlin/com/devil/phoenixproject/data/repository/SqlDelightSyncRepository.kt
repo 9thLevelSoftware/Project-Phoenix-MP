@@ -369,7 +369,27 @@ class SqlDelightSyncRepository(
                     // to match the UNIQUE INDEX idx_pr_unique.
                     // Uses DTO-supplied prType/phase/volume with backward-compatible defaults.
                     val effectiveVolume = if (dto.volume > 0f) dto.volume else dto.weight * dto.reps
-                    queries.upsertPR(
+                    val targetProfileId = userProfileRepository.activeProfile.value?.id ?: "default"
+                    val resolvedUuid = dto.clientId.ifBlank { generateUUID() }
+                    val resolvedUpdatedAt = dto.updatedAt.takeIf { it > 0L }
+                    queries.updatePRFromMerge(
+                        exerciseName = dto.exerciseName,
+                        weight = dto.weight.toDouble(),
+                        reps = dto.reps.toLong(),
+                        oneRepMax = dto.oneRepMax.toDouble(),
+                        achievedAt = dto.achievedAt,
+                        volume = effectiveVolume.toDouble(),
+                        cableCount = dto.cableCount?.toLong(),
+                        uuid = resolvedUuid,
+                        serverId = dto.serverId,
+                        updatedAt = resolvedUpdatedAt,
+                        exerciseId = dto.exerciseId,
+                        workoutMode = dto.workoutMode,
+                        prType = dto.prType,
+                        phase = dto.phase,
+                        profileId = targetProfileId,
+                    )
+                    queries.insertPRFromMergeIgnore(
                         exerciseId = dto.exerciseId,
                         exerciseName = dto.exerciseName,
                         weight = dto.weight.toDouble(),
@@ -380,9 +400,12 @@ class SqlDelightSyncRepository(
                         prType = dto.prType,
                         volume = effectiveVolume.toDouble(),
                         phase = dto.phase,
-                        profile_id = userProfileRepository.activeProfile.value?.id ?: "default",
+                        updatedAt = resolvedUpdatedAt,
+                        serverId = dto.serverId,
+                        deletedAt = dto.deletedAt,
+                        profile_id = targetProfileId,
                         cable_count = dto.cableCount?.toLong(),
-                        uuid = dto.clientId.ifBlank { generateUUID() },
+                        uuid = resolvedUuid,
                     )
                 }
             }
@@ -499,9 +522,7 @@ class SqlDelightSyncRepository(
             val now = currentTimeMillis()
             val existing = queries.selectGamificationStats(profileId = profileId).executeAsOneOrNull()
 
-            val stableId = profileId.hashCode().toLong()
             queries.upsertGamificationStats(
-                id = stableId,
                 totalWorkouts = stats.totalWorkouts.toLong(),
                 totalReps = stats.totalReps.toLong(),
                 // Round (not truncate) to minimise systematic bias; column is INTEGER in schema.
@@ -2286,9 +2307,7 @@ class SqlDelightSyncRepository(
                 if (gamificationStats != null) {
                     val now = currentTimeMillis()
                     val existingStats = queries.selectGamificationStats(profileId = profileId).executeAsOneOrNull()
-                    val stableId = profileId.hashCode().toLong()
                     queries.upsertGamificationStats(
-                        id = stableId,
                         totalWorkouts = gamificationStats.totalWorkouts.toLong(),
                         totalReps = gamificationStats.totalReps.toLong(),
                         // Round (not truncate) to minimise systematic bias; column is INTEGER in schema.

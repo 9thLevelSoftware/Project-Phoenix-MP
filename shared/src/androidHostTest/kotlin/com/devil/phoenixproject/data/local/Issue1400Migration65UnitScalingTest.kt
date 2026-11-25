@@ -1,7 +1,8 @@
 package com.devil.phoenixproject.data.local
 
-import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.devil.phoenixproject.database.PhoenixDatabase
+import com.devil.phoenixproject.testutil.createTestDriver
+import com.devil.phoenixproject.testutil.seedExercise
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import org.junit.Test
@@ -18,11 +19,10 @@ import org.junit.Test
  */
 class Issue1400Migration65UnitScalingTest {
 
-    private val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+    private val driver = createTestDriver()
 
     @Test
     fun `migration 65 scales legacy metric values exactly once and is idempotent`() {
-        PhoenixDatabase.Schema.create(driver)
         seedLegacyRows()
 
         val first = applyMigrationResilient(driver, 65)
@@ -108,6 +108,7 @@ class Issue1400Migration65UnitScalingTest {
     // ==================== seeding ====================
 
     private fun seedLegacyRows() {
+        PhoenixDatabase(driver).seedExercise("e1")
         // metric_unit_version is left unset on purpose: the default of 1 marks these
         // rows exactly like migration 65 finds pre-upgrade rows.
         driver.execute(

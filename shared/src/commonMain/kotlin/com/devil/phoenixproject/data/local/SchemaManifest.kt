@@ -393,6 +393,17 @@ internal fun reconcileFullSchema(driver: SqlDriver): SchemaReconciliationReport 
     return report
 }
 
+internal fun healSchemaTablesAndColumns(driver: SqlDriver): SchemaReconciliationReport {
+    val report = SchemaReconciliationReport()
+    for (op in manifestTables) {
+        report.add(applyTableCreate(driver, op))
+    }
+    for (op in manifestColumns) {
+        report.add(applyColumnHeal(driver, op))
+    }
+    return report
+}
+
 // ============================================================
 // TASK 3: manifestTables -- 58 reconciled tables
 //
@@ -2143,6 +2154,11 @@ internal val manifestIndexes: List<SchemaIndexOperation> = listOf(
         "idx_session_routine_session",
         "CREATE INDEX IF NOT EXISTS idx_session_routine_session ON WorkoutSession(routineSessionId)",
     ),
+    // Migration 69.
+    SchemaIndexOperation(
+        "idx_session_server_id",
+        "CREATE INDEX IF NOT EXISTS idx_session_server_id ON WorkoutSession(serverId)",
+    ),
 
     // ── MetricSample ────────────────────────────────────────────────────
     SchemaIndexOperation("idx_metric_sample_session", "CREATE INDEX IF NOT EXISTS idx_metric_sample_session ON MetricSample(sessionId)"),
@@ -2150,8 +2166,9 @@ internal val manifestIndexes: List<SchemaIndexOperation> = listOf(
     // ── PolarBeatSample (migration 59) ──────────────────────────────────
     SchemaIndexOperation("idx_polar_beat_sample_session_ts", "CREATE INDEX IF NOT EXISTS idx_polar_beat_sample_session_ts ON PolarBeatSample(sessionId, timestampMs)"),
 
-    // ── PolarEcgSegment (migration 59) ──────────────────────────────────
+    // ── PolarEcgSegment (migration 59, 69) ──────────────────────────────
     SchemaIndexOperation("idx_polar_ecg_segment_session_wall", "CREATE INDEX IF NOT EXISTS idx_polar_ecg_segment_session_wall ON PolarEcgSegment(sessionId, wallClockTimestampMs)"),
+    SchemaIndexOperation("idx_polar_ecg_segment_wall", "CREATE INDEX IF NOT EXISTS idx_polar_ecg_segment_wall ON PolarEcgSegment(wallClockTimestampMs)"),
 
     // ── PersonalRecord ──────────────────────────────────────────────────
     // idx_pr_unique changed shape: migration 19 added phase, migration 21 added profile_id.
@@ -2204,6 +2221,7 @@ internal val manifestIndexes: List<SchemaIndexOperation> = listOf(
 
     // ── Routine ─────────────────────────────────────────────────────────
     SchemaIndexOperation("idx_routine_profile", "CREATE INDEX IF NOT EXISTS idx_routine_profile ON Routine(profile_id)"),
+    SchemaIndexOperation("idx_routine_group", "CREATE INDEX IF NOT EXISTS idx_routine_group ON Routine(groupId)"),
 
     // ── Superset ────────────────────────────────────────────────────────
     SchemaIndexOperation("idx_superset_routine", "CREATE INDEX IF NOT EXISTS idx_superset_routine ON Superset(routineId)"),
@@ -2238,6 +2256,7 @@ internal val manifestIndexes: List<SchemaIndexOperation> = listOf(
     // ── AssessmentResult ────────────────────────────────────────────────
     SchemaIndexOperation("idx_assessment_result_exercise", "CREATE INDEX IF NOT EXISTS idx_assessment_result_exercise ON AssessmentResult(exerciseId)"),
     SchemaIndexOperation("idx_assessment_profile", "CREATE INDEX IF NOT EXISTS idx_assessment_profile ON AssessmentResult(profile_id)"),
+    SchemaIndexOperation("idx_assessment_result_session", "CREATE INDEX IF NOT EXISTS idx_assessment_result_session ON AssessmentResult(assessmentSessionId)"),
 
     // ── EarnedBadge ─────────────────────────────────────────────────────
     SchemaIndexOperation("idx_earned_badge_profile", "CREATE UNIQUE INDEX IF NOT EXISTS idx_earned_badge_profile ON EarnedBadge(badgeId, profile_id)"),
@@ -2279,7 +2298,32 @@ internal val manifestIndexes: List<SchemaIndexOperation> = listOf(
     ),
 
     // ── RpgAttributes ───────────────────────────────────────────────────
-    SchemaIndexOperation("idx_rpg_attributes_profile", "CREATE INDEX IF NOT EXISTS idx_rpg_attributes_profile ON RpgAttributes(profile_id)"),
+    SchemaIndexOperation(
+        name = "idx_rpg_attributes_profile",
+        createSql = "CREATE UNIQUE INDEX IF NOT EXISTS idx_rpg_attributes_profile ON RpgAttributes(profile_id)",
+        preDropSql = "DROP INDEX IF EXISTS idx_rpg_attributes_profile",
+        beforeCreateSql = listOf(
+            """
+            DELETE FROM RpgAttributes
+            WHERE id IN (
+                SELECT duplicate.id
+                FROM RpgAttributes AS duplicate
+                WHERE EXISTS (
+                    SELECT 1
+                    FROM RpgAttributes AS keeper
+                    WHERE keeper.profile_id = duplicate.profile_id
+                      AND (
+                          COALESCE(keeper.lastComputed, 0) > COALESCE(duplicate.lastComputed, 0)
+                          OR (
+                              COALESCE(keeper.lastComputed, 0) = COALESCE(duplicate.lastComputed, 0)
+                              AND keeper.id > duplicate.id
+                          )
+                      )
+                )
+            )
+            """.trimIndent(),
+        ),
+    ),
 
     // ── TrainingCycle ───────────────────────────────────────────────────
     SchemaIndexOperation("idx_cycle_profile", "CREATE INDEX IF NOT EXISTS idx_cycle_profile ON TrainingCycle(profile_id)"),
@@ -2300,6 +2344,7 @@ internal val manifestIndexes: List<SchemaIndexOperation> = listOf(
 
     // ── CycleDay ────────────────────────────────────────────────────────
     SchemaIndexOperation("idx_cycle_day_cycle", "CREATE INDEX IF NOT EXISTS idx_cycle_day_cycle ON CycleDay(cycle_id)"),
+    SchemaIndexOperation("idx_cycle_day_routine", "CREATE INDEX IF NOT EXISTS idx_cycle_day_routine ON CycleDay(routine_id)"),
 
     // ── CycleProgress ───────────────────────────────────────────────────
     SchemaIndexOperation("idx_cycle_progress_cycle", "CREATE INDEX IF NOT EXISTS idx_cycle_progress_cycle ON CycleProgress(cycle_id)"),
@@ -2309,6 +2354,7 @@ internal val manifestIndexes: List<SchemaIndexOperation> = listOf(
 
     // ── CompletedSet ────────────────────────────────────────────────────
     SchemaIndexOperation("idx_completed_set_session", "CREATE INDEX IF NOT EXISTS idx_completed_set_session ON CompletedSet(session_id)"),
+    SchemaIndexOperation("idx_completed_set_planned_set", "CREATE INDEX IF NOT EXISTS idx_completed_set_planned_set ON CompletedSet(planned_set_id)"),
     SchemaIndexOperation("idx_completed_set_completed_at", "CREATE INDEX IF NOT EXISTS idx_completed_set_completed_at ON CompletedSet(completed_at)"),
 
     // ── ProgressionEvent ────────────────────────────────────────────────

@@ -153,6 +153,7 @@ CREATE INDEX idx_session_exercise ON WorkoutSession(exerciseId, profile_id);
 CREATE INDEX idx_session_exercise_profile_ts ON WorkoutSession(exerciseId, profile_id, timestamp DESC);
 -- Routine-group lookups and sync repair (migration 55).
 CREATE INDEX idx_session_routine_session ON WorkoutSession(routineSessionId);
+CREATE INDEX idx_session_server_id ON WorkoutSession(serverId);
 
 -- Exercise metrics (samples during workout)
 CREATE TABLE MetricSample (
@@ -212,6 +213,7 @@ CREATE TABLE PolarEcgSegment (
 );
 
 CREATE INDEX idx_polar_ecg_segment_session_wall ON PolarEcgSegment(sessionId, wallClockTimestampMs);
+CREATE INDEX idx_polar_ecg_segment_wall ON PolarEcgSegment(wallClockTimestampMs);
 
 -- Personal records
 -- Supports two PR types: MAX_WEIGHT (heaviest lift) and MAX_VOLUME (weight × reps)
@@ -274,6 +276,7 @@ CREATE TABLE Routine (
 );
 
 CREATE INDEX idx_routine_profile ON Routine(profile_id);
+CREATE INDEX idx_routine_group ON Routine(groupId);
 
 -- Supersets (first-class container for grouped exercises)
 CREATE TABLE Superset (
@@ -515,6 +518,7 @@ CREATE TABLE AssessmentResult (
 
 CREATE INDEX idx_assessment_result_exercise ON AssessmentResult(exerciseId);
 CREATE INDEX idx_assessment_profile ON AssessmentResult(profile_id);
+CREATE INDEX idx_assessment_result_session ON AssessmentResult(assessmentSessionId);
 
 -- ==================== VELOCITY-BASED 1RM ESTIMATES ====================
 -- Auto-computed velocity 1RM time-series (issue #517). Separate from
@@ -1424,11 +1428,63 @@ insertRecord:
 INSERT INTO PersonalRecord (exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, phase, profile_id, cable_count, uuid)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
--- Upsert PR by unique key (exerciseId, workoutMode, prType, phase) - no ID required
--- Uses INSERT OR REPLACE which replaces on unique index conflict (idx_pr_unique)
-upsertPR:
-INSERT OR REPLACE INTO PersonalRecord (exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, phase, profile_id, cable_count, uuid)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+-- Update an existing PR from a local lift while preserving PK, serverId, and uuid
+-- and clearing updatedAt/deletedAt so the row is picked up by the next delta push.
+updatePRFromLocalLift:
+UPDATE PersonalRecord
+SET exerciseName = CASE WHEN :exerciseName != '' THEN :exerciseName ELSE exerciseName END,
+    weight = :weight,
+    reps = :reps,
+    oneRepMax = :oneRepMax,
+    achievedAt = :achievedAt,
+    volume = :volume,
+    cable_count = :cableCount,
+    uuid = COALESCE(uuid, :uuid),
+    updatedAt = NULL,
+    deletedAt = NULL
+WHERE exerciseId = :exerciseId
+  AND workoutMode = :workoutMode
+  AND prType = :prType
+  AND phase = :phase
+  AND profile_id = :profileId;
+
+-- Update an active PR from a server merge without resurrecting local tombstones and
+-- while preserving PK, serverId, and updatedAt.
+updatePRFromMerge:
+UPDATE PersonalRecord
+SET exerciseName = :exerciseName,
+    weight = :weight,
+    reps = :reps,
+    oneRepMax = :oneRepMax,
+    achievedAt = :achievedAt,
+    volume = :volume,
+    cable_count = :cableCount,
+    uuid = CASE
+        WHEN uuid IS NOT NULL THEN uuid
+        WHEN NOT EXISTS (
+            SELECT 1 FROM PersonalRecord AS existing
+            WHERE existing.uuid = :uuid
+        ) THEN :uuid
+        ELSE NULL
+    END,
+    serverId = COALESCE(:serverId, serverId),
+    updatedAt = COALESCE(:updatedAt, updatedAt)
+WHERE exerciseId = :exerciseId
+  AND workoutMode = :workoutMode
+  AND prType = :prType
+  AND phase = :phase
+  AND profile_id = :profileId
+  AND deletedAt IS NULL;
+
+-- Insert a PR from a server merge if no row already occupies idx_pr_unique (preserving
+-- local tombstones and existing active rows).
+insertPRFromMergeIgnore:
+INSERT OR IGNORE INTO PersonalRecord (
+    exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt,
+    workoutMode, prType, volume, phase, updatedAt, serverId, deletedAt,
+    profile_id, cable_count, uuid
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- Insert PR but ignore on conflict (local wins) - for portal pull merge
 insertPRIgnore:
@@ -1894,7 +1950,7 @@ CREATE TABLE RpgAttributes (
     profile_id TEXT NOT NULL DEFAULT 'default'
 );
 
-CREATE INDEX idx_rpg_attributes_profile ON RpgAttributes(profile_id);
+CREATE UNIQUE INDEX idx_rpg_attributes_profile ON RpgAttributes(profile_id);
 
 -- ==================== GAMIFICATION QUERIES ====================
 
@@ -1933,19 +1989,40 @@ WHERE profile_id = :profileId
 ORDER BY COALESCE(lastUpdated, 0) DESC, COALESCE(updatedAt, 0) DESC, id DESC
 LIMIT 1;
 
-upsertGamificationStats:
-INSERT OR REPLACE INTO GamificationStats
-(id, totalWorkouts, totalReps, totalVolumeKg, longestStreak, currentStreak, uniqueExercisesUsed, prsAchieved, lastWorkoutDate, streakStartDate, lastUpdated, profile_id)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, :profileId);
+upsertGamificationStats {
+UPDATE GamificationStats
+SET totalWorkouts = :totalWorkouts,
+    totalReps = :totalReps,
+    totalVolumeKg = :totalVolumeKg,
+    longestStreak = :longestStreak,
+    currentStreak = :currentStreak,
+    uniqueExercisesUsed = :uniqueExercisesUsed,
+    prsAchieved = :prsAchieved,
+    lastWorkoutDate = :lastWorkoutDate,
+    streakStartDate = :streakStartDate,
+    lastUpdated = :lastUpdated
+WHERE profile_id = :profileId;
+
+INSERT OR IGNORE INTO GamificationStats (
+    totalWorkouts, totalReps, totalVolumeKg, longestStreak, currentStreak,
+    uniqueExercisesUsed, prsAchieved, lastWorkoutDate, streakStartDate,
+    lastUpdated, profile_id
+)
+VALUES (
+    :totalWorkouts, :totalReps, :totalVolumeKg, :longestStreak, :currentStreak,
+    :uniqueExercisesUsed, :prsAchieved, :lastWorkoutDate, :streakStartDate,
+    :lastUpdated, :profileId
+);
+}
 
 insertGamificationStatsRestoreIfAbsent:
 INSERT OR IGNORE INTO GamificationStats(
-    id, totalWorkouts, totalReps, totalVolumeKg, longestStreak, currentStreak,
+    totalWorkouts, totalReps, totalVolumeKg, longestStreak, currentStreak,
     uniqueExercisesUsed, prsAchieved, lastWorkoutDate, streakStartDate,
     lastUpdated, updatedAt, serverId, profile_id
 )
 VALUES (
-    :id, :totalWorkouts, :totalReps, :totalVolumeKg, :longestStreak, :currentStreak,
+    :totalWorkouts, :totalReps, :totalVolumeKg, :longestStreak, :currentStreak,
     :uniqueExercisesUsed, :prsAchieved, :lastWorkoutDate, :streakStartDate,
     :lastUpdated, :updatedAt, :serverId, :profileId
 );
@@ -1973,7 +2050,7 @@ countUniqueExercises:
 SELECT COUNT(DISTINCT exerciseId) FROM WorkoutSession WHERE exerciseId IS NOT NULL AND exerciseId != '' AND profile_id = :profileId AND deletedAt IS NULL AND workingReps > 0;
 
 countPersonalRecords:
-SELECT COUNT(*) FROM PersonalRecord WHERE profile_id = :profileId;
+SELECT COUNT(*) FROM PersonalRecord WHERE profile_id = :profileId AND deletedAt IS NULL;
 
 -- Distinct local calendar days. Streak math compares these strings to the device's
 -- local today; UTC bucketing breaks an east-of-UTC streak the next local morning.
@@ -1987,17 +2064,31 @@ SELECT DISTINCT DATE(timestamp / 1000, 'unixepoch', 'localtime') AS workoutDate 
 selectRpgAttributes:
 SELECT * FROM RpgAttributes WHERE profile_id = :profileId;
 
-upsertRpgAttributes:
-INSERT OR REPLACE INTO RpgAttributes
-(id, strength, power, stamina, consistency, mastery, characterClass, lastComputed, profile_id)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, :profileId);
+upsertRpgAttributes {
+UPDATE RpgAttributes
+SET strength = :strength,
+    power = :power,
+    stamina = :stamina,
+    consistency = :consistency,
+    mastery = :mastery,
+    characterClass = :characterClass,
+    lastComputed = :lastComputed
+WHERE profile_id = :profileId;
+
+INSERT OR IGNORE INTO RpgAttributes (
+    strength, power, stamina, consistency, mastery, characterClass, lastComputed, profile_id
+)
+VALUES (
+    :strength, :power, :stamina, :consistency, :mastery, :characterClass, :lastComputed, :profileId
+);
+}
 
 -- RPG computation helpers (profile-scoped)
 selectMaxWeightLifted:
-SELECT MAX(heaviestLiftKg) FROM WorkoutSession WHERE heaviestLiftKg IS NOT NULL AND profile_id = :profileId AND workingReps > 0;
+SELECT MAX(heaviestLiftKg) FROM WorkoutSession WHERE heaviestLiftKg IS NOT NULL AND profile_id = :profileId AND deletedAt IS NULL AND workingReps > 0;
 
 selectAvgWorkingWeight:
-SELECT AVG(workingAvgWeightKg) FROM WorkoutSession WHERE workingAvgWeightKg IS NOT NULL AND profile_id = :profileId AND workingReps > 0;
+SELECT AVG(workingAvgWeightKg) FROM WorkoutSession WHERE workingAvgWeightKg IS NOT NULL AND profile_id = :profileId AND deletedAt IS NULL AND workingReps > 0;
 
 -- Profile-scoped peak rep power (audit F019): join to WorkoutSession so one
 -- profile's RepMetric rows cannot influence another profile's RPG power.
@@ -2007,17 +2098,17 @@ INNER JOIN WorkoutSession ws ON rm.sessionId = ws.id
 WHERE ws.profile_id = ? AND ws.deletedAt IS NULL;
 
 countTrainingDays:
-SELECT COUNT(DISTINCT DATE(timestamp / 1000, 'unixepoch')) FROM WorkoutSession WHERE profile_id = :profileId AND workingReps > 0;
+SELECT COUNT(DISTINCT DATE(timestamp / 1000, 'unixepoch', 'localtime')) FROM WorkoutSession WHERE profile_id = :profileId AND deletedAt IS NULL AND workingReps > 0;
 
 -- ==================== ADDITIONAL GAMIFICATION QUERIES ====================
 
 -- Count workouts by workout mode (profile-scoped)
 countWorkoutsByMode:
-SELECT mode, COUNT(*) AS count FROM WorkoutSession WHERE profile_id = :profileId AND workingReps > 0 GROUP BY mode;
+SELECT mode, COUNT(*) AS count FROM WorkoutSession WHERE profile_id = :profileId AND deletedAt IS NULL AND workingReps > 0 GROUP BY mode;
 
 -- Get all unique workout modes used (profile-scoped)
 selectUniqueWorkoutModes:
-SELECT DISTINCT mode FROM WorkoutSession WHERE profile_id = :profileId AND workingReps > 0;
+SELECT DISTINCT mode FROM WorkoutSession WHERE profile_id = :profileId AND deletedAt IS NULL AND workingReps > 0;
 
 -- Profile-scoped peak power (audit F019).
 selectPeakPowerForProfile:
@@ -2030,7 +2121,7 @@ selectUniqueMuscleGroupsFromWorkouts:
 SELECT DISTINCT e.muscleGroup
 FROM WorkoutSession ws
 INNER JOIN Exercise e ON ws.exerciseId = e.id
-WHERE ws.exerciseId IS NOT NULL AND ws.exerciseId != '' AND ws.profile_id = :profileId AND ws.workingReps > 0;
+WHERE ws.exerciseId IS NOT NULL AND ws.exerciseId != '' AND ws.profile_id = :profileId AND ws.deletedAt IS NULL AND ws.workingReps > 0;
 
 -- F-034 badge helpers: aggregate in SQL instead of loading every session. All use the
 -- row filter the old Kotlin helpers applied to selectAllSessions (profile-scoped,
@@ -2075,12 +2166,12 @@ WHERE profile_id = :profileId AND deletedAt IS NULL AND workingReps > 0;
 -- Count workouts completed on weekends (profile-scoped)
 countWeekendWorkouts:
 SELECT COUNT(*) FROM WorkoutSession
-WHERE CAST(strftime('%w', timestamp / 1000, 'unixepoch') AS INTEGER) IN (0, 6)
-AND profile_id = :profileId AND workingReps > 0;
+WHERE CAST(strftime('%w', timestamp / 1000, 'unixepoch', 'localtime') AS INTEGER) IN (0, 6)
+AND profile_id = :profileId AND deletedAt IS NULL AND workingReps > 0;
 
 -- Count completed routine sessions (profile-scoped)
 countCompletedRoutineSessions:
-SELECT COUNT(DISTINCT routineSessionId) FROM WorkoutSession WHERE routineSessionId IS NOT NULL AND routineSessionId != '' AND profile_id = :profileId AND workingReps > 0;
+SELECT COUNT(DISTINCT routineSessionId) FROM WorkoutSession WHERE routineSessionId IS NOT NULL AND routineSessionId != '' AND profile_id = :profileId AND deletedAt IS NULL AND workingReps > 0;
 
 -- Count custom routines created (profile-scoped)
 countCreatedRoutines:
@@ -2262,9 +2353,11 @@ CREATE TABLE ProgressionEvent (
 -- ==================== TRAINING CYCLES INDEXES ====================
 
 CREATE INDEX idx_cycle_day_cycle ON CycleDay(cycle_id);
+CREATE INDEX idx_cycle_day_routine ON CycleDay(routine_id);
 CREATE INDEX idx_cycle_progress_cycle ON CycleProgress(cycle_id);
 CREATE INDEX idx_planned_set_exercise ON PlannedSet(routine_exercise_id);
 CREATE INDEX idx_completed_set_session ON CompletedSet(session_id);
+CREATE INDEX idx_completed_set_planned_set ON CompletedSet(planned_set_id);
 CREATE INDEX idx_completed_set_completed_at ON CompletedSet(completed_at);
 CREATE INDEX idx_progression_exercise ON ProgressionEvent(exercise_id);
 CREATE INDEX idx_progression_profile ON ProgressionEvent(profile_id);
@@ -4423,6 +4516,7 @@ LEFT JOIN Exercise e ON ws.exerciseId = e.id
 WHERE ws.exerciseId IS NOT NULL
   AND ws.timestamp > ?
   AND ws.profile_id = :profileId
+  AND ws.deletedAt IS NULL
 ORDER BY ws.timestamp DESC;
 
 -- Exercise last-performed dates (for neglect detection)
@@ -4433,6 +4527,7 @@ FROM Exercise e
 INNER JOIN WorkoutSession ws ON ws.exerciseId = e.id
 WHERE e.archived = 0
   AND ws.profile_id = :profileId
+  AND ws.deletedAt IS NULL
 GROUP BY e.id;
 
 -- Per-exercise weight history (for plateau detection)
@@ -4456,6 +4551,7 @@ SELECT ws.exerciseId,
 FROM WorkoutSession ws
 WHERE ws.exerciseId IS NOT NULL
   AND ws.profile_id = :profileId
+  AND ws.deletedAt IS NULL
   AND ws.totalReps > 0
   AND (ws.mode NOT LIKE '%Echo%'
        OR (ws.heaviestLiftKg > 0

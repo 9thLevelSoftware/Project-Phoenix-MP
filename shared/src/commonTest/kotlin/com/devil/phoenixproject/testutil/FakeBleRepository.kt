@@ -261,10 +261,13 @@ class FakeBleRepository : BleRepository {
         }
 
         return if (connectResult.isSuccess) {
+            val detectedModel = HardwareDetection.detectModel(device.name)
+            model = detectedModel
             setConnectionState(
                 ConnectionState.Connected(
                     deviceName = device.name,
                     deviceAddress = device.address,
+                    hardwareModel = detectedModel,
                 ),
             )
             Result.success(Unit)

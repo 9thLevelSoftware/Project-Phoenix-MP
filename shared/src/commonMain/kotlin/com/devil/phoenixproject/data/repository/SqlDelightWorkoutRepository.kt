@@ -22,6 +22,7 @@ import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.onerepmax.WorkoutVelocityPoint
+import com.devil.phoenixproject.util.rethrowIfCancellation
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.Flow
@@ -491,6 +492,7 @@ class SqlDelightWorkoutRepository(
                     dropSetMinWeightKg = row.dropSetMinWeightKg?.toFloat(),
                 )
             } catch (e: Exception) {
+                e.rethrowIfCancellation()
                 Logger.e(e) { "Failed to map routine exercise: ${row.exerciseId}" }
                 null
             }
@@ -894,6 +896,7 @@ class SqlDelightWorkoutRepository(
                                 description = routine.description,
                             )
                         } catch (e: Exception) {
+                            e.rethrowIfCancellation()
                             Logger.e(e) { "Failed to load exercises for routine ${routine.id}" }
                             routine
                         }

@@ -894,7 +894,7 @@ class DataBackupCompletenessTest {
 
         fun insertStats(profileId: String, totalWorkouts: Long) {
             queries.upsertGamificationStats(
-                profileId.hashCode().toLong(), totalWorkouts, 10L, 100L, 1L, 1L, 1L, 0L, null, null, 1_700_000_000_000L,
+                totalWorkouts, 10L, 100L, 1L, 1L, 1L, 0L, null, null, 1_700_000_000_000L,
                 profileId = profileId,
             )
         }

@@ -3117,7 +3117,8 @@ class SqlDelightSyncRepositoryTest {
         )
         // Legacy row: local id differs from the id the server knows (serverId column).
         queries.updateRoutineServerId("routine-srv", "local-legacy")
-        // Children that FK cascades would remove, but the test driver runs with foreign_keys off.
+        // Seed child rows (under PRAGMA foreign_keys = ON, deleting routine-x/cycle-y cascades
+        // these as well as verifying explicit child cleanup in applyServerDeletions).
         queries.insertPlannedSet(
             id = "planned-x-1",
             routine_exercise_id = "rex-x-1",
@@ -3328,5 +3329,225 @@ class SqlDelightSyncRepositoryTest {
 
         assertEquals(listOf("routine-x"), result.discardedRoutineEditIds)
         assertNull(database.phoenixDatabaseQueries.selectRoutineById("routine-x").executeAsOneOrNull())
+    }
+
+    @Test
+    fun `mergePRs does not resurrect tombstoned PR and preserves row id and serverId`() = runTest {
+        val queries = database.phoenixDatabaseQueries
+        queries.insertProfile("active-profile", "Active", 0L, 0L, 1L)
+        queries.insertRecord(
+            exerciseId = "deadlift",
+            exerciseName = "Deadlift",
+            weight = 100.0,
+            reps = 5L,
+            oneRepMax = 112.5,
+            achievedAt = 1_000L,
+            workoutMode = "Old School",
+            prType = PRType.MAX_WEIGHT.name,
+            volume = 500.0,
+            phase = "COMBINED",
+            profile_id = "active-profile",
+            cable_count = 2L,
+            uuid = "pr-uuid-1",
+        )
+        val seeded = queries.selectPRIncludingDeleted(
+            "deadlift",
+            "Old School",
+            PRType.MAX_WEIGHT.name,
+            "COMBINED",
+            "active-profile",
+        ).executeAsOne()
+        // Stamp serverId before soft-deleting (updatePRFromMerge ignores deleted rows).
+        queries.updatePRServerId(serverId = "srv-pr-1", id = seeded.id)
+        queries.softDeletePRById(deletedAt = 4_000L, updatedAt = 5_000L, id = seeded.id, profileId = "active-profile")
+        val preMerge = queries.selectPRIncludingDeleted(
+            "deadlift",
+            "Old School",
+            PRType.MAX_WEIGHT.name,
+            "COMBINED",
+            "active-profile",
+        ).executeAsOne()
+        assertEquals("srv-pr-1", preMerge.serverId)
+        assertEquals(4_000L, preMerge.deletedAt)
+
+        repository.mergePRs(
+            listOf(
+                PersonalRecordSyncDto(
+                    clientId = "pr-uuid-other",
+                    serverId = "srv-pr-new",
+                    exerciseId = "deadlift",
+                    exerciseName = "Deadlift",
+                    weight = 120f,
+                    reps = 5,
+                    oneRepMax = 135f,
+                    achievedAt = 9_000L,
+                    workoutMode = "Old School",
+                    prType = PRType.MAX_WEIGHT.name,
+                    volume = 600f,
+                    createdAt = 1_000L,
+                    updatedAt = 9_000L,
+                    deletedAt = null,
+                ),
+            ),
+        )
+
+        val after = queries.selectPRIncludingDeleted(
+            "deadlift",
+            "Old School",
+            PRType.MAX_WEIGHT.name,
+            "COMBINED",
+            "active-profile",
+        ).executeAsOne()
+        assertEquals(seeded.id, after.id)
+        assertEquals("srv-pr-1", after.serverId)
+        assertEquals("pr-uuid-1", after.uuid)
+        assertEquals(4_000L, after.deletedAt)
+        assertEquals(5_000L, after.updatedAt)
+        assertEquals(100.0, after.weight)
+    }
+
+    @Test
+    fun `mergePRs preserves id, serverId, uuid, and updatedAt on active PR when DTO omits metadata`() = runTest {
+        val queries = database.phoenixDatabaseQueries
+        queries.insertProfile("active-profile", "Active", 0L, 0L, 1L)
+        queries.insertRecord(
+            exerciseId = "squat",
+            exerciseName = "Squat",
+            weight = 100.0,
+            reps = 5L,
+            oneRepMax = 112.5,
+            achievedAt = 1_000L,
+            workoutMode = "Old School",
+            prType = PRType.MAX_WEIGHT.name,
+            volume = 500.0,
+            phase = "COMBINED",
+            profile_id = "active-profile",
+            cable_count = 2L,
+            uuid = "pr-uuid-active",
+        )
+        val seeded = queries.selectPRIncludingDeleted(
+            "squat",
+            "Old School",
+            PRType.MAX_WEIGHT.name,
+            "COMBINED",
+            "active-profile",
+        ).executeAsOne()
+        queries.updatePRServerId(serverId = "srv-pr-1", id = seeded.id)
+        queries.updatePRTimestamp(timestamp = 5_000L, ids = listOf(seeded.id), gatherStartedAt = 5_000L)
+
+        // Legacy row with uuid == null to verify mergePRs handles idx_pr_uuid collisions safely.
+        queries.insertRecord(
+            exerciseId = "bench",
+            exerciseName = "Bench",
+            weight = 80.0,
+            reps = 5L,
+            oneRepMax = 90.0,
+            achievedAt = 1_000L,
+            workoutMode = "Old School",
+            prType = PRType.MAX_WEIGHT.name,
+            volume = 400.0,
+            phase = "COMBINED",
+            profile_id = "active-profile",
+            cable_count = 2L,
+            uuid = null,
+        )
+
+        repository.mergePRs(
+            listOf(
+                PersonalRecordSyncDto(
+                    clientId = "pr-uuid-other",
+                    serverId = null,
+                    exerciseId = "squat",
+                    exerciseName = "Squat",
+                    weight = 120f,
+                    reps = 5,
+                    oneRepMax = 135f,
+                    achievedAt = 9_000L,
+                    workoutMode = "Old School",
+                    prType = PRType.MAX_WEIGHT.name,
+                    volume = 600f,
+                    createdAt = 1_000L,
+                    updatedAt = 0L,
+                    deletedAt = null,
+                ),
+                // Collision against existing "pr-uuid-active" on a legacy uuid == null row.
+                PersonalRecordSyncDto(
+                    clientId = "pr-uuid-active",
+                    serverId = "srv-pr-bench",
+                    exerciseId = "bench",
+                    exerciseName = "Bench",
+                    weight = 85f,
+                    reps = 5,
+                    oneRepMax = 95.625f,
+                    achievedAt = 9_100L,
+                    workoutMode = "Old School",
+                    prType = PRType.MAX_WEIGHT.name,
+                    volume = 425f,
+                    createdAt = 1_000L,
+                    updatedAt = 9_100L,
+                    deletedAt = null,
+                ),
+            ),
+        )
+
+        val afterNullMeta = queries.selectPRIncludingDeleted(
+            "squat",
+            "Old School",
+            PRType.MAX_WEIGHT.name,
+            "COMBINED",
+            "active-profile",
+        ).executeAsOne()
+        assertEquals(seeded.id, afterNullMeta.id)
+        assertEquals("srv-pr-1", afterNullMeta.serverId)
+        assertEquals(5_000L, afterNullMeta.updatedAt)
+        assertEquals("pr-uuid-active", afterNullMeta.uuid)
+        assertNull(afterNullMeta.deletedAt)
+        assertEquals(120.0, afterNullMeta.weight)
+
+        val afterLegacyCollision = queries.selectPRIncludingDeleted(
+            "bench",
+            "Old School",
+            PRType.MAX_WEIGHT.name,
+            "COMBINED",
+            "active-profile",
+        ).executeAsOne()
+        assertEquals(85.0, afterLegacyCollision.weight)
+        assertEquals("srv-pr-bench", afterLegacyCollision.serverId)
+        assertNull(afterLegacyCollision.uuid)
+
+        // Subsequent merge with non-null serverId and positive updatedAt updates them while keeping id & uuid.
+        repository.mergePRs(
+            listOf(
+                PersonalRecordSyncDto(
+                    clientId = "pr-uuid-ignored",
+                    serverId = "srv-pr-2",
+                    exerciseId = "squat",
+                    exerciseName = "Squat",
+                    weight = 125f,
+                    reps = 5,
+                    oneRepMax = 140.625f,
+                    achievedAt = 9_500L,
+                    workoutMode = "Old School",
+                    prType = PRType.MAX_WEIGHT.name,
+                    volume = 625f,
+                    createdAt = 1_000L,
+                    updatedAt = 9_500L,
+                    deletedAt = null,
+                ),
+            ),
+        )
+
+        val afterExplicitMeta = queries.selectPRIncludingDeleted(
+            "squat",
+            "Old School",
+            PRType.MAX_WEIGHT.name,
+            "COMBINED",
+            "active-profile",
+        ).executeAsOne()
+        assertEquals(seeded.id, afterExplicitMeta.id)
+        assertEquals("srv-pr-2", afterExplicitMeta.serverId)
+        assertEquals(9_500L, afterExplicitMeta.updatedAt)
+        assertEquals("pr-uuid-active", afterExplicitMeta.uuid)
+        assertEquals(125.0, afterExplicitMeta.weight)
     }
 }

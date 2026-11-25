@@ -166,29 +166,17 @@ internal class ResilientMigratingSchema(
 
         for (version in oldVersion until newVersion) {
             val stepTo = version + 1
-            try {
-                delegate.migrate(driver, version, stepTo, *callbacks)
-                driver.execute(null, "PRAGMA user_version = $stepTo", 0)
-                NSLog("iOS DB: Migration to version $stepTo succeeded")
-            } catch (e: Exception) {
-                NSLog("iOS DB: Migration $stepTo failed (${e.message?.take(120)}), applying resilient fallback")
-                // getMigrationStatements is keyed by the .sqm file number — the version
-                // being migrated FROM ($version), not the target ($stepTo). Passing the
-                // target replayed the NEXT migration's statements and skipped the failed
-                // one's data fixes entirely (#636 review).
-                val results = applyMigrationResilient(driver, version.toInt())
-                val failures = results.count { !it.success && !it.recoverable }
-                if (failures > 0) {
-                    NSLog("iOS DB: Migration $stepTo had $failures non-recoverable failures")
-                    throw DatabaseFileMigrationException(
-                        DatabaseMigrationFailureCode.TARGET_VALIDATION_FAILED,
-                        "The Phoenix database migration to version $stepTo could not be completed safely.",
-                        e,
-                    )
-                }
-                driver.execute(null, "PRAGMA user_version = $stepTo", 0)
-                NSLog("iOS DB: Migration $stepTo completed via resilient fallback")
-            }
+            migrateStepWithPreHeal(
+                driver = driver,
+                fromVersion = version,
+                stepTo = stepTo,
+                migrateStep = {
+                    delegate.migrate(driver, version, stepTo, *callbacks)
+                },
+                onLog = { msg -> NSLog("iOS DB: $msg") },
+            )
+            driver.execute(null, "PRAGMA user_version = $stepTo", 0)
+            NSLog("iOS DB: Migration to version $stepTo completed")
         }
 
         NSLog("iOS DB: All migrations completed (now at version $newVersion)")
