@@ -95,6 +95,12 @@ import com.devil.phoenixproject.domain.model.WeightTextScale
 import com.devil.phoenixproject.presentation.components.DestructiveConfirmDialog
 import com.devil.phoenixproject.presentation.components.HrmSensorSettingsCard
 import com.devil.phoenixproject.presentation.components.PhoenixModalDialogFrame
+import com.devil.phoenixproject.presentation.components.TelemetryCleanupSheet
+import com.devil.phoenixproject.data.maintenance.TelemetryCompactionService
+import com.devil.phoenixproject.data.maintenance.WorkoutSessionGuardBinding
+import com.devil.phoenixproject.data.preferences.PreferencesManager
+import com.devil.phoenixproject.presentation.manager.TelemetryCleanupController
+import com.devil.phoenixproject.presentation.manager.TelemetryCleanupUiState
 import com.devil.phoenixproject.presentation.components.PhoenixSectionCard
 import com.devil.phoenixproject.presentation.components.ProfileRecoverySettingsSection
 import com.devil.phoenixproject.presentation.components.ResponsiveSegmentedSelector
@@ -122,6 +128,9 @@ import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.telemetry_cleanup_backup_switch_title
+import projectphoenix.shared.generated.resources.telemetry_cleanup_row_subtitle
+import projectphoenix.shared.generated.resources.telemetry_cleanup_row_title
 import projectphoenix.shared.generated.resources.settings_exercise_demos_photos_note
 import projectphoenix.shared.generated.resources.action_cancel
 import projectphoenix.shared.generated.resources.action_ok
@@ -421,6 +430,41 @@ private fun GlobalSettingsSwitchRow(
     }
 }
 
+/** Issue #1425: "Telemetry storage cleanup" entry row under "Include raw telemetry". */
+@Composable
+private fun TelemetryCleanupRow(
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .defaultMinSize(minHeight = 48.dp)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = stringResource(Res.string.telemetry_cleanup_row_title),
+                style = MaterialTheme.typography.bodyLarge,
+                color = if (enabled) {
+                    MaterialTheme.colorScheme.onSurface
+                } else {
+                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                },
+            )
+            Text(
+                text = stringResource(Res.string.telemetry_cleanup_row_subtitle),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
 @Composable
 fun SettingsTab(
     enableVideoPlayback: Boolean,
@@ -468,6 +512,23 @@ fun SettingsTab(
     val scope = rememberCoroutineScope()
     // Inject DataBackupManager for manual backup/restore operations
     val backupManager: DataBackupManager = koinInject()
+    // Issue #1425: telemetry compaction is orchestrated here (I7), DataBackupManager stays untouched.
+    val telemetryCompactionService: TelemetryCompactionService = koinInject()
+    val preferencesManager: PreferencesManager = koinInject()
+    var showCleanupSheet by remember { mutableStateOf(false) }
+    var cleanUpTelemetryBeforeBackup by remember(showBackupDialog) {
+        mutableStateOf(preferencesManager.cleanUpTelemetryBeforeBackup())
+    }
+    val cleanupController = remember(scope) {
+        TelemetryCleanupController(
+            service = telemetryCompactionService,
+            workoutSessionGuard = { WorkoutSessionGuardBinding.isInWorkoutSession() },
+            isBackupRunning = { backupInProgress || restoreInProgress },
+            scope = scope,
+        )
+    }
+    val cleanupState by cleanupController.state.collectAsState()
+    val cleanupRunning = cleanupState is TelemetryCleanupUiState.Cleaning
     val exerciseRepository: ExerciseRepository = koinInject()
     val userProfileRepository: UserProfileRepository = koinInject()
     val activeProfile by userProfileRepository.activeProfile.collectAsState()
@@ -852,6 +913,16 @@ fun SettingsTab(
                     onCheckedChange = onIncludeRawTelemetryInBackupsChange,
                 )
 
+                // Issue #1425: manual retroactive telemetry compaction entry point (D5: the row
+                // is disabled during backup/restore; backup/restore is disabled while cleaning).
+                TelemetryCleanupRow(
+                    enabled = !backupInProgress && !restoreInProgress && !cleanupRunning,
+                    onClick = {
+                        showCleanupSheet = true
+                        cleanupController.open()
+                    },
+                )
+
                 // Backup Location selector (Phase 42)
                 var showLocationPicker by remember { mutableStateOf(false) }
                 Row(
@@ -1016,6 +1087,7 @@ fun SettingsTab(
                 ) {
                     OutlinedButton(
                         onClick = { showBackupDialog = true },
+                        enabled = !cleanupRunning,
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(min = 56.dp),
@@ -1047,6 +1119,7 @@ fun SettingsTab(
                 ) {
                     FilledTonalButton(
                         onClick = { showRestoreDialog = true },
+                        enabled = !cleanupRunning,
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(min = 56.dp),
@@ -1273,6 +1346,20 @@ fun SettingsTab(
         }
     }
 
+    // Issue #1425: Telemetry storage cleanup sheet (D1 modal frame)
+    if (showCleanupSheet) {
+        TelemetryCleanupSheet(
+            state = cleanupState,
+            includeRawTelemetryInBackups = includeRawTelemetryInBackups,
+            onCleanUp = cleanupController::cleanUp,
+            onStopAfterSet = cleanupController::stopAfterThisSet,
+            onClose = {
+                showCleanupSheet = false
+                cleanupController.dismiss()
+            },
+        )
+    }
+
     // Backup confirmation dialog
     if (showBackupDialog) {
         PhoenixModalDialogFrame(
@@ -1285,6 +1372,11 @@ fun SettingsTab(
                 backupInProgress = true
                 scope.launch {
                     try {
+                        // I7 / signoff #5: pre-backup cleanup runs before Save and Share; a
+                        // cleanup failure never blocks the backup (runBeforeManualBackup swallows).
+                        if (includeRawTelemetryInBackups && cleanUpTelemetryBeforeBackup) {
+                            cleanupController.runBeforeManualBackup()
+                        }
                         val result = backupManager.exportToFile { progress ->
                             backupProgress = progress
                         }
@@ -1307,6 +1399,32 @@ fun SettingsTab(
             },
         ) {
             Text(stringResource(Res.string.backup_description))
+            if (includeRawTelemetryInBackups) {
+                // Issue #1425 signoff #5: "Clean up telemetry first" switch, only when raw
+                // telemetry is on (otherwise backups never contained these samples).
+                Spacer(modifier = Modifier.height(Spacing.small))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .toggleable(
+                            value = cleanUpTelemetryBeforeBackup,
+                            role = Role.Switch,
+                            onValueChange = { enabled ->
+                                cleanUpTelemetryBeforeBackup = enabled
+                                scope.launch { preferencesManager.setCleanUpTelemetryBeforeBackup(enabled) }
+                            },
+                        ),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text(
+                        stringResource(Res.string.telemetry_cleanup_backup_switch_title),
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Switch(checked = cleanUpTelemetryBeforeBackup, onCheckedChange = null)
+                }
+            }
             Spacer(modifier = Modifier.height(Spacing.small))
             OutlinedButton(
                 onClick = {
@@ -1314,6 +1432,10 @@ fun SettingsTab(
                     backupInProgress = true
                     scope.launch {
                         try {
+                            // I7 / signoff #5: Share also runs the pre-backup cleanup first.
+                            if (includeRawTelemetryInBackups && cleanUpTelemetryBeforeBackup) {
+                                cleanupController.runBeforeManualBackup()
+                            }
                             backupManager.shareBackup()
                         } catch (e: Exception) {
                             e.rethrowIfCancellation()

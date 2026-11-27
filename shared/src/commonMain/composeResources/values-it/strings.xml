@@ -1641,6 +1641,44 @@
     <string name="superset_or_add_existing">Oppure aggiungi a una esistente:</string>
     <string name="superset_add_existing">Aggiungi a una esistente:</string>
     <string name="label_amrap">AMRAP</string>
+    <!-- Issue #1425: Pulizia archiviazione telemetria -->
+    <string name="telemetry_cleanup_row_title">Pulizia archiviazione telemetria</string>
+    <string name="telemetry_cleanup_row_subtitle">Rimuove i dati del cavo a riposo registrati prima dell'inizio delle tue serie</string>
+    <string name="telemetry_cleanup_sheet_title">Pulizia archiviazione telemetria</string>
+    <string name="telemetry_cleanup_checking">Verifica in corso…</string>
+    <string name="telemetry_cleanup_checking_progress">%1$d di %2$d serie verificate</string>
+    <string name="telemetry_cleanup_summary_checked_one">1 serie verificata</string>
+    <string name="telemetry_cleanup_summary_checked_other">%1$d serie verificate</string>
+    <string name="telemetry_cleanup_summary_cleanable_one">1 può essere ripulita</string>
+    <string name="telemetry_cleanup_summary_cleanable_other">%1$d possono essere ripulite</string>
+    <string name="telemetry_cleanup_summary_kept_one">1 mantenuta così com'è</string>
+    <string name="telemetry_cleanup_summary_kept_other">%1$d mantenute così come sono</string>
+    <string name="telemetry_cleanup_estimate_db">Circa %1$s MB di spazio sul dispositivo</string>
+    <string name="telemetry_cleanup_estimate_backup">Backup con telemetria grezza</string>
+    <string name="telemetry_cleanup_estimate_backup_value">~%1$s MB più leggeri</string>
+    <string name="telemetry_cleanup_backup_unaffected">I tuoi backup non includono la telemetria grezza e quindi non sono interessati.</string>
+    <string name="telemetry_cleanup_why_kept">Perché alcune serie vengono mantenute</string>
+    <string name="telemetry_cleanup_kept_bodyweight">Le serie a corpo libero a tempo e AMRAP sono mantenute così come sono</string>
+    <string name="telemetry_cleanup_kept_no_onset">Le serie in cui non è stato possibile confermare l'inizio del movimento sono mantenute</string>
+    <string name="telemetry_cleanup_kept_legacy">I formati di dati più vecchi sono mantenuti</string>
+    <string name="telemetry_cleanup_kept_clean">Le serie già pulite vengono lasciate invariate</string>
+    <string name="telemetry_cleanup_safety_note">Le serie con eventi di sicurezza sono mantenute così come sono e ogni evento di sicurezza viene conservato.</string>
+    <string name="telemetry_cleanup_cleaning_progress">Serie %1$d di %2$d · puoi fermarti tra una serie e l'altra</string>
+    <string name="telemetry_cleanup_stop_after_set">Ferma dopo questa serie</string>
+    <string name="telemetry_cleanup_clean_action">Ripulisci</string>
+    <string name="telemetry_cleanup_done_removed_one">1 campione rimosso</string>
+    <string name="telemetry_cleanup_done_removed_other">%1$d campioni rimossi</string>
+    <string name="telemetry_cleanup_done_sets_one">da 1 serie.</string>
+    <string name="telemetry_cleanup_done_sets_other">da %1$d serie.</string>
+    <string name="telemetry_cleanup_done_db">Database: %1$s MB → %2$s MB</string>
+    <string name="telemetry_cleanup_done_reusable">Lo spazio liberato verrà riutilizzato dai nuovi allenamenti.</string>
+    <string name="telemetry_cleanup_done_restart">Lo spazio liberato viene restituito al riavvio dell'app.</string>
+    <string name="telemetry_cleanup_done_noop">Niente da rimuovere — i tuoi dati sono già puliti.</string>
+    <string name="telemetry_cleanup_blocked_workout">Prima termina l'allenamento</string>
+    <string name="telemetry_cleanup_blocked_backup">Attendi la fine del backup o del ripristino</string>
+    <string name="telemetry_cleanup_reassurance">Ripetizioni pesi riepiloghi ed eventi di sicurezza non vengono mai modificati.</string>
+    <string name="telemetry_cleanup_backup_switch_title">Ripulisci prima la telemetria (consigliato)</string>
+    <string name="telemetry_cleanup_failed">La pulizia non è stata completata. Non è stato modificato nulla.</string>
 
     <!-- ==================== Wave 5 AUD-068 Localization ==================== -->
     <string name="recovery_recover_deleted_routines_count">Recupera routine eliminate (%1$d)</string>

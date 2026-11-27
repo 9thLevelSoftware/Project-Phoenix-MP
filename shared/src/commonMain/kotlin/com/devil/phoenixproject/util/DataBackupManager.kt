@@ -161,6 +161,14 @@ interface DataBackupManager {
      *   never a share sheet (issue #1423)
      */
     fun openBackupFolder()
+
+    /**
+     * Mean encoded backup-JSON bytes per raw MetricSample row (issue #1425 I11), or null when
+     * raw telemetry is excluded from backups or [rows] is empty. The base implementation uses
+     * the export's own mapper and `Json`, so the estimate is exactly what the export would
+     * write. Default: no estimate (tvOS/fake managers).
+     */
+    fun averageMetricSampleBackupBytes(rows: List<MetricSample>): Double? = null
 }
 
 /**
@@ -639,7 +647,10 @@ abstract class BaseDataBackupManager(
                 replay.close()
             }
             // A pre-remap backup restores rows that still name archived legacy catalogue ids.
-            if (result.isSuccess) LegacyCatalogueRemapper.healAfterBulkWrite(database, source = "restore")
+            if (result.isSuccess) {
+                LegacyCatalogueRemapper.healAfterBulkWrite(database, source = "restore")
+                onRestoreCommitted()
+            }
             result
         } catch (e: Throwable) {
             if (e is CancellationException) throw e
@@ -3677,7 +3688,18 @@ abstract class BaseDataBackupManager(
         )
     }
 
-    private fun mapMetricToBackup(metric: MetricSample): MetricSampleBackup = MetricSampleBackup(
+    /**
+     * Restore success hook (issue #1425 I8), called at the single import success point. The
+     * telemetry-compaction watermark is device-local and a restored backup can bring back
+     * untrimmed rows, so the watermark must not survive a restore (F7: the next scan simply
+     * trims the restored rows again).
+     */
+    protected open suspend fun onRestoreCommitted() {
+        preferencesManager?.clearTelemetryCompactionWatermark()
+    }
+
+    /** Issue #1425 I11: internal so the compaction backup estimator uses the exact export bytes. */
+    internal fun mapMetricToBackup(metric: MetricSample): MetricSampleBackup = MetricSampleBackup(
         id = metric.id,
         sessionId = metric.sessionId,
         timestamp = metric.timestamp,
@@ -3698,6 +3720,13 @@ abstract class BaseDataBackupManager(
         chestAccYMg = metric.chestAccYMg?.toInt(),
         chestAccZMg = metric.chestAccZMg?.toInt(),
     )
+
+    override fun averageMetricSampleBackupBytes(rows: List<MetricSample>): Double? {
+        if (!includeRawTelemetryInBackups || rows.isEmpty()) return null
+        return rows
+            .map { row -> json.encodeToString(MetricSampleBackup.serializer(), mapMetricToBackup(row)).length.toDouble() }
+            .average()
+    }
 
     private fun mapPolarBeatSampleToBackup(sample: PolarBeatSample): PolarBeatSampleBackup = PolarBeatSampleBackup(
         id = sample.id,

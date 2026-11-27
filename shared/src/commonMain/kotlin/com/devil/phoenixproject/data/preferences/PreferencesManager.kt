@@ -2,6 +2,7 @@ package com.devil.phoenixproject.data.preferences
 
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.ble.BleCompatibilityMode
+import com.devil.phoenixproject.data.maintenance.TelemetryCompactionWatermark
 import com.devil.phoenixproject.data.migration.MigrationManager
 import com.devil.phoenixproject.domain.model.BleCompatibilitySetting
 import com.devil.phoenixproject.domain.model.PhoenixModel
@@ -109,6 +110,21 @@ interface PreferencesManager {
      * while offline. Machine commands always use the LIVE connected model instead.
      */
     suspend fun setLastConnectedModel(model: PhoenixModel)
+
+    // ===== Issue #1425: telemetry compaction (device-local; never exported in backups) =====
+
+    /** Device-local scan watermark (`policyVersion`, `timestamp`, `sessionId`), or null when unset. */
+    fun telemetryCompactionWatermark(): TelemetryCompactionWatermark?
+
+    suspend fun setTelemetryCompactionWatermark(watermark: TelemetryCompactionWatermark)
+
+    /** Cleared on restore success (I8) so restored untrimmed rows are found by the next scan. */
+    suspend fun clearTelemetryCompactionWatermark()
+
+    /** "Clean up telemetry first" switch state for manual backups (default on). */
+    fun cleanUpTelemetryBeforeBackup(): Boolean
+
+    suspend fun setCleanUpTelemetryBeforeBackup(enabled: Boolean)
 }
 
 /**
@@ -182,6 +198,12 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
 
         private const val KEY_EXERCISE_CATALOG_SOURCE = "exercise_catalog_source"
         private const val KEY_LAST_CONNECTED_MODEL = "last_connected_model"
+
+        // Issue #1425: telemetry compaction (device-local; never exported in backups)
+        private const val KEY_TELEMETRY_COMPACTION_POLICY_VERSION = "telemetry_compaction_policy_version"
+        private const val KEY_TELEMETRY_COMPACTION_WATERMARK_TS = "telemetry_compaction_watermark_ts"
+        private const val KEY_TELEMETRY_COMPACTION_WATERMARK_SESSION = "telemetry_compaction_watermark_session"
+        private const val KEY_CLEAN_UP_TELEMETRY_BEFORE_BACKUP = "clean_up_telemetry_before_backup"
     }
 
     private val _preferencesFlow = MutableStateFlow(loadPreferences())
@@ -453,5 +475,35 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
     internal fun setAdultsOnlyPrompted(prompted: Boolean) {
         settings.putBoolean(KEY_ADULTS_ONLY_PROMPTED, prompted)
         updateAndEmit { copy(adultsOnlyPrompted = prompted) }
+    }
+
+    override fun telemetryCompactionWatermark(): TelemetryCompactionWatermark? {
+        val policyVersion = settings.getIntOrNull(KEY_TELEMETRY_COMPACTION_POLICY_VERSION) ?: return null
+        val timestamp = settings.getLongOrNull(KEY_TELEMETRY_COMPACTION_WATERMARK_TS) ?: return null
+        val sessionId = settings.getStringOrNull(KEY_TELEMETRY_COMPACTION_WATERMARK_SESSION) ?: return null
+        return TelemetryCompactionWatermark(
+            policyVersion = policyVersion,
+            timestamp = timestamp,
+            sessionId = sessionId,
+        )
+    }
+
+    override suspend fun setTelemetryCompactionWatermark(watermark: TelemetryCompactionWatermark) {
+        settings.putInt(KEY_TELEMETRY_COMPACTION_POLICY_VERSION, watermark.policyVersion)
+        settings.putLong(KEY_TELEMETRY_COMPACTION_WATERMARK_TS, watermark.timestamp)
+        settings.putString(KEY_TELEMETRY_COMPACTION_WATERMARK_SESSION, watermark.sessionId)
+    }
+
+    override suspend fun clearTelemetryCompactionWatermark() {
+        settings.remove(KEY_TELEMETRY_COMPACTION_POLICY_VERSION)
+        settings.remove(KEY_TELEMETRY_COMPACTION_WATERMARK_TS)
+        settings.remove(KEY_TELEMETRY_COMPACTION_WATERMARK_SESSION)
+    }
+
+    override fun cleanUpTelemetryBeforeBackup(): Boolean =
+        settings.getBoolean(KEY_CLEAN_UP_TELEMETRY_BEFORE_BACKUP, true)
+
+    override suspend fun setCleanUpTelemetryBeforeBackup(enabled: Boolean) {
+        settings.putBoolean(KEY_CLEAN_UP_TELEMETRY_BEFORE_BACKUP, enabled)
     }
 }

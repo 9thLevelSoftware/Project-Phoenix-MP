@@ -4,6 +4,38 @@ import com.devil.phoenixproject.domain.model.SampleStatus
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import kotlin.math.abs
 
+/** Why [CableTelemetryArchivalRetention.planRetention] kept a payload unchanged. */
+enum class RetentionKeepReason {
+    NOT_ROM,
+    EMPTY,
+    TOO_FEW_SAMPLES,
+    INVALID_ORDER_OR_POSITION,
+    TIMESTAMP_OVERFLOW,
+    BASELINE_TOO_SHORT,
+    BASELINE_UNSTABLE,
+    OPENING_DRIFT,
+    NO_CONFIRMED_DEPARTURE,
+    NO_CONTEXT_BOUNDARY,
+    DISCARD_OUTSIDE_BASELINE,
+}
+
+/**
+ * Pure retention outcome for issue #1425 retroactive compaction. [RetentionDecision.Trim]
+ * names the split point only; the kept payload is rebuilt by the caller (or the
+ * [CableTelemetryArchivalRetention.selectForRomCableSet] wrapper) so the decision stays
+ * side-effect-free and fixture-determined.
+ */
+sealed class RetentionDecision {
+    data class Keep(val reason: RetentionKeepReason) : RetentionDecision()
+
+    data class Trim(
+        val firstRetainedIndex: Int,
+        val boundaryTimestamp: Long,
+        val retainedSafetyCount: Int,
+        val discardCount: Int,
+    ) : RetentionDecision()
+}
+
 /** Selects a frozen archival payload without changing live set data or summary inputs. */
 internal object CableTelemetryArchivalRetention {
     /** Provisional minimum excursion from a stationary baseline that qualifies as movement. */
@@ -27,16 +59,44 @@ internal object CableTelemetryArchivalRetention {
         samples: List<WorkoutMetric>,
         romEnabled: Boolean,
     ): List<WorkoutMetric> {
-        if (!romEnabled || samples.isEmpty()) return samples
-        if (samples.size < BASELINE_SAMPLE_COUNT + CONFIRMATION_SAMPLE_COUNT - 1) return samples
-        if (!hasValidOrderedPositions(samples)) return samples
+        return when (val decision = planRetention(samples, romEnabled)) {
+            is RetentionDecision.Keep -> samples
+            is RetentionDecision.Trim -> {
+                // Preserve safety events individually without widening the retained context window.
+                val (retainedSafetySamples, _) = samples.subList(0, decision.firstRetainedIndex).partition {
+                    (it.status and SampleStatus.SAFETY_STATUS_MASK) != 0
+                }
+                retainedSafetySamples + samples.subList(decision.firstRetainedIndex, samples.size)
+            }
+        }
+    }
+
+    /**
+     * Pure decision form of [selectForRomCableSet] (issue #1425). Constants and arithmetic are
+     * unchanged from the original inline implementation; [selectForRomCableSet] is a thin wrapper
+     * that rebuilds the kept list from this decision.
+     */
+    fun planRetention(
+        samples: List<WorkoutMetric>,
+        romEnabled: Boolean,
+    ): RetentionDecision {
+        if (!romEnabled) return RetentionDecision.Keep(RetentionKeepReason.NOT_ROM)
+        if (samples.isEmpty()) return RetentionDecision.Keep(RetentionKeepReason.EMPTY)
+        if (samples.size < BASELINE_SAMPLE_COUNT + CONFIRMATION_SAMPLE_COUNT - 1) {
+            return RetentionDecision.Keep(RetentionKeepReason.TOO_FEW_SAMPLES)
+        }
+        if (!hasValidOrderedPositions(samples)) {
+            return RetentionDecision.Keep(RetentionKeepReason.INVALID_ORDER_OR_POSITION)
+        }
 
         val baselineStartMs = samples.first().timestamp
-        if (baselineStartMs > Long.MAX_VALUE - BASELINE_MIN_DURATION_MS) return samples
+        if (baselineStartMs > Long.MAX_VALUE - BASELINE_MIN_DURATION_MS) {
+            return RetentionDecision.Keep(RetentionKeepReason.TIMESTAMP_OVERFLOW)
+        }
         val durationEndIndex = samples.indexOfFirst {
             it.timestamp >= baselineStartMs + BASELINE_MIN_DURATION_MS
         }
-        if (durationEndIndex < 0) return samples
+        if (durationEndIndex < 0) return RetentionDecision.Keep(RetentionKeepReason.BASELINE_TOO_SHORT)
         val baselineEndIndex = maxOf(BASELINE_SAMPLE_COUNT - 1, durationEndIndex)
         val baselineWindow = samples.take(baselineEndIndex + 1)
 
@@ -47,7 +107,7 @@ internal object CableTelemetryArchivalRetention {
                     abs(metric.positionB - baselineB) > BASELINE_MAX_DEVIATION_MM
             }
         ) {
-            return samples
+            return RetentionDecision.Keep(RetentionKeepReason.BASELINE_UNSTABLE)
         }
 
         // A monotonic opening may already be in motion, even if it has not yet crossed 5 mm.
@@ -55,7 +115,7 @@ internal object CableTelemetryArchivalRetention {
         if (hasMonotonicOpeningDrift(baselineWindow.map { it.positionA }) ||
             hasMonotonicOpeningDrift(baselineWindow.map { it.positionB })
         ) {
-            return samples
+            return RetentionDecision.Keep(RetentionKeepReason.OPENING_DRIFT)
         }
 
         val departureIndex = firstConfirmedDeparture(
@@ -63,12 +123,14 @@ internal object CableTelemetryArchivalRetention {
             baselineA = baselineA,
             baselineB = baselineB,
             firstCandidateIndex = baselineWindow.size,
-        ) ?: return samples
+        ) ?: return RetentionDecision.Keep(RetentionKeepReason.NO_CONFIRMED_DEPARTURE)
         val departureTimestamp = samples[departureIndex].timestamp
-        if (departureTimestamp < Long.MIN_VALUE + PRIOR_CONTEXT_MS) return samples
+        if (departureTimestamp < Long.MIN_VALUE + PRIOR_CONTEXT_MS) {
+            return RetentionDecision.Keep(RetentionKeepReason.TIMESTAMP_OVERFLOW)
+        }
         val contextStartTimestamp = departureTimestamp - PRIOR_CONTEXT_MS
         val lastContextIndex = samples.indexOfLast { it.timestamp <= contextStartTimestamp }
-        if (lastContextIndex < 0) return samples
+        if (lastContextIndex < 0) return RetentionDecision.Keep(RetentionKeepReason.NO_CONTEXT_BOUNDARY)
         val boundaryTimestamp = samples[lastContextIndex].timestamp
         // Retain every sample sharing the boundary timestamp, not only the last duplicate.
         val firstRetainedIndex = samples.indexOfFirst { it.timestamp >= boundaryTimestamp }
@@ -82,9 +144,14 @@ internal object CableTelemetryArchivalRetention {
                     abs(sample.positionB - baselineB) > BASELINE_MAX_DEVIATION_MM
             }
         ) {
-            return samples
+            return RetentionDecision.Keep(RetentionKeepReason.DISCARD_OUTSIDE_BASELINE)
         }
-        return retainedSafetySamples + samples.subList(firstRetainedIndex, samples.size)
+        return RetentionDecision.Trim(
+            firstRetainedIndex = firstRetainedIndex,
+            boundaryTimestamp = boundaryTimestamp,
+            retainedSafetyCount = retainedSafetySamples.size,
+            discardCount = discardedSamples.size,
+        )
     }
 
     private fun hasValidOrderedPositions(samples: List<WorkoutMetric>): Boolean =

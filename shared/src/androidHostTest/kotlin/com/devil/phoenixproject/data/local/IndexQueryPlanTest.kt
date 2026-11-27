@@ -107,6 +107,33 @@ class IndexQueryPlanTest {
         assertFalse(candidates.any { it.startsWith("SCAN CompletedSet") }, "$db: $candidates")
     }
 
+    // ===== Issue #1425 telemetry compaction (T2.10) =====
+
+    @Test
+    fun `telemetry compaction candidates walk the session timestamp index without a sample scan`() =
+        forEachDatabase { db, driver ->
+            val plan = queryPlan(driver, "selectTelemetryCompactionCandidates")
+            assertTrue(plan.any { "idx_workout_session_timestamp" in it }, "$db: $plan")
+            assertFalse(plan.any { it.startsWith("SCAN MetricSample") }, "$db: $plan")
+        }
+
+    @Test
+    fun `telemetry compaction archival read and delete use the metric sample session index`() =
+        forEachDatabase { db, driver ->
+            val read = queryPlan(driver, "selectArchivalMetricsBySession")
+            assertTrue(read.any { "idx_metric_sample_session" in it }, "$db: $read")
+
+            val delete = queryPlan(driver, "deleteIdlePrefixMetrics")
+            assertTrue(delete.any { "idx_metric_sample_session" in it }, "$db: $delete")
+        }
+
+    @Test
+    fun `telemetry compaction first rep start uses the rep metric session index`() =
+        forEachDatabase { db, driver ->
+            val plan = queryPlan(driver, "selectFirstRepStartBySession")
+            assertTrue(plan.any { "idx_rep_metric_session" in it }, "$db: $plan")
+        }
+
     @Test
     fun `migration 69 indexes serve serverId, ECG retention, and ON DELETE SET NULL FK lookups`() = forEachDatabase { db, driver ->
         val sessionByServerId = queryPlan(driver, "selectSessionByServerId")

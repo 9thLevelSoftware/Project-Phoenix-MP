@@ -12,6 +12,8 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import com.devil.phoenixproject.data.ble.HrmBleManager
 import com.devil.phoenixproject.data.ble.HrmCapabilities
+import com.devil.phoenixproject.data.maintenance.TelemetryCompactionService
+import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.repository.AuthRepository
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.OwnershipTransferRepository
@@ -32,6 +34,7 @@ import com.devil.phoenixproject.testutil.FakeDataBackupManager
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.FakeExternalMeasurementRepository
 import com.devil.phoenixproject.testutil.FakePersonalRecordRepository
+import com.devil.phoenixproject.testutil.FakePreferencesManager
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.devil.phoenixproject.testutil.FakeVelocityOneRepMaxRepository
 import com.devil.phoenixproject.testutil.FakeWorkoutRepository
@@ -115,6 +118,8 @@ class ProfileSettingsSeparationUiTest {
             modules(
                 module {
                     single<DataBackupManager> { FakeDataBackupManager() }
+                    single<TelemetryCompactionService> { mockk() }
+                    single<PreferencesManager> { FakePreferencesManager() }
                     single<ExerciseRepository> { exerciseRepo }
                     single<UserProfileRepository> { profileRepo }
                     single { syncTriggerManager }

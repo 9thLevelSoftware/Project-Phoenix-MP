@@ -770,6 +770,12 @@ class MainViewModel(
     val isInWorkoutSession get() = workoutSessionManager.coordinator.isInWorkoutSession
 
     /** Live, synchronous read of [isInWorkoutSession] for the profile-switch guard. */
+    init {
+        // Issue #1425 I3: the telemetry-compaction G0 guard resolves the live session signal
+        // lazily; WorkoutCoordinator is owned here and is not reachable from Koin.
+        com.devil.phoenixproject.data.maintenance.WorkoutSessionGuardBinding.bind(::isInWorkoutSessionNow)
+    }
+
     fun isInWorkoutSessionNow(): Boolean = workoutSessionManager.coordinator.isInWorkoutSessionNow()
     val currentMetric: StateFlow<WorkoutMetric?> get() = workoutSessionManager.coordinator.currentMetric
     val currentHeuristicKgMax: StateFlow<Float> get() = workoutSessionManager.coordinator.currentHeuristicKgMax
