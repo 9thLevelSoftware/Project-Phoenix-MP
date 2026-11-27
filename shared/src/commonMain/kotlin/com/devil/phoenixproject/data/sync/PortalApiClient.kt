@@ -405,6 +405,8 @@ open class PortalApiClient(
             }
         }
         Result.success(Unit)
+    } catch (e: CancellationException) {
+        throw e
     } catch (_: Exception) {
         // Sign-out failure is non-critical — we clear local state regardless
         Result.success(Unit)
@@ -417,45 +419,23 @@ open class PortalApiClient(
      * One `GET /rest/v1/subscriptions` (`select=tier,status`, `status=in.(active,trialing)`).
      * When several rows match, [TIER_PRECEDENCE] picks the tier (INFERNO > FLAME > EMBER).
      * Unknown tier strings are ignored. Success with a null tier means the user has
-     * no active paid subscription. On 401 this returns an auth failure; on any other
-     * HTTP or network error it returns a classified failure so callers can keep the
-     * previously known premium flag and tier together.
+     * no active paid subscription. On 401 (after refresh retry) this returns an auth failure;
+     * on any other HTTP or network error it returns a classified failure so callers can keep
+     * the previously known premium flag and tier together.
      *
      * [SyncManager] uses this for login and foreground refresh. Inferno-only features
      * (50 Hz force-curve telemetry sync) read the tier from the same result.
      */
-    open suspend fun fetchSubscriptionEntitlement(): Result<SubscriptionEntitlement> {
-        val token = tokenStorage.getToken() ?: return Result.failure(
-            PortalApiException("Not authenticated", null, 401),
-        )
-        return try {
-            val response = httpClient.get("${supabaseConfig.url}/rest/v1/subscriptions") {
+    open suspend fun fetchSubscriptionEntitlement(): Result<SubscriptionEntitlement> =
+        authenticatedRequest<List<SubscriptionCheckDto>> { token ->
+            httpClient.get("${supabaseConfig.url}/rest/v1/subscriptions") {
                 header("apikey", supabaseConfig.anonKey)
                 bearerAuth(token)
                 parameter("select", "tier,status")
                 parameter("status", "in.(active,trialing)")
                 header("Accept", "application/json")
             }
-            if (response.status.isSuccess()) {
-                val subscriptions = response.body<List<SubscriptionCheckDto>>()
-                Result.success(subscriptionEntitlement(subscriptions))
-            } else if (response.status.value == 401) {
-                Result.failure(PortalApiException("Unauthorized", null, 401))
-            } else {
-                Result.failure(
-                    PortalApiException(
-                        "Subscription check failed: ${response.status}",
-                        null,
-                        response.status.value,
-                    ),
-                )
-            }
-        } catch (e: Exception) {
-            if (e is CancellationException) throw e
-            val classified = classifyError(e, "Subscription check")
-            Result.failure(classified.toException())
-        }
-    }
+        }.map(::subscriptionEntitlement)
 
     // === Portal Sync Endpoints (Supabase Edge Functions) ===
 
@@ -808,7 +788,20 @@ open class PortalApiClient(
         }
 
         HttpStatusCode.Forbidden -> {
-            Result.failure(PortalApiException("Premium subscription required", null, 403))
+            val errorBody = try {
+                response.body<PortalErrorResponse>()
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                PortalErrorResponse()
+            }
+            val message = errorBody.error.ifBlank { "Premium subscription required" }
+            Result.failure(
+                PortalApiException(
+                    message = message,
+                    statusCode = 403,
+                    errorCode = errorBody.code?.takeIf { it.isNotBlank() },
+                ),
+            )
         }
 
         HttpStatusCode.TooManyRequests -> {

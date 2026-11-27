@@ -6538,9 +6538,7 @@ class ActiveSessionEngine(
         // Power calculations (power = force * velocity, converting units)
         // Force in kg, velocity in mm/s -> W = kg * m/s^2 * m/s = kg * mm/s / 1000 * 9.81
         val concentricPowers = concentricMetrics.map { m ->
-            val force = m.loadA + m.loadB // total load in kg
-            val velocity = maxOf(kotlin.math.abs(m.velocityA), kotlin.math.abs(m.velocityB)) / 1000.0 // m/s
-            (force * velocity * 9.81).toFloat() // watts
+            ((m.loadA * m.velocityA + m.loadB * m.velocityB) / 1000.0 * 9.81).toFloat() // paired-cable signed work (W)
         }
         val peakPowerWatts = concentricPowers.maxOrNull() ?: 0f
         val avgPowerWatts = concentricPowers.takeIf { it.isNotEmpty() }?.average()?.toFloat() ?: 0f

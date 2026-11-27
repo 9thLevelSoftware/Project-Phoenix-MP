@@ -5,6 +5,7 @@ import com.devil.phoenixproject.domain.model.CycleProgress
 import com.devil.phoenixproject.domain.model.CycleProgression
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.TrainingCycle
+import com.devil.phoenixproject.util.OneRepMaxCalculator
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -531,5 +532,109 @@ class PortalPullAdapterTest {
             """{"syncTime":"2026-09-19T00:00:00Z"}""",
         )
         assertTrue(legacy.cycleVersions.isEmpty())
+    }
+
+    // ========== AUD-010: PersonalRecord pull unit/mode/1RM parity ==========
+
+    @Test
+    fun `toPersonalRecordSyncDto preserves MAX_VOLUME weightKg volume 1RM and canonical workoutMode`() {
+        val pr = PullPersonalRecordDto(
+            id = "pr-vol-1",
+            userId = "user-1",
+            exerciseName = "Bench Press",
+            muscleGroup = "Chest",
+            recordType = "MAX_VOLUME",
+            value = 500.0,
+            weightKg = 50.0,
+            reps = 10,
+            workoutPhase = "COMBINED",
+            workoutMode = "TUT_BEAST",
+            achievedAt = "2026-01-01T00:00:00Z",
+            updatedAt = "2026-01-02T00:00:00Z",
+        )
+
+        val result = PortalPullAdapter.toPersonalRecordSyncDto(pr, resolvedExerciseId = "bench-press")
+
+        assertEquals(50f, result.weight)
+        assertEquals(500f, result.volume)
+        assertEquals(OneRepMaxCalculator.estimate(50f, 10), result.oneRepMax)
+        assertEquals("TUT Beast", result.workoutMode)
+    }
+
+    @Test
+    fun `toPersonalRecordSyncDto falls back for legacy MAX_VOLUME missing weightKg and blank workoutMode`() {
+        val legacyVol = PullPersonalRecordDto(
+            id = "pr-vol-legacy",
+            exerciseName = "Squat",
+            recordType = "MAX_VOLUME",
+            value = 500.0,
+            weightKg = null,
+            reps = 10,
+            workoutMode = null,
+            achievedAt = "2026-01-01T00:00:00Z",
+        )
+
+        val result = PortalPullAdapter.toPersonalRecordSyncDto(legacyVol, resolvedExerciseId = "squat")
+
+        assertEquals(50f, result.weight)
+        assertEquals(500f, result.volume)
+        assertEquals(OneRepMaxCalculator.estimate(50f, 10), result.oneRepMax)
+        assertEquals("Old School", result.workoutMode)
+    }
+
+    @Test
+    fun `toPersonalRecordSyncDto computes MAX_WEIGHT volume 1RM and Echo workoutMode`() {
+        val pr = PullPersonalRecordDto(
+            id = "pr-wt-1",
+            exerciseName = "Deadlift",
+            recordType = "MAX_WEIGHT",
+            value = 80.0,
+            weightKg = 80.0,
+            reps = 5,
+            workoutMode = "ECHO",
+            achievedAt = "2026-01-01T00:00:00Z",
+        )
+
+        val result = PortalPullAdapter.toPersonalRecordSyncDto(pr, resolvedExerciseId = "deadlift")
+
+        assertEquals(80f, result.weight)
+        assertEquals(400f, result.volume)
+        assertEquals(OneRepMaxCalculator.estimate(80f, 5), result.oneRepMax)
+        assertEquals("Echo", result.workoutMode)
+    }
+
+    // ========== AUD-061: PullCustomExerciseDto decoding ==========
+
+    @Test
+    fun `pulled customExercises decode ISO and epoch timestamps and map archived tombstones`() {
+        val response = PortalWireJson.decodeFromString(
+            PortalSyncPullResponse.serializer(),
+            """
+            {
+              "syncTime": 1767312000000,
+              "customExercises": [
+                {
+                  "clientId": "custom_1",
+                  "name": "Cable Fly",
+                  "displayName": "Cable Fly",
+                  "muscleGroup": "Chest",
+                  "equipment": "HANDLES",
+                  "defaultCableConfig": "DOUBLE",
+                  "archived": true,
+                  "deletedAt": "2026-01-03T00:00:00Z",
+                  "updatedAt": "2026-01-03T00:00:00Z",
+                  "createdAt": 1767225600000
+                }
+              ]
+            }
+            """.trimIndent(),
+        )
+
+        val dto = PortalPullAdapter.toCustomExerciseSyncDto(response.customExercises.single())
+        assertEquals("custom_1", dto.clientId)
+        assertTrue(dto.archived)
+        assertEquals(1767398400000L, dto.deletedAt)
+        assertEquals(1767398400000L, dto.updatedAt)
+        assertEquals(1767225600000L, dto.createdAt)
     }
 }

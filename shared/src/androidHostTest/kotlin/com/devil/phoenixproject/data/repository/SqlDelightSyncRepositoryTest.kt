@@ -3550,4 +3550,158 @@ class SqlDelightSyncRepositoryTest {
         assertEquals("pr-uuid-active", afterExplicitMeta.uuid)
         assertEquals(125.0, afterExplicitMeta.weight)
     }
+
+    @Test
+    fun `mergePersonalRecords replaces older colliding PR on idx_pr_unique without INSERT OR REPLACE`() = runTest {
+        val queries = database.phoenixDatabaseQueries
+        val localUuid = "11111111-1111-4111-8111-111111111111"
+        val newerServerUuid = "22222222-2222-4222-8222-222222222222"
+        queries.insertPRFromMergeIgnore(
+            exerciseId = "bench-press",
+            exerciseName = "Bench Press",
+            weight = 50.0,
+            reps = 10L,
+            oneRepMax = 66.67,
+            achievedAt = 1_700_000_000_000L,
+            workoutMode = "Old School",
+            prType = PRType.MAX_VOLUME.name,
+            volume = 500.0,
+            phase = WorkoutPhase.COMBINED.name,
+            updatedAt = 1_000L,
+            serverId = localUuid,
+            deletedAt = null,
+            profile_id = "active-profile",
+            cable_count = 2L,
+            uuid = localUuid,
+        )
+        val initialRowId = queries.selectPRIncludingDeleted(
+            "bench-press", "Old School", PRType.MAX_VOLUME.name, WorkoutPhase.COMBINED.name, "active-profile",
+        ).executeAsOne().id
+
+        // Newer non-deleted PR arrives with different achievedAt and uuid on the same idx_pr_unique slot
+        repository.mergePersonalRecords(
+            records = listOf(
+                PersonalRecordSyncDto(
+                    clientId = newerServerUuid,
+                    serverId = newerServerUuid,
+                    exerciseId = "bench-press",
+                    exerciseName = "Bench Press",
+                    weight = 60f,
+                    reps = 10,
+                    oneRepMax = 80f,
+                    achievedAt = 1_700_000_500_000L,
+                    workoutMode = "Old School",
+                    prType = PRType.MAX_VOLUME.name,
+                    phase = WorkoutPhase.COMBINED.name,
+                    volume = 600f,
+                    cableCount = 2,
+                    createdAt = 1_700_000_500_000L,
+                    updatedAt = 2_000L,
+                ),
+            ),
+            profileId = "active-profile",
+        )
+
+        val updated = queries.selectPRIncludingDeleted(
+            "bench-press", "Old School", PRType.MAX_VOLUME.name, WorkoutPhase.COMBINED.name, "active-profile",
+        ).executeAsOne()
+        assertEquals(initialRowId, updated.id, "Row PK must be updated in place, not replaced")
+        assertEquals(60.0, updated.weight)
+        assertEquals(600.0, updated.volume)
+        assertEquals(80.0, updated.oneRepMax)
+        assertEquals(1_700_000_500_000L, updated.achievedAt)
+        assertEquals(2_000L, updated.updatedAt)
+        assertEquals(newerServerUuid, updated.uuid)
+
+        // Older server PR must NOT overwrite newer local PR on the same slot
+        repository.mergePersonalRecords(
+            records = listOf(
+                PersonalRecordSyncDto(
+                    clientId = "33333333-3333-4333-8333-333333333333",
+                    serverId = "33333333-3333-4333-8333-333333333333",
+                    exerciseId = "bench-press",
+                    exerciseName = "Bench Press",
+                    weight = 40f,
+                    reps = 10,
+                    oneRepMax = 53.33f,
+                    achievedAt = 1_699_000_000_000L,
+                    workoutMode = "Old School",
+                    prType = PRType.MAX_VOLUME.name,
+                    phase = WorkoutPhase.COMBINED.name,
+                    volume = 400f,
+                    cableCount = 2,
+                    createdAt = 1_699_000_000_000L,
+                    updatedAt = 1_500L,
+                ),
+            ),
+            profileId = "active-profile",
+        )
+        val afterStale = queries.selectPRIncludingDeleted(
+            "bench-press", "Old School", PRType.MAX_VOLUME.name, WorkoutPhase.COMBINED.name, "active-profile",
+        ).executeAsOne()
+        assertEquals(60.0, afterStale.weight)
+        assertEquals(2_000L, afterStale.updatedAt)
+    }
+
+    @Test
+    fun `mergePortalRoutines falls back to exerciseEquipment for unknown exerciseId filters sentinels and round trips rackBehaviorOverrides`() = runTest {
+        repository.mergePortalRoutines(
+            routines = listOf(
+                PullRoutineDto(
+                    id = "routine-aud041",
+                    userId = "user",
+                    name = "Equipment Fallback Routine",
+                    updatedAt = 1_700_000_000_200L,
+                    exercises = listOf(
+                        PullRoutineExerciseDto(
+                            id = "rex-barbell",
+                            routineId = "routine-aud041",
+                            exerciseId = "unrecognized-catalog-id",
+                            name = "Custom Barbell Row",
+                            muscleGroup = "Back",
+                            exerciseEquipment = "BARBELL",
+                            rackBehaviorOverrides = """{"rack-1":"COUNTERWEIGHT"}""",
+                            orderIndex = 0,
+                            reps = 8,
+                            weight = 40f,
+                        ),
+                        PullRoutineExerciseDto(
+                            id = "rex-bw-sentinel",
+                            routineId = "routine-aud041",
+                            exerciseId = "unrecognized-bw-id",
+                            name = "Pull Up",
+                            muscleGroup = "Back",
+                            exerciseEquipment = "Bodyweight",
+                            orderIndex = 1,
+                            reps = 10,
+                            weight = 0f,
+                        ),
+                        PullRoutineExerciseDto(
+                            id = "rex-cable-sentinel",
+                            routineId = "routine-aud041",
+                            exerciseId = "unrecognized-cable-id",
+                            name = "Lat Pulldown",
+                            muscleGroup = "Back",
+                            exerciseEquipment = "Cable",
+                            orderIndex = 2,
+                            reps = 12,
+                            weight = 35f,
+                        ),
+                    ),
+                ),
+            ),
+            lastSync = 1_700_000_000_100L,
+            profileId = "active-profile",
+        )
+
+        val rows = database.phoenixDatabaseQueries
+            .selectExercisesByRoutine("routine-aud041")
+            .executeAsList()
+            .sortedBy { it.orderIndex }
+
+        assertEquals("BARBELL", rows[0].exerciseEquipment)
+        assertEquals("""{"rack-1":"COUNTERWEIGHT"}""", rows[0].rackBehaviorOverrides)
+        assertEquals("", rows[1].exerciseEquipment)
+        assertEquals("", rows[2].exerciseEquipment)
+    }
 }

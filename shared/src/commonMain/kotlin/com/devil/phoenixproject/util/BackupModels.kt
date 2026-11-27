@@ -179,6 +179,8 @@ data class RoutineBackup(
     val profileId: String? = null, // null for backward compat with pre-profile backups
     val groupId: String? = null, // Routine group assignment (added v3)
     val deletedAt: Long? = null, // Preserve routine tombstones for telemetry FK integrity
+    val updatedAt: Long? = null,
+    val serverId: String? = null,
 )
 
 /**
@@ -267,6 +269,9 @@ data class PersonalRecordBackup(
     val profileId: String? = null, // null for backward compat with pre-profile backups
     val cableCount: Int? = null, // null for backward compat with pre-v0.9.0 backups
     val uuid: String? = null, // null for backward compat with pre-#634 backups
+    val updatedAt: Long? = null,
+    val serverId: String? = null,
+    val deletedAt: Long? = null,
 )
 
 /**

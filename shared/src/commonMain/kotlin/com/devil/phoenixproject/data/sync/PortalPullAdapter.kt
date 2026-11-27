@@ -1,9 +1,11 @@
 package com.devil.phoenixproject.data.sync
 
+import com.devil.phoenixproject.data.repository.normalizeWorkoutModeKey
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.ProfilePreferenceSectionName
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.currentTimeMillis
+import com.devil.phoenixproject.util.OneRepMaxCalculator
 import kotlinx.serialization.json.JsonPrimitive
 
 /**
@@ -310,6 +312,40 @@ object PortalPullAdapter {
         null -> "OldSchool"
     }
 
+    private val CANONICAL_PR_WORKOUT_MODES = setOf(
+        "Old School",
+        "Pump",
+        "TUT",
+        "TUT Beast",
+        "Eccentric Only",
+        "Echo",
+    )
+
+    private fun parseWireTimestampMillis(value: String?): Long? =
+        value?.trim()?.takeIf { it.isNotEmpty() }?.let { raw ->
+            parseIso8601EpochMillis(raw) ?: raw.toLongOrNull()?.takeIf { it >= 0L }
+        }
+
+    fun toCustomExerciseSyncDto(dto: PullCustomExerciseDto): CustomExerciseSyncDto {
+        val now = currentTimeMillis()
+        val updatedAt = parseWireTimestampMillis(dto.updatedAt) ?: now
+        val createdAt = parseWireTimestampMillis(dto.createdAt) ?: updatedAt
+        val deletedAt = parseWireTimestampMillis(dto.deletedAt) ?: if (dto.archived) updatedAt else null
+        return CustomExerciseSyncDto(
+            clientId = dto.clientId,
+            serverId = dto.clientId.takeIf { it.isNotBlank() },
+            name = dto.name,
+            displayName = dto.displayName ?: dto.name,
+            muscleGroup = dto.muscleGroup.ifBlank { "General" },
+            equipment = dto.equipment ?: "",
+            defaultCableConfig = dto.defaultCableConfig.ifBlank { "DOUBLE" },
+            archived = dto.archived || deletedAt != null,
+            deletedAt = deletedAt,
+            createdAt = createdAt,
+            updatedAt = updatedAt,
+        )
+    }
+
     /**
      * Convert a pulled personal record DTO to the legacy PersonalRecordSyncDto
      * used by SyncRepository merge methods.
@@ -322,6 +358,43 @@ object PortalPullAdapter {
     ): PersonalRecordSyncDto {
         val now = currentTimeMillis()
         fun parseTimestamp(value: String?): Long? = parseIso8601EpochMillis(value)
+        val reps = (pr.reps ?: 0).coerceAtLeast(0)
+        val rawValue = pr.value.toFloat().takeIf { it.isFinite() && it >= 0f } ?: 0f
+        val weightKg = pr.weightKg?.toFloat()?.takeIf { it.isFinite() && it >= 0f }
+            ?: if (pr.recordType == "MAX_VOLUME" && reps > 0) {
+                (pr.value / reps).toFloat().takeIf { it.isFinite() && it >= 0f } ?: 0f
+            } else {
+                rawValue
+            }
+        val volume = if (pr.recordType == "MAX_VOLUME") {
+            rawValue
+        } else if (reps > 0) {
+            weightKg * reps
+        } else {
+            0f
+        }
+        val oneRepMax = if (weightKg > 0f && reps > 0) {
+            OneRepMaxCalculator.estimate(weightKg, reps)
+        } else {
+            0f
+        }
+        val workoutMode = pr.workoutMode
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?.let { rawMode ->
+                val candidate = if (ProgramMode.fromSyncString(rawMode) != null) {
+                    portalModeToMobileMode(rawMode)
+                } else {
+                    rawMode
+                }
+                val normalized = normalizeWorkoutModeKey(candidate)
+                if (normalized in CANONICAL_PR_WORKOUT_MODES) {
+                    normalized
+                } else {
+                    normalizeWorkoutModeKey(portalModeToMobileMode(rawMode))
+                }
+            }
+            ?: "Old School"
         return PersonalRecordSyncDto(
             clientId = pr.id,
             serverId = pr.id,
@@ -336,14 +409,14 @@ object PortalPullAdapter {
                 ?: pr.exerciseId?.takeIf { it.isNotBlank() }
                 ?: pr.id,
             exerciseName = pr.exerciseName,
-            weight = pr.value.toFloat(),
-            reps = pr.reps ?: 0,
-            oneRepMax = 0f, // Portal doesn't send computed 1RM
+            weight = weightKg,
+            reps = reps,
+            oneRepMax = oneRepMax,
             achievedAt = parseTimestamp(pr.achievedAt) ?: now,
-            workoutMode = pr.recordType,
+            workoutMode = workoutMode,
             prType = pr.recordType,
             phase = pr.workoutPhase ?: "COMBINED",
-            volume = pr.value.toFloat(),
+            volume = volume,
             deletedAt = parseTimestamp(pr.deletedAt),
             createdAt = parseTimestamp(pr.achievedAt) ?: now,
             updatedAt = parseTimestamp(pr.updatedAt) ?: now,

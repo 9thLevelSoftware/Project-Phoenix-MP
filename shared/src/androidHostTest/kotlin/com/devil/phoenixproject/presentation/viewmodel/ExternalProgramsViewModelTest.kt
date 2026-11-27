@@ -87,5 +87,6 @@ class ExternalProgramsViewModelTest {
         measurementRepository = FakeExternalMeasurementRepository(),
         templateRepository = FakeExternalExerciseTemplateRepository(),
         cursorRepository = FakeIntegrationSyncCursorRepository(),
+        playgroundEnabled = true,
     )
 }

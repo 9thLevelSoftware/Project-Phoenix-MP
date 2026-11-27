@@ -80,7 +80,7 @@ class MigrationManager(
     private val log = Logger.withTag("MigrationManager")
 
     companion object {
-        private const val KEY_PROFILE_PREFERENCES_MIGRATION_COMPLETE =
+        internal const val KEY_PROFILE_PREFERENCES_MIGRATION_COMPLETE =
             "profile_preferences_legacy_migration_complete_v1"
     }
 
@@ -311,12 +311,23 @@ class MigrationManager(
 
         val routines = queries.selectAllRoutinesSync().executeAsList()
         val routineExercises = queries.selectAllRoutineExercisesSync().executeAsList()
-        val resolutionContext = buildRoutineNameResolutionContext(routines, routineExercises)
+        val routineExercisesByRoutineId = routineExercises.groupBy { it.routineId }
+        val contextsByProfile = routines
+            .groupBy { it.profile_id.ifBlank { "default" } }
+            .mapValues { (_, profileRoutines) ->
+                val profileRoutineExercises = profileRoutines.flatMap { routine ->
+                    routineExercisesByRoutineId[routine.id].orEmpty()
+                }
+                buildRoutineNameResolutionContext(profileRoutines, profileRoutineExercises)
+            }
+        val emptyResolutionContext = buildRoutineNameResolutionContext(emptyList(), emptyList())
 
         var updatedNameRows = 0
         var updatedIdRows = 0
         database.transaction {
             sessions.forEach { session ->
+                val sessionProfileId = session.profile_id.ifBlank { "default" }
+                val resolutionContext = contextsByProfile[sessionProfileId] ?: emptyResolutionContext
                 // Backfill routineId for sessions that have a routineSessionId but no routineId
                 if (session.routineId == null && session.routineSessionId != null) {
                     val resolvedRoutineId = resolveRoutineIdForSession(session, resolutionContext)

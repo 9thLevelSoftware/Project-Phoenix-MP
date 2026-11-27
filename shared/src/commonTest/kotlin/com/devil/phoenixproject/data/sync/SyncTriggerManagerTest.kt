@@ -1,6 +1,16 @@
 package com.devil.phoenixproject.data.sync
 
+import com.devil.phoenixproject.data.integration.HealthBodyWeightReader
+import com.devil.phoenixproject.data.integration.HealthBodyWeightSample
+import com.devil.phoenixproject.data.integration.HealthBodyWeightSyncManager
+import com.devil.phoenixproject.data.migration.RequiredMigrationGate
+import com.devil.phoenixproject.data.migration.RequiredMigrationState
+import com.devil.phoenixproject.domain.model.ConnectionStatus
+import com.devil.phoenixproject.domain.model.IntegrationProvider
+import com.devil.phoenixproject.testutil.FakeExternalActivityRepository
+import com.devil.phoenixproject.testutil.FakeExternalMeasurementRepository
 import com.devil.phoenixproject.testutil.FakeSyncTriggerTarget
+import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -9,6 +19,8 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.test.runTest
 
 /**
@@ -323,5 +335,52 @@ class SyncTriggerManagerTest {
 
         assertEquals(1, f.target.refreshPremiumCallCount, "Premium refresh should have been attempted")
         assertEquals(0, f.retry.retryCount, "CancellationException must not be recorded as a sync failure")
+    }
+
+    @Test
+    fun onAppForegroundRethrowsCancellationExceptionFromHealthBodyWeightSync() = runTest {
+        val target = FakeSyncTriggerTarget()
+        val activities = FakeExternalActivityRepository().apply {
+            updateIntegrationStatus(
+                provider = IntegrationProvider.GOOGLE_HEALTH,
+                status = ConnectionStatus.CONNECTED,
+                profileId = "profile-1",
+            )
+        }
+        val profiles = FakeUserProfileRepository().apply {
+            setActiveProfileForTest(id = "profile-1")
+        }
+        val migrationGate = object : RequiredMigrationGate {
+            override val requiredMigrationState: StateFlow<RequiredMigrationState> =
+                MutableStateFlow(RequiredMigrationState.Ready)
+            override suspend fun awaitRequiredMigrations() = Unit
+        }
+        val cancellingReader = object : HealthBodyWeightReader {
+            override suspend fun isAvailable(): Boolean = true
+            override suspend fun hasBodyWeightReadPermission(): Boolean = true
+            override suspend fun readLatestScaleBodyWeight(): Result<HealthBodyWeightSample?> {
+                throw CancellationException("health sync cancelled")
+            }
+        }
+        val healthManager = HealthBodyWeightSyncManager(
+            bodyWeightReader = cancellingReader,
+            externalActivityRepository = activities,
+            externalMeasurementRepository = FakeExternalMeasurementRepository(),
+            requiredMigrationGate = migrationGate,
+            userProfileRepository = profiles,
+            providerResolver = { IntegrationProvider.GOOGLE_HEALTH },
+        )
+        val trigger = SyncTriggerManager(
+            syncManager = target,
+            isOnline = { true },
+            healthBodyWeightSyncManager = healthManager,
+            nowMillis = { 1_000_000L },
+        )
+
+        assertFailsWith<CancellationException> { trigger.onAppForeground() }
+
+        assertEquals(0, target.refreshPremiumCallCount, "Cancellation during health sync must stop before premium refresh")
+        assertEquals(0, target.syncCallCount, "Cancellation during health sync must stop before portal sync")
+        assertEquals(0, trigger.retryState.value.retryCount)
     }
 }

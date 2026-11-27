@@ -78,6 +78,7 @@ class SqlDelightRepMetricRepository(private val db: PhoenixDatabase) : RepMetric
                     rangeOfMotionMm = row.rangeOfMotionMm.toFloat(),
                     peakPowerWatts = row.peakPowerWatts.toFloat(),
                     avgPowerWatts = row.avgPowerWatts.toFloat(),
+                    metricUnitVersion = row.metric_unit_version.toInt(),
                 )
             }
         } catch (e: Exception) {
@@ -103,6 +104,7 @@ class SqlDelightRepMetricRepository(private val db: PhoenixDatabase) : RepMetric
                     avgPowerWatts = row.avgPowerWatts.toFloat(),
                     concentricDurationMs = row.concentricDurationMs,
                     eccentricDurationMs = row.eccentricDurationMs,
+                    metricUnitVersion = row.metric_unit_version.toInt(),
                 )
             }
         } catch (e: Exception) {

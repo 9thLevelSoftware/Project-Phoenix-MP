@@ -18,6 +18,7 @@ import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.usecase.EchoAchievedLoadResolver
 import com.devil.phoenixproject.util.KmpUtils.currentTimeMillis
+import com.devil.phoenixproject.util.METRIC_UNIT_VERSION_MM
 import com.devil.phoenixproject.util.OneRepMaxCalculator
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.MapSerializer
@@ -576,6 +577,12 @@ object PortalSyncAdapter {
 
         return summaries.map { rep ->
             val bio = biomechanicsMap[rep.repNumber]
+            val canEmitPairedPower = rep.metricUnitVersion >= METRIC_UNIT_VERSION_MM &&
+                rep.avgPowerWatts.isFinite() &&
+                rep.peakPowerWatts.isFinite()
+            val powerMethod = if (canEmitPairedPower) "PAIRED_CABLE_WORK_V1" else "UNAVAILABLE"
+            val powerWatts = if (canEmitPairedPower) rep.avgPowerWatts else null
+            val peakPowerWatts = if (canEmitPairedPower) rep.peakPowerWatts else null
 
             PortalRepSummaryDto(
                 id = generateUUID(),
@@ -592,8 +599,10 @@ object PortalSyncAdapter {
                 peakForceN = PortalMappings.loadKgToNewtons(
                     rep.peakForceA + rep.peakForceB,
                 ),
-                // Power: already in Watts
-                powerWatts = rep.avgPowerWatts,
+                // Power: already in Watts (gated on PAIRED_CABLE_WORK_V1 contract)
+                powerWatts = powerWatts,
+                peakPowerWatts = peakPowerWatts,
+                powerMethod = powerMethod,
                 // ROM: already in mm
                 romMm = rep.rangeOfMotionMm,
                 // TUT: concentric + eccentric duration
@@ -819,12 +828,13 @@ object PortalSyncAdapter {
                     },
                 warmupSets = ex.warmupSets.takeIf { it.isNotEmpty() }
                     ?.let { Json.encodeToString(it) },
-                rackBehaviorOverrides = ex.rackBehaviorOverrides.takeIf { it.isNotEmpty() }
-                    ?.let { overrides ->
-                        Json.encodeToString(
-                            overrides.mapValues { (_, v) -> v.name },
-                        )
-                    },
+                rackBehaviorOverrides = if (ex.rackBehaviorOverrides.isEmpty()) {
+                    "{}"
+                } else {
+                    Json.encodeToString(
+                        ex.rackBehaviorOverrides.mapValues { (_, v) -> v.name },
+                    )
+                },
                 dropSetEnabled = ex.dropSetEnabled,
                 dropSetMinWeightKg = ex.dropSetMinWeightKg,
                 durationSeconds = durationSecondsWire(ex.duration, ex.durationSyncKnown),

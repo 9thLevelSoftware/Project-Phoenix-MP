@@ -142,9 +142,10 @@ class SqlDelightSyncRepository(
                 muscleGroup = row.muscleGroup,
                 equipment = row.equipment,
                 defaultCableConfig = row.defaultCableConfig,
+                archived = row.archived != 0L || row.deletedAt != null,
                 deletedAt = row.deletedAt,
                 createdAt = row.created,
-                updatedAt = row.updatedAt ?: row.created,
+                updatedAt = row.updatedAt ?: row.deletedAt ?: row.created,
             )
         }
     }
@@ -426,53 +427,58 @@ class SqlDelightSyncRepository(
     override suspend fun mergeCustomExercises(exercises: List<CustomExerciseSyncDto>) {
         withContext(Dispatchers.IO) {
             db.transaction {
-                exercises.forEach { dto ->
-                    // Never replace an Exercise FK parent. Seed missing rows, then update
-                    // only sync-representable fields while preserving user metadata and children.
-                    queries.insertExerciseIfAbsent(
-                        id = dto.clientId,
-                        name = dto.name,
-                        displayName = dto.displayName, // Carry display name from sync (#404)
-                        description = null,
-                        created = dto.createdAt,
-                        muscleGroup = dto.muscleGroup,
-                        muscleGroups = dto.muscleGroup,
-                        muscles = null,
-                        equipment = dto.equipment,
-                        movement = null,
-                        sidedness = null,
-                        grip = null,
-                        gripWidth = null,
-                        minRepRange = null,
-                        popularity = 0.0,
-                        archived = 0L,
-                        isFavorite = 0L,
-                        isCustom = 1L,
-                        timesPerformed = 0L,
-                        lastPerformed = null,
-                        aliases = null,
-                        defaultCableConfig = dto.defaultCableConfig,
-                        one_rep_max_kg = null,
-                        mvtOverrideMs = null,
-                        // Custom exercises carry no explicit flag (#635); derive from equipment.
-                        isBodyweight = null,
-                    )
-
-                    queries.updateCustomExerciseFromSync(
-                        name = dto.name,
-                        displayName = dto.displayName,
-                        muscleGroup = dto.muscleGroup,
-                        muscleGroups = dto.muscleGroup,
-                        equipment = dto.equipment,
-                        defaultCableConfig = dto.defaultCableConfig,
-                        updatedAt = dto.updatedAt,
-                        serverId = dto.serverId,
-                        deletedAt = dto.deletedAt,
-                        id = dto.clientId,
-                    )
-                }
+                mergeCustomExercisesInTransaction(exercises)
             }
             Logger.d { "Merged ${exercises.size} custom exercises from server" }
+        }
+    }
+
+    private fun mergeCustomExercisesInTransaction(exercises: List<CustomExerciseSyncDto>) {
+        exercises.forEach { dto ->
+            // Never replace an Exercise FK parent. Seed missing rows, then update
+            // only sync-representable fields while preserving user metadata and children.
+            queries.insertExerciseIfAbsent(
+                id = dto.clientId,
+                name = dto.name,
+                displayName = dto.displayName, // Carry display name from sync (#404)
+                description = null,
+                created = dto.createdAt,
+                muscleGroup = dto.muscleGroup,
+                muscleGroups = dto.muscleGroup,
+                muscles = null,
+                equipment = dto.equipment,
+                movement = null,
+                sidedness = null,
+                grip = null,
+                gripWidth = null,
+                minRepRange = null,
+                popularity = 0.0,
+                archived = 0L,
+                isFavorite = 0L,
+                isCustom = 1L,
+                timesPerformed = 0L,
+                lastPerformed = null,
+                aliases = null,
+                defaultCableConfig = dto.defaultCableConfig,
+                one_rep_max_kg = null,
+                mvtOverrideMs = null,
+                // Custom exercises carry no explicit flag (#635); derive from equipment.
+                isBodyweight = null,
+            )
+
+            val resolvedDeletedAt = dto.deletedAt ?: if (dto.archived) dto.updatedAt else null
+            queries.updateCustomExerciseFromSync(
+                name = dto.name,
+                displayName = dto.displayName,
+                muscleGroup = dto.muscleGroup,
+                muscleGroups = dto.muscleGroup,
+                equipment = dto.equipment,
+                defaultCableConfig = dto.defaultCableConfig,
+                updatedAt = dto.updatedAt,
+                serverId = dto.serverId,
+                deletedAt = resolvedDeletedAt,
+                id = dto.clientId,
+            )
         }
     }
 
@@ -602,7 +608,12 @@ class SqlDelightSyncRepository(
                         PortalSyncAdapter.validCycleServerVersion(raw)
                             ?.let { kotlin.time.Instant.parse(it).toEpochMilliseconds() }
                     }
-                    if (existing != null && (incomingUpdatedAt == null || incomingUpdatedAt < existing.updatedAt)) {
+                    if (existing != null && (
+                        incomingUpdatedAt == null ||
+                            incomingUpdatedAt < existing.updatedAt ||
+                            (existing.deletedAt != null && incomingUpdatedAt <= existing.updatedAt)
+                        )
+                    ) {
                         continue
                     }
                     if (portalCycle.status == "active") {
@@ -645,15 +656,29 @@ class SqlDelightSyncRepository(
                     if (existing != null) {
                         val mergedTemplateId = portalCycle.templateId ?: existing.template_id
                         val mergedWeekNumber = portalCycle.currentWeek?.toLong() ?: existing.week_number
-                        queries.updateTrainingCycle(
-                            name = portalCycle.name,
-                            description = portalCycle.description,
-                            is_active = existing.is_active, // Preserve; single-active enforcement runs at end
-                            template_id = mergedTemplateId,
-                            week_number = mergedWeekNumber,
-                            updatedAt = requireNotNull(incomingUpdatedAt),
-                            id = portalCycle.id,
-                        )
+                        val serverUpdatedAtMs = requireNotNull(incomingUpdatedAt)
+                        if (existing.deletedAt != null && serverUpdatedAtMs > existing.updatedAt) {
+                            queries.updateTrainingCycleClearingDelete(
+                                name = portalCycle.name,
+                                description = portalCycle.description,
+                                is_active = existing.is_active, // Preserve; single-active enforcement runs at end
+                                template_id = mergedTemplateId,
+                                week_number = mergedWeekNumber,
+                                updatedAt = serverUpdatedAtMs,
+                                id = portalCycle.id,
+                            )
+                            queries.clearCyclePendingDeletion(cycleId = portalCycle.id)
+                        } else {
+                            queries.updateTrainingCycle(
+                                name = portalCycle.name,
+                                description = portalCycle.description,
+                                is_active = existing.is_active, // Preserve; single-active enforcement runs at end
+                                template_id = mergedTemplateId,
+                                week_number = mergedWeekNumber,
+                                updatedAt = serverUpdatedAtMs,
+                                id = portalCycle.id,
+                            )
+                        }
                     }
                     // Remember the portal's version verbatim (sent back as baseUpdatedAt).
                     // Keep the stored base when an older portal omits updatedAt or sends
@@ -1020,6 +1045,7 @@ class SqlDelightSyncRepository(
                             rangeOfMotionMm = row.rangeOfMotionMm.toFloat(),
                             peakPowerWatts = row.peakPowerWatts.toFloat(),
                             avgPowerWatts = row.avgPowerWatts.toFloat(),
+                            metricUnitVersion = row.metric_unit_version.toInt(),
                         )
                     }
                 }
@@ -1959,6 +1985,25 @@ class SqlDelightSyncRepository(
                 cable_count = dto.cableCount?.toLong(),
                 uuid = prUuid,
             )
+            if (dto.deletedAt == null) {
+                queries.updatePulledPersonalRecordOnSlotCollision(
+                    exerciseName = dto.exerciseName,
+                    weight = dto.weight.toDouble(),
+                    reps = dto.reps.toLong(),
+                    oneRepMax = dto.oneRepMax.toDouble(),
+                    achievedAt = dto.achievedAt,
+                    volume = effectiveVolume.toDouble(),
+                    cableCount = dto.cableCount?.toLong(),
+                    serverId = dto.serverId,
+                    updatedAt = dto.updatedAt,
+                    uuid = prUuid,
+                    exerciseId = dto.exerciseId,
+                    workoutMode = dto.workoutMode,
+                    prType = dto.prType,
+                    phase = dto.phase,
+                    profileId = profileId,
+                )
+            }
             // A newer active row can restore a record; an older active row cannot
             // clear a tombstone, and an equal-time tombstone wins deterministically.
             queries.applyPulledPersonalRecordTombstoneState(
@@ -2018,12 +2063,16 @@ class SqlDelightSyncRepository(
         sessionUpdatedAtById: Map<String, Long>,
         pushWatermark: Long,
         pulledProvenance: Map<String, Collection<String>>,
+        customExercises: List<CustomExerciseSyncDto>,
     ) {
         withContext(Dispatchers.IO) {
             // Use a single outer transaction that wraps all entity merges.
             // SQLDelight handles nested transactions via savepoints, so if any inner
             // operation throws, the entire outer transaction rolls back.
             db.transaction {
+                if (customExercises.isNotEmpty()) {
+                    mergeCustomExercisesInTransaction(customExercises)
+                }
                 // PR 11: the pulled rows' account provenance commits (or rolls back) with
                 // the rows themselves, so a crash can never leave pulled rows without the
                 // evidence that they belong to [ownerUserId] (codex #859).
@@ -2158,8 +2207,11 @@ class SqlDelightSyncRepository(
                         PortalSyncAdapter.validCycleServerVersion(raw)
                             ?.let { kotlin.time.Instant.parse(it).toEpochMilliseconds() }
                     }
-                    if (existingCycle != null &&
-                        (incomingUpdatedAt == null || incomingUpdatedAt < existingCycle.updatedAt)
+                    if (existingCycle != null && (
+                        incomingUpdatedAt == null ||
+                            incomingUpdatedAt < existingCycle.updatedAt ||
+                            (existingCycle.deletedAt != null && incomingUpdatedAt <= existingCycle.updatedAt)
+                        )
                     ) {
                         continue
                     }
@@ -2201,15 +2253,29 @@ class SqlDelightSyncRepository(
                     if (existingCycle != null) {
                         val mergedTemplateId = portalCycle.templateId ?: existingCycle.template_id
                         val mergedWeekNumber = portalCycle.currentWeek?.toLong() ?: existingCycle.week_number
-                        queries.updateTrainingCycle(
-                            name = portalCycle.name,
-                            description = portalCycle.description,
-                            is_active = existingCycle.is_active, // Preserve; single-active enforcement runs at end
-                            template_id = mergedTemplateId,
-                            week_number = mergedWeekNumber,
-                            updatedAt = requireNotNull(incomingUpdatedAt),
-                            id = portalCycle.id,
-                        )
+                        val serverUpdatedAtMs = requireNotNull(incomingUpdatedAt)
+                        if (existingCycle.deletedAt != null && serverUpdatedAtMs > existingCycle.updatedAt) {
+                            queries.updateTrainingCycleClearingDelete(
+                                name = portalCycle.name,
+                                description = portalCycle.description,
+                                is_active = existingCycle.is_active, // Preserve; single-active enforcement runs at end
+                                template_id = mergedTemplateId,
+                                week_number = mergedWeekNumber,
+                                updatedAt = serverUpdatedAtMs,
+                                id = portalCycle.id,
+                            )
+                            queries.clearCyclePendingDeletion(cycleId = portalCycle.id)
+                        } else {
+                            queries.updateTrainingCycle(
+                                name = portalCycle.name,
+                                description = portalCycle.description,
+                                is_active = existingCycle.is_active, // Preserve; single-active enforcement runs at end
+                                template_id = mergedTemplateId,
+                                week_number = mergedWeekNumber,
+                                updatedAt = serverUpdatedAtMs,
+                                id = portalCycle.id,
+                            )
+                        }
                     }
                     // Remember the portal's version verbatim (sent back as baseUpdatedAt).
                     // Keep the stored base when an older portal omits updatedAt or sends
@@ -3533,7 +3599,11 @@ class SqlDelightSyncRepository(
             // per-exercise toggle is honored directly. Equipment stays real catalog
             // metadata (the old "Bodyweight"/"Cable" sentinel corrupted classification
             // because reconstructed snapshot Exercises derived isBodyweight from it).
-            val resolvedEquipment = catalogExercise?.equipment ?: ""
+            val resolvedEquipment = catalogExercise?.equipment
+                ?: exercise.exerciseEquipment?.takeUnless {
+                    it.equals("Bodyweight", ignoreCase = true) || it.equals("Cable", ignoreCase = true)
+                }
+                ?: ""
 
             val local = localExercisesById[RoutineIdentity.canonicalize(exercise.id)]
             val resolvedSupersetId = exercise.supersetId?.let { resolvedSupersetIdByIncoming[it] ?: it }

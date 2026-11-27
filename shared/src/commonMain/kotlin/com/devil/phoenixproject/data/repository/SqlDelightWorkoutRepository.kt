@@ -1558,7 +1558,11 @@ class SqlDelightWorkoutRepository(
 
     override suspend fun moveRoutineToProfile(routineId: String, targetProfileId: String) {
         withContext(Dispatchers.IO) {
-            queries.adoptRoutineProfile(profileId = targetProfileId, id = routineId)
+            db.transaction {
+                queries.adoptRoutineProfile(profileId = targetProfileId, id = routineId)
+                queries.clearCrossProfileRoutineGroupOnMove(targetProfileId = targetProfileId, routineId = routineId)
+                queries.clearCrossProfileCycleDayRoutineLinks(targetProfileId = targetProfileId, routineId = routineId)
+            }
             Logger.d { "Moved routine $routineId to profile $targetProfileId" }
         }
         // Issue #1162: the target profile may already hold another spelling of this identity.

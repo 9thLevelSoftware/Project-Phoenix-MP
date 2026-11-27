@@ -363,6 +363,13 @@ internal fun buildProfilePreferencePushOutcomes(
         if (key !in ledger) return@forEach
         responseCounts[key] = responseCounts.getOrElse(key) { 0 } + 1
         if (rejection.reason !in PROFILE_PREFERENCE_REJECTION_REASONS) return@forEach
+        if (rejection.reason == "UNSUPPORTED_SECTION") {
+            Logger.w("SyncManager") {
+                "Profile preference section=${rejection.section} profile=${rejection.localProfileId} " +
+                    "rejected with UNSUPPORTED_SECTION; keeping local data dirty"
+            }
+            return@forEach
+        }
         if (rejection.reason != "REVISION_CONFLICT") return@forEach
         val canonicalDto = rejection.canonicalSection ?: return@forEach
         val canonical = PortalPullAdapter.toCanonicalProfilePreferenceSection(canonicalDto)
@@ -503,6 +510,7 @@ class SyncManager(
      */
 
     private val syncMutex = Mutex()
+    private val unsupportedPreferenceGenerations = mutableMapOf<ProfilePreferenceSectionKey, Long>()
     private val _syncState = MutableStateFlow<SyncState>(SyncState.Idle)
     override val syncState: StateFlow<SyncState> = _syncState.asStateFlow()
 
@@ -648,6 +656,7 @@ class SyncManager(
                 tokenStorage.currentUser.value?.id?.let { tokenStorage.setOwnershipConflict(it, null) }
                 tokenStorage.clearAuth()
                 tokenStorage.emitLogoutEvent()
+                unsupportedPreferenceGenerations.clear()
                 // A mismatch the signed-out account never answered must not pause the next sign-in.
                 pendingAccountMismatch.take()
                 _syncState.value = SyncState.NotAuthenticated
@@ -989,6 +998,7 @@ class SyncManager(
             // already-running sync can complete after this reset, restore a non-zero checkpoint,
             // and make the queued "full" pull a delta pull.
             Logger.i("SyncManager") { "Forcing full resync - resetting every profile's pull cursor to 0" }
+            unsupportedPreferenceGenerations.clear()
             tokenStorage.currentUser.value?.id?.let { userId -> tokenStorage.resetAllPullCursors(userId) }
             syncLocked()
         }
@@ -1499,6 +1509,7 @@ class SyncManager(
             if (pullResult.isSuccess) {
                 runCatching { rePushRejectedSessions(userId, profile.id, pushOutcome, rejections.sessions) }
                     .onFailure { error ->
+                        if (error is CancellationException) throw error
                         Logger.w("SyncManager") {
                             "LWW re-push threw; rejected rows stay pending for the next sync: ${error.message}"
                         }
@@ -2678,8 +2689,35 @@ class SyncManager(
             prs = personalRecordDtos,
             includeSingletons = true,
         )
+        val needsPreSessionCustomExercises = deliverableCustomExercises.isNotEmpty() &&
+            sessionBatches.isNotEmpty() &&
+            (sessionBatches.size > 1 || !PushPlanner.fits(combinedFinal))
+        val preSessionCustomRequests = if (needsPreSessionCustomExercises) {
+            PushPlanner.planTailRequests(
+                envelope = emptyEnvelope,
+                routines = emptyList(),
+                deletedRoutineIds = emptyList(),
+                cycles = emptyList(),
+                personalRecords = emptyList(),
+                customExercises = deliverableCustomExercises,
+                assessments = emptyList(),
+                badges = emptyList(),
+                externalActivities = emptyList(),
+                rpgAttributes = null,
+                gamificationStats = null,
+                allProfiles = null,
+                onSkip = onSkip,
+            ).filter { it.customExercises.isNotEmpty() }
+        } else {
+            emptyList()
+        }
         val requests: List<PortalSyncPayload> = if (PushPlanner.fits(combinedFinal)) {
-            sessionBatches.dropLast(1).map(::sessionBatchPayload) + combinedFinal
+            val finalRequest = if (needsPreSessionCustomExercises) {
+                combinedFinal.copy(customExercises = emptyList())
+            } else {
+                combinedFinal
+            }
+            preSessionCustomRequests + sessionBatches.dropLast(1).map(::sessionBatchPayload) + finalRequest
         } else {
             val prsAlreadyOnSessionBatches = if (personalRecordDtos.size <= PR_FULL_LIST_PER_BATCH) {
                 sessionBatches.isNotEmpty()
@@ -2692,7 +2730,7 @@ class SyncManager(
                 deletedRoutineIds = deletedRoutineIds,
                 cycles = cycleDtos,
                 personalRecords = if (prsAlreadyOnSessionBatches) emptyList() else personalRecordDtos,
-                customExercises = deliverableCustomExercises,
+                customExercises = if (needsPreSessionCustomExercises) emptyList() else deliverableCustomExercises,
                 assessments = assessmentDtos,
                 badges = badgeDtos,
                 externalActivities = externalActivityDtos,
@@ -2701,7 +2739,7 @@ class SyncManager(
                 allProfiles = sendableProfileDtos,
                 onSkip = onSkip,
             )
-            sessionBatches.map(::sessionBatchPayload) + tails
+            preSessionCustomRequests + sessionBatches.map(::sessionBatchPayload) + tails
         }
         // Issue #634 (Layer 2): the planner can still emit one entity twice inside
         // a single request. Reconcile the assembled requests — identical
@@ -3712,11 +3750,14 @@ class SyncManager(
         deferred.forEach { section ->
             Logger.i("SyncManager") { profilePreferenceMetadataDeferredLogLine(section.key) }
         }
+        val supported = eligible.filter { section ->
+            unsupportedPreferenceGenerations[section.key] != section.localGeneration
+        }
         val prepared = isolateProfilePreferenceFailure(
             ProfilePreferenceLocalFailureStage.MUTATION_MAPPING,
             safeFailureLogger,
         ) {
-            eligible.map(PortalSyncAdapter::toPortalProfilePreferenceMutation)
+            supported.map(PortalSyncAdapter::toPortalProfilePreferenceMutation)
         } ?: return
         if (prepared.isEmpty()) return
 
@@ -3749,6 +3790,20 @@ class SyncManager(
                     "Backend did not acknowledge profile preference support"
                 }
                 return
+            }
+            response.canonicalProfilePreferenceSections.forEach { dto ->
+                responseKey(dto.localProfileId, dto.section)?.let { key ->
+                    unsupportedPreferenceGenerations.remove(key)
+                }
+            }
+            response.profilePreferenceRejections.forEach { rejection ->
+                if (rejection.reason == "UNSUPPORTED_SECTION") {
+                    val key = responseKey(rejection.localProfileId, rejection.section)
+                    val sentGeneration = key?.let { chunk.ledger[it] }
+                    if (key != null && sentGeneration != null) {
+                        unsupportedPreferenceGenerations[key] = sentGeneration
+                    }
+                }
             }
             val outcomes = isolateProfilePreferenceFailure(
                 ProfilePreferenceLocalFailureStage.RESPONSE_MAPPING,
@@ -4068,14 +4123,14 @@ class SyncManager(
                 pullResponse.workoutDeletions.size +
                 pullResponse.ownershipEvents.size +
                 pullResponse.deletedRoutineIds.size +
-                pullResponse.deletedCycleIds.size
+                pullResponse.deletedCycleIds.size +
+                pullResponse.customExercises.size
             totalEntitiesFetched += pageEntityCount
 
-            // A page with no entities mobile decodes but hasMore=true is legitimate: e.g. a
-            // page holding only customExercises (paged last by the server, not decoded
-            // here). Keep following its cursor. The missing/blank/repeated-cursor guards
-            // and MAX_PAGES bound the loop; each fails the pull, so neither lastSync nor the
-            // delta-pull marker advances over pages that were never fetched.
+            // A page with no entities mobile decodes but hasMore=true is legitimate; keep
+            // following its cursor. The missing/blank/repeated-cursor guards and MAX_PAGES
+            // bound the loop; each fails the pull, so neither lastSync nor the delta-pull
+            // marker advances over pages that were never fetched.
             if (pageEntityCount == 0 && pullResponse.hasMore) {
                 Logger.d("SyncManager") {
                     "Pull page $pagesProcessed has no decoded entities but hasMore=true; following cursor"
@@ -4228,6 +4283,7 @@ class SyncManager(
             }
         }
         if (plan.valid.isEmpty()) return
+        plan.valid.forEach { section -> unsupportedPreferenceGenerations.remove(section.key) }
 
         val report = isolateProfilePreferenceFailure(
             ProfilePreferenceLocalFailureStage.PULL_APPLY,
@@ -4285,6 +4341,7 @@ class SyncManager(
             types.CYCLE to pullResponse.cycles.map { it.id },
             types.PERSONAL_RECORD to pullResponse.personalRecords.map { it.id },
             types.EARNED_BADGE to pullResponse.badges.map { it.badgeId },
+            types.CUSTOM_EXERCISE to pullResponse.customExercises.mapNotNull { it.clientId.takeIf(String::isNotBlank) },
         ).filterValues { it.isNotEmpty() }
     }
 
@@ -4429,6 +4486,10 @@ class SyncManager(
             }
             .toMap()
 
+        val pulledCustomExercises = pullResponse.customExercises
+            .filter { it.clientId.isNotBlank() }
+            .map(PortalPullAdapter::toCustomExerciseSyncDto)
+
         // 3. Apply durable deletions before live session projections in one repository
         // transaction. The repository selects LWW or legacy insertion from the timestamp map.
         try {
@@ -4448,6 +4509,7 @@ class SyncManager(
                 sessionNotes = sessionNotesMap,
                 sessionUpdatedAtById = sessionUpdatedAtById,
                 pulledProvenance = pulledProvenance(pullResponse, mobileSessions),
+                customExercises = pulledCustomExercises,
             )
             // PR 11: every row this merge committed came from this portal account. Record
             // that provenance for any pull (including a pull-only retry, which does not
@@ -4482,6 +4544,8 @@ class SyncManager(
                     "${pullResponse.badges.size} badges, ${prDtos.size} PRs, " +
                     "${sessionNotesMap.size} session notes"
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Logger.e(e) {
                 "Ordinary pull merge failed; the pull cursor will not advance and earlier per-repository " +
@@ -4832,8 +4896,8 @@ internal object PushPlanner {
 
     /**
      * Packs non-session entities into requests after the session batches, in dependency
-     * order: routines, deleted-routine ids, cycles, PRs, then custom exercises (catalog
-     * rows first), assessments, badges and external activities. Each is upserted on its
+     * order: custom exercises (catalog rows first), routines, deleted-routine ids, cycles,
+     * PRs, assessments, badges and external activities. Each is upserted on its
      * own by mobile-sync-push, so none has to travel with another. The truly singular
      * fields — [rpgAttributes], [gamificationStats] and [allProfiles] — stay together on
      * the last request (merged into the last packed request when it fits there, else sent
@@ -4903,11 +4967,11 @@ internal object PushPlanner {
                 currentBytes += itemBytes
             }
         }
+        pack(customExercises, "custom exercise", curCustom, { it.clientId }) { envelope.copy(customExercises = listOf(it)) }
         pack(routines, "routine", curRoutines, { it.id }) { envelope.copy(routines = listOf(it)) }
         pack(deletedRoutineIds, "deleted routine", curDeleted, { it }) { envelope.copy(deletedRoutineIds = listOf(it)) }
         pack(cycles, "cycle", curCycles, { it.id }) { envelope.copy(cycles = listOf(it)) }
         pack(personalRecords, "personal record", curPrs, { it.id.orEmpty() }) { envelope.copy(personalRecords = listOf(it)) }
-        pack(customExercises, "custom exercise", curCustom, { it.clientId }) { envelope.copy(customExercises = listOf(it)) }
         pack(assessments, "assessment", curAssessments, { it.id }) { envelope.copy(assessments = listOf(it)) }
         pack(badges, "badge", curBadges, { it.badgeId }) { envelope.copy(badges = listOf(it)) }
         pack(externalActivities, "external activity", curExternal, { it.id }) { envelope.copy(externalActivities = listOf(it)) }

@@ -1,9 +1,21 @@
 package com.devil.phoenixproject.data.sync
 
+import com.russhwolf.settings.MapSettings
+import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.respond
+import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.headersOf
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 
 /**
  * Supplementary tests that fill gaps in the existing ErrorClassificationTest.kt:
@@ -154,5 +166,72 @@ class ErrorClassificationExtendedTest {
         val result = classifyError(PortalApiException("rate limited", null, 429), "Sync")
         assertEquals(SyncErrorCategory.TRANSIENT, result.category)
         assertTrue(result.isRetryable)
+    }
+
+    // ==================== HTTP 403 Body Parsing (AUD-063) ====================
+
+    private fun authenticatedClient(engine: MockEngine): PortalApiClient {
+        val storage = PortalTokenStorage(MapSettings()).apply {
+            saveGoTrueAuth(
+                GoTrueAuthResponse(
+                    accessToken = "token",
+                    tokenType = "bearer",
+                    expiresIn = 3600,
+                    expiresAt = 4_102_444_800L,
+                    refreshToken = "refresh",
+                    user = GoTrueUser(id = "user-a", email = "user@example.com"),
+                ),
+            )
+        }
+        return PortalApiClient(
+            SupabaseConfig("https://fake.supabase.co", "anon"),
+            storage,
+            httpClientEngine = engine,
+        )
+    }
+
+    @Test
+    fun http403JsonErrorMessageAndCodePropagate() = runTest {
+        withContext(Dispatchers.Default) {
+            val engine = MockEngine {
+                respond(
+                    content = """{"status":"error","error":"Provider rejected the API key","code":"provider_auth_failed"}""",
+                    status = HttpStatusCode.Forbidden,
+                    headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
+                )
+            }
+
+            val result = authenticatedClient(engine).callIntegrationSync(
+                IntegrationSyncRequest(provider = "hevy", action = "sync"),
+            )
+
+            assertTrue(result.isFailure)
+            val exception = assertIs<PortalApiException>(result.exceptionOrNull())
+            assertEquals(403, exception.statusCode)
+            assertEquals("Provider rejected the API key", exception.message)
+            assertEquals("provider_auth_failed", exception.errorCode)
+        }
+    }
+
+    @Test
+    fun http403EmptyBodyFallsBackToPremiumRequired() = runTest {
+        withContext(Dispatchers.Default) {
+            val engine = MockEngine {
+                respond(
+                    content = "",
+                    status = HttpStatusCode.Forbidden,
+                )
+            }
+
+            val result = authenticatedClient(engine).callIntegrationSync(
+                IntegrationSyncRequest(provider = "hevy", action = "sync"),
+            )
+
+            assertTrue(result.isFailure)
+            val exception = assertIs<PortalApiException>(result.exceptionOrNull())
+            assertEquals(403, exception.statusCode)
+            assertEquals("Premium subscription required", exception.message)
+            assertNull(exception.errorCode)
+        }
     }
 }

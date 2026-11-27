@@ -542,6 +542,7 @@ interface SyncRepository {
         pushWatermark: Long = 0L,
         /** PR 11: `entity type -> ids` pulled from [ownerUserId], recorded in the same transaction. */
         pulledProvenance: Map<String, Collection<String>> = emptyMap(),
+        customExercises: List<CustomExerciseSyncDto> = emptyList(),
     )
 
     /**

@@ -8,6 +8,7 @@ import com.devil.phoenixproject.testutil.createTestDatabase
 import kotlinx.coroutines.test.runTest
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import org.junit.Test
 
 /** Real SQLDelight storage of the portal cycle version that is sent back as baseUpdatedAt. */
@@ -106,5 +107,81 @@ class CycleServerVersionSyncTest {
         val repo = SqlDelightSyncRepository(db, FakeUserProfileRepository())
 
         assertNull(pushedBase(repo))
+    }
+
+    @Test
+    fun serverWinningEditClearsLocalDeleteAndPendingDeletionOnBothMergePaths() = runTest {
+        val db = createTestDatabase()
+        val queries = db.phoenixDatabaseQueries
+        queries.insertProfile("default", "Default", 0L, 1L, 0L)
+        queries.linkProfileToSupabase("user-1", 1L, "default")
+        val cycleRepo = SqlDelightTrainingCycleRepository(db)
+        val syncRepo = SqlDelightSyncRepository(db, FakeUserProfileRepository())
+
+        // Create and soft-delete c1 at t=100
+        cycleRepo.saveCycle(TrainingCycle.create(id = cycleId, name = "Local Name", profileId = "default"))
+        queries.softDeleteTrainingCycle(deletedAt = 100L, updatedAt = 100L, id = cycleId)
+        queries.markCycleDeletionPending(
+            profileId = "default",
+            accountId = "user-1",
+            deletedAt = 100L,
+            cycleId = cycleId,
+        )
+
+        // Tie timestamp (t=100) must NOT clear local delete
+        val tieIso = kotlin.time.Instant.fromEpochMilliseconds(100L).toString()
+        syncRepo.mergeAllPullData(
+            ownerUserId = "user-1",
+            sessions = emptyList(),
+            routines = emptyList(),
+            cycles = listOf(PullTrainingCycleDto(id = cycleId, name = "Tie Edit", updatedAt = tieIso)),
+            badges = emptyList(),
+            gamificationStats = null,
+            personalRecords = emptyList(),
+            lastSync = 0L,
+            profileId = "default",
+        )
+        assertEquals(100L, queries.selectTrainingCycleById(cycleId).executeAsOne().deletedAt)
+        assertEquals(1, queries.selectPendingCycleDeletions("user-1", "default").executeAsList().size)
+
+        // Newer server edit (t=200) via mergeAllPullData must clear deletedAt and pending deletion
+        val newerIso = kotlin.time.Instant.fromEpochMilliseconds(200L).toString()
+        syncRepo.mergeAllPullData(
+            ownerUserId = "user-1",
+            sessions = emptyList(),
+            routines = emptyList(),
+            cycles = listOf(PullTrainingCycleDto(id = cycleId, name = "Portal Edit", updatedAt = newerIso)),
+            badges = emptyList(),
+            gamificationStats = null,
+            personalRecords = emptyList(),
+            lastSync = 0L,
+            profileId = "default",
+        )
+        val restored = queries.selectTrainingCycleById(cycleId).executeAsOne()
+        assertNull(restored.deletedAt)
+        assertEquals("Portal Edit", restored.name)
+        assertEquals(listOf(cycleId), queries.selectAllTrainingCycles("default").executeAsList().map { it.id })
+        assertTrue(queries.selectPendingCycleDeletions("user-1", "default").executeAsList().isEmpty())
+        assertTrue(queries.selectDirtyCycleStates("default").executeAsList().isEmpty())
+
+        // Also verify standalone mergePortalCycles clears local delete & pending deletion
+        queries.softDeleteTrainingCycle(deletedAt = 300L, updatedAt = 300L, id = cycleId)
+        queries.markCycleDeletionPending(
+            profileId = "default",
+            accountId = "user-1",
+            deletedAt = 300L,
+            cycleId = cycleId,
+        )
+        val t400Iso = kotlin.time.Instant.fromEpochMilliseconds(400L).toString()
+        syncRepo.mergePortalCycles(
+            cycles = listOf(PullTrainingCycleDto(id = cycleId, name = "Portal Standalone Edit", updatedAt = t400Iso)),
+            profileId = "default",
+        )
+        val restoredStandalone = queries.selectTrainingCycleById(cycleId).executeAsOne()
+        assertNull(restoredStandalone.deletedAt)
+        assertEquals("Portal Standalone Edit", restoredStandalone.name)
+        assertEquals(listOf(cycleId), queries.selectAllTrainingCycles("default").executeAsList().map { it.id })
+        assertTrue(queries.selectPendingCycleDeletions("user-1", "default").executeAsList().isEmpty())
+        assertTrue(queries.selectDirtyCycleStates("default").executeAsList().isEmpty())
     }
 }

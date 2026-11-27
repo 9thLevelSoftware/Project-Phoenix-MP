@@ -58,6 +58,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.devil.phoenixproject.data.integration.EXTERNAL_NON_ACTIVITY_INTEGRATIONS_ENABLED
+import com.devil.phoenixproject.data.integration.EXTERNAL_PLAYGROUND_ENABLED
 import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.repository.ActiveProfileContext
 import com.devil.phoenixproject.data.repository.UserProfileRepository
@@ -134,43 +136,45 @@ fun ExternalIntegrationHubScreen(
                     onClick = onNavigateToActivities,
                 )
             }
-            item {
-                val routinesLabel = if (uiState.externalRoutines.size == 1) {
-                    stringResource(Res.string.routine_count_one)
-                } else {
-                    stringResource(Res.string.routine_count_other, uiState.externalRoutines.size)
+            if (EXTERNAL_NON_ACTIVITY_INTEGRATIONS_ENABLED) {
+                item {
+                    val routinesLabel = if (uiState.externalRoutines.size == 1) {
+                        stringResource(Res.string.routine_count_one)
+                    } else {
+                        stringResource(Res.string.routine_count_other, uiState.externalRoutines.size)
+                    }
+                    val foldersLabel = if (uiState.externalRoutineFolders.size == 1) {
+                        stringResource(Res.string.folder_count_one)
+                    } else {
+                        stringResource(Res.string.folder_count_other, uiState.externalRoutineFolders.size)
+                    }
+                    HubCard(
+                        title = stringResource(Res.string.external_hevy_routines),
+                        subtitle = stringResource(Res.string.external_routines_folders_summary, routinesLabel, foldersLabel),
+                        icon = Icons.Default.FitnessCenter,
+                        onClick = onNavigateToRoutines,
+                    )
                 }
-                val foldersLabel = if (uiState.externalRoutineFolders.size == 1) {
-                    stringResource(Res.string.folder_count_one)
-                } else {
-                    stringResource(Res.string.folder_count_other, uiState.externalRoutineFolders.size)
+                item {
+                    HubCard(
+                        title = stringResource(Res.string.external_liftosaur_programs),
+                        subtitle = stringResource(
+                            Res.string.external_programs_stats_summary,
+                            uiState.externalPrograms.size,
+                            uiState.externalProgramStatsByProgramId.size,
+                        ),
+                        icon = Icons.Default.Code,
+                        onClick = onNavigateToPrograms,
+                    )
                 }
-                HubCard(
-                    title = stringResource(Res.string.external_hevy_routines),
-                    subtitle = stringResource(Res.string.external_routines_folders_summary, routinesLabel, foldersLabel),
-                    icon = Icons.Default.FitnessCenter,
-                    onClick = onNavigateToRoutines,
-                )
-            }
-            item {
-                HubCard(
-                    title = stringResource(Res.string.external_liftosaur_programs),
-                    subtitle = stringResource(
-                        Res.string.external_programs_stats_summary,
-                        uiState.externalPrograms.size,
-                        uiState.externalProgramStatsByProgramId.size,
-                    ),
-                    icon = Icons.Default.Code,
-                    onClick = onNavigateToPrograms,
-                )
-            }
-            item {
-                HubCard(
-                    title = stringResource(Res.string.external_measurements),
-                    subtitle = stringResource(Res.string.external_hevy_measurements_summary, uiState.externalMeasurements.size),
-                    icon = Icons.Default.Scale,
-                    onClick = onNavigateToMeasurements,
-                )
+                item {
+                    HubCard(
+                        title = stringResource(Res.string.external_measurements),
+                        subtitle = stringResource(Res.string.external_hevy_measurements_summary, uiState.externalMeasurements.size),
+                        icon = Icons.Default.Scale,
+                        onClick = onNavigateToMeasurements,
+                    )
+                }
             }
         }
     }
@@ -536,29 +540,31 @@ fun ExternalProgramDetailScreen(
                         )
                     }
                 }
-                Spacer(Modifier.height(Spacing.small))
-                OutlinedButton(
-                    onClick = { onNavigateToPlayground(program.provider, program.externalId) },
-                    enabled = !program.scriptText.isNullOrBlank(),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 48.dp),
-                ) {
-                    Icon(Icons.Default.Science, contentDescription = null)
-                    Spacer(Modifier.size(Spacing.small))
-                    Text(stringResource(Res.string.external_preview_playground))
-                }
-                Spacer(Modifier.height(Spacing.small))
-                Surface(
-                    color = MaterialTheme.colorScheme.secondaryContainer,
-                    shape = MaterialTheme.shapes.small,
-                ) {
-                    Text(
-                        stringResource(Res.string.external_playground_disclaimer),
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(Spacing.small),
-                        color = MaterialTheme.colorScheme.onSecondaryContainer,
-                    )
+                if (EXTERNAL_PLAYGROUND_ENABLED) {
+                    Spacer(Modifier.height(Spacing.small))
+                    OutlinedButton(
+                        onClick = { onNavigateToPlayground(program.provider, program.externalId) },
+                        enabled = !program.scriptText.isNullOrBlank(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp),
+                    ) {
+                        Icon(Icons.Default.Science, contentDescription = null)
+                        Spacer(Modifier.size(Spacing.small))
+                        Text(stringResource(Res.string.external_preview_playground))
+                    }
+                    Spacer(Modifier.height(Spacing.small))
+                    Surface(
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        shape = MaterialTheme.shapes.small,
+                    ) {
+                        Text(
+                            stringResource(Res.string.external_playground_disclaimer),
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(Spacing.small),
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        )
+                    }
                 }
             }
             item {

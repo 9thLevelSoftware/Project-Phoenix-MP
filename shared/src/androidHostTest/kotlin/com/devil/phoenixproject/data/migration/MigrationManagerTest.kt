@@ -14,13 +14,24 @@ import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.testutil.createTestDatabase
 import com.devil.phoenixproject.testutil.createTestDriver
 import com.devil.phoenixproject.testutil.seedExercise
+import com.devil.phoenixproject.util.BackupContent
+import com.devil.phoenixproject.util.BackupData
+import com.devil.phoenixproject.util.BackupJsonWriter
+import com.devil.phoenixproject.util.BaseDataBackupManager
+import com.devil.phoenixproject.util.ImportResult
 import com.devil.phoenixproject.util.OneRepMaxCalculator
+import com.devil.phoenixproject.util.WorkoutSessionBackup
 import com.russhwolf.settings.MapSettings
+import java.io.File
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import org.junit.Before
 import org.junit.Test
 
@@ -1074,6 +1085,197 @@ class MigrationManagerTest {
             2,
             queries.selectAllRecords(profileId = "profile-b").executeAsList().count { it.exerciseId == "deadlift" },
         )
+    }
+
+    @Test
+    fun `restoreAfterInitialMigration_reArmsAppliedDataRepairs`() = runTest {
+        val queries = database.phoenixDatabaseQueries
+        database.seedExercise("bench", "Bench Press")
+        val settings = MapSettings()
+        val preferencesManager = SettingsPreferencesManager(settings)
+        val initialManager = createMigrationManager(database, settings = settings)
+        initialManager.runMigrationsNow()
+
+        val expectedRepairKeys = listOf(
+            "fabricated-routine-session-ids-v1",
+            "workout-mode-keys-v1",
+            "legacy-workout-routine-names-v1",
+            "epoch-zero-session-starts-v1",
+            "personal-record-history-v1",
+        )
+        expectedRepairKeys.forEach { key ->
+            assertNotNull(queries.selectAppliedDataRepair(key).executeAsOneOrNull(), "Expected $key to be recorded")
+        }
+        val syncRepairKey = "legacy-sync-generations-v1:acct-1"
+        queries.insertAppliedDataRepair(syncRepairKey, 1_700_000_000_000L)
+        assertTrue(settings.getBoolean(MigrationManager.KEY_PROFILE_PREFERENCES_MIGRATION_COMPLETE, false))
+
+        val profilePrefsRepo = SqlDelightProfilePreferencesRepository(database)
+        val safetyStore = SettingsProfileLocalSafetyStore(settings)
+        val profileRepo = SqlDelightUserProfileRepository(
+            database = database,
+            profilePreferencesRepository = profilePrefsRepo,
+            profileLocalSafetyStore = safetyStore,
+            gamificationRepository = SqlDelightGamificationRepository(database),
+        )
+        val backupDir = kotlin.io.path.createTempDirectory("aud034-restore").toFile()
+        val backupManager = object : BaseDataBackupManager(
+            database = database,
+            profilePreferencesRepository = profilePrefsRepo,
+            userProfileRepository = profileRepo,
+            preferencesManager = preferencesManager,
+        ) {
+            override fun createBackupWriter(): BackupJsonWriter =
+                BackupJsonWriter(File.createTempFile("aud034-", ".json", backupDir).absolutePath)
+            override suspend fun finalizeExport(tempFilePath: String): Result<String> = Result.success(tempFilePath)
+            override suspend fun importFromFile(filePath: String): Result<ImportResult> = error("unused")
+            override suspend fun shareBackup() = Unit
+            override fun getSessionBackupDirectory(): String = backupDir.absolutePath
+            override fun listBackupFileSizes(): List<Long> = emptyList()
+            override fun pruneOldBackups(keepCount: Int) = Unit
+            override fun openBackupFolder() = Unit
+        }
+
+        val legacyBackup = BackupData(
+            version = 1,
+            exportedAt = "2026-01-01T00:00:00Z",
+            appVersion = "0.9.0",
+            data = BackupContent(
+                workoutSessions = listOf(
+                    WorkoutSessionBackup(
+                        id = "restored-legacy-session",
+                        timestamp = 1_700_000_000_000L,
+                        mode = "OldSchool",
+                        targetReps = 10,
+                        weightPerCableKg = 40f,
+                        progressionKg = 0f,
+                        duration = 30_000L,
+                        totalReps = 10,
+                        warmupReps = 0,
+                        workingReps = 10,
+                        isJustLift = false,
+                        stopAtTop = false,
+                        exerciseId = "bench",
+                        exerciseName = "Bench Press",
+                        routineSessionId = "legacy_session_restored-legacy-session",
+                        routineName = "Imported Strength Training Session",
+                        routineId = null,
+                    ),
+                ),
+            ),
+        )
+        val json = Json { encodeDefaults = true }
+        val importResult = backupManager.importFromJson(json.encodeToString(legacyBackup)).getOrThrow()
+        assertEquals(1, importResult.sessionsImported)
+
+        expectedRepairKeys.forEach { key ->
+            assertNull(queries.selectAppliedDataRepair(key).executeAsOneOrNull(), "Restore must clear $key")
+        }
+        assertNotNull(
+            queries.selectAppliedDataRepair(syncRepairKey).executeAsOneOrNull(),
+            "Restore must preserve sync generation repair ledger keys",
+        )
+        assertFalse(
+            settings.getBoolean(MigrationManager.KEY_PROFILE_PREFERENCES_MIGRATION_COMPLETE, false),
+            "Legacy restore lacking profilePreferences must clear profile-preferences migration marker",
+        )
+
+        val relaunchedManager = createMigrationManager(database, settings = settings)
+        relaunchedManager.runMigrationsNow()
+
+        val repaired = queries.selectSessionById("restored-legacy-session").executeAsOne()
+        assertEquals("Old School", repaired.mode)
+        assertNull(repaired.routineSessionId)
+        assertNull(repaired.routineName)
+        expectedRepairKeys.forEach { key ->
+            assertNotNull(queries.selectAppliedDataRepair(key).executeAsOneOrNull(), "Re-run must re-record $key")
+        }
+        assertTrue(settings.getBoolean(MigrationManager.KEY_PROFILE_PREFERENCES_MIGRATION_COMPLETE, false))
+        backupDir.deleteRecursively()
+    }
+
+    @Test
+    fun `backfillAndBackupExport_isolateProfiles_andPreserveCleanPortalOriginGenerations`() = runTest {
+        val queries = database.phoenixDatabaseQueries
+        insertProfile("profile-b", "Profile B", isActive = false)
+        queries.insertRoutine(
+            id = "routine-b",
+            name = "B Push",
+            description = "",
+            createdAt = 1_700_000_000_000L,
+            lastUsed = null,
+            useCount = 0L,
+            profile_id = "profile-b",
+            groupId = null,
+            deletedAt = null,
+        )
+        insertMinimalRoutineExercise(
+            id = "re-b-bench",
+            routineId = "routine-b",
+            exerciseName = "Bench Press",
+            exerciseId = "bench",
+        )
+
+        insertMinimalSession(
+            id = "session-default-isolated",
+            routineSessionId = null,
+            routineName = "Bench Press",
+            exerciseId = "bench",
+            exerciseName = "Bench Press",
+            mode = "OldSchool",
+            profileId = "default",
+        )
+        queries.restoreSessionSyncMarkers(
+            portalOrigin = 1L,
+            updatedAt = 1_700_000_000_000L,
+            acknowledged = 1L,
+            id = "session-default-isolated",
+        )
+
+        insertMinimalSession(
+            id = "session-b-portal",
+            routineSessionId = "rs-b-portal",
+            routineName = "Bench Press",
+            exerciseId = "bench",
+            exerciseName = "Bench Press",
+            mode = "OldSchool",
+            profileId = "profile-b",
+        )
+        queries.restoreSessionSyncMarkers(
+            portalOrigin = 1L,
+            updatedAt = 1_700_000_000_000L,
+            acknowledged = 1L,
+            id = "session-b-portal",
+        )
+
+        insertMinimalSession(
+            id = "session-b-local",
+            routineSessionId = "rs-b-local",
+            routineName = "Bench Press",
+            exerciseId = "bench",
+            exerciseName = "Bench Press",
+            mode = "OldSchool",
+            profileId = "profile-b",
+        )
+
+        migrationManager.runMigrationsNow()
+
+        val defaultSession = queries.selectSessionById("session-default-isolated").executeAsOne()
+        assertNull(defaultSession.routineName, "Profile B routine must not leak into default profile session")
+        assertEquals("Old School", defaultSession.mode)
+        assertEquals(0L, defaultSession.local_sync_generation, "portalOrigin=1 row must stay clean")
+
+        val bPortalSession = queries.selectSessionById("session-b-portal").executeAsOne()
+        assertEquals("B Push", bPortalSession.routineName)
+        assertEquals("routine-b", bPortalSession.routineId)
+        assertEquals("Old School", bPortalSession.mode)
+        assertEquals(0L, bPortalSession.local_sync_generation, "portalOrigin=1 row must not bump local_sync_generation")
+
+        val bLocalSession = queries.selectSessionById("session-b-local").executeAsOne()
+        assertEquals("B Push", bLocalSession.routineName)
+        assertEquals("routine-b", bLocalSession.routineId)
+        assertEquals("Old School", bLocalSession.mode)
+        assertTrue(bLocalSession.local_sync_generation > 0L, "portalOrigin=0 row must remain dirty for push")
     }
 
     // -- Helper --

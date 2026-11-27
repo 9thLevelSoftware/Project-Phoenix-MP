@@ -7,14 +7,18 @@ import com.devil.phoenixproject.domain.model.CycleProgression
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.RackItemBehavior
 import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.RepMetricData
+import com.devil.phoenixproject.domain.model.RepMetricSummary
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.Superset
 import com.devil.phoenixproject.domain.model.SupersetColors
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.util.METRIC_UNIT_VERSION_LEGACY
+import com.devil.phoenixproject.util.METRIC_UNIT_VERSION_MM
 import com.devil.phoenixproject.util.OneRepMaxCalculator
 import kotlin.math.abs
 import kotlin.test.Test
@@ -365,7 +369,94 @@ class PortalSyncAdapterTest {
 
         val repSummary = result[0].exercises[0].sets[0].repSummaries[0]
         assertFloatEquals(250f, repSummary.powerWatts!!)
+        assertFloatEquals(375f, repSummary.peakPowerWatts!!)
+        assertEquals("PAIRED_CABLE_WORK_V1", repSummary.powerMethod)
         assertFloatEquals(400f, repSummary.romMm!!)
+    }
+
+    @Test
+    fun `rep summary emits PAIRED_CABLE_WORK_V1 for v2 paired cable work and UNAVAILABLE with null watts for legacy v1 or non-finite`() {
+        // Asymmetric cable paired-work calculation: (loadA * velA + loadB * velB) / 1000 * 9.81
+        val loadA = 40f
+        val velA = 600f
+        val loadB = 10f
+        val velB = 200f
+        val pairedAvgPower = (((loadA * velA + loadB * velB) / 1000.0) * 9.81).toFloat()
+        val pairedPeakPower = pairedAvgPower * 1.25f
+
+        val v2Rep = RepMetricSummary(
+            repNumber = 1,
+            peakForceA = loadA,
+            peakForceB = loadB,
+            avgForceConcentricA = loadA,
+            avgForceConcentricB = loadB,
+            peakVelocity = velA,
+            avgVelocityConcentric = velA,
+            rangeOfMotionMm = 350f,
+            peakPowerWatts = pairedPeakPower,
+            avgPowerWatts = pairedAvgPower,
+            concentricDurationMs = 800L,
+            eccentricDurationMs = 1_000L,
+            metricUnitVersion = METRIC_UNIT_VERSION_MM,
+        )
+        val v1LegacyRep = v2Rep.copy(
+            repNumber = 2,
+            metricUnitVersion = METRIC_UNIT_VERSION_LEGACY,
+        )
+        val nanRep = v2Rep.copy(
+            repNumber = 3,
+            avgPowerWatts = Float.NaN,
+            metricUnitVersion = METRIC_UNIT_VERSION_MM,
+        )
+
+        val swr = PortalSyncAdapter.SessionWithReps(
+            session = WorkoutSession(
+                id = "sess-power",
+                timestamp = 1700000000000L,
+                mode = "OldSchool",
+                reps = 3,
+                weightPerCableKg = 25f,
+                totalReps = 3,
+                exerciseName = "Cable Press",
+            ),
+            repSummaries = listOf(v2Rep, v1LegacyRep, nanRep),
+        )
+
+        val repSummaries = PortalSyncAdapter.toPortalWorkoutSessions(listOf(swr), "user-1")
+            .single().exercises.single().sets.single().repSummaries
+
+        assertEquals(3, repSummaries.size)
+        assertEquals("PAIRED_CABLE_WORK_V1", repSummaries[0].powerMethod)
+        assertFloatEquals(pairedAvgPower, repSummaries[0].powerWatts!!)
+        assertFloatEquals(pairedPeakPower, repSummaries[0].peakPowerWatts!!)
+        assertTrue(repSummaries[0].powerWatts!!.isFinite() && repSummaries[0].peakPowerWatts!!.isFinite())
+
+        assertEquals("UNAVAILABLE", repSummaries[1].powerMethod)
+        assertNull(repSummaries[1].powerWatts)
+        assertNull(repSummaries[1].peakPowerWatts)
+
+        assertEquals("UNAVAILABLE", repSummaries[2].powerMethod)
+        assertNull(repSummaries[2].powerWatts)
+        assertNull(repSummaries[2].peakPowerWatts)
+    }
+
+    @Test
+    fun `toPortalRoutine serializes empty rackBehaviorOverrides as empty json object string`() {
+        val cleared = makeRoutineExercise(id = "ex-cleared")
+        val populated = makeRoutineExercise(id = "ex-populated").copy(
+            rackBehaviorOverrides = mapOf("rack-1" to RackItemBehavior.COUNTERWEIGHT),
+        )
+        val routine = makeRoutine(id = "r-rack", exercises = listOf(cleared, populated))
+
+        val dto = PortalSyncAdapter.toPortalRoutine(routine, "user-1")
+        val encoded = portalPayloadJson.encodeToString(PortalRoutineSyncDto.serializer(), dto)
+        val jsonExercises = portalPayloadJson.parseToJsonElement(encoded).jsonObject["exercises"]!!.jsonArray
+
+        assertEquals("{}", (jsonExercises[0].jsonObject["rackBehaviorOverrides"] as JsonPrimitive).content)
+        assertEquals(
+            """{"rack-1":"COUNTERWEIGHT"}""",
+            (jsonExercises[1].jsonObject["rackBehaviorOverrides"] as JsonPrimitive).content,
+        )
     }
 
     @Test

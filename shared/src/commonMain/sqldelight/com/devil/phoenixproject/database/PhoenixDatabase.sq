@@ -628,11 +628,12 @@ UPDATE ExerciseMvt SET profile_id = :targetProfileId WHERE profile_id = :sourceP
 
 -- Exercise Queries
 selectAllExercises:
-SELECT * FROM Exercise WHERE archived = 0 ORDER BY name ASC;
+SELECT * FROM Exercise WHERE archived = 0 AND deletedAt IS NULL ORDER BY name ASC;
 
 searchExercises:
 SELECT * FROM Exercise
 WHERE archived = 0
+  AND deletedAt IS NULL
   AND (
     name LIKE ('%' || :query || '%')
     OR muscleGroups LIKE ('%' || :query || '%')
@@ -694,11 +695,32 @@ UPDATE Exercise SET
     defaultCableConfig = :defaultCableConfig,
     updatedAt = :updatedAt,
     serverId = COALESCE(:serverId, serverId),
-    deletedAt = COALESCE(:deletedAt, deletedAt)
+    archived = CASE
+        WHEN :deletedAt IS NOT NULL THEN 1
+        WHEN updatedAt IS NULL OR updatedAt < :updatedAt THEN 0
+        ELSE archived
+    END,
+    deletedAt = CASE
+        WHEN :deletedAt IS NOT NULL THEN :deletedAt
+        WHEN updatedAt IS NULL OR updatedAt < :updatedAt THEN NULL
+        ELSE deletedAt
+    END
 WHERE id = :id
   AND isCustom = 1
   AND (updatedAt IS NULL OR updatedAt <= :updatedAt)
-  AND (deletedAt IS NULL OR :deletedAt IS NOT NULL);
+  AND (
+    deletedAt IS NULL
+    OR :deletedAt IS NOT NULL
+    OR updatedAt IS NULL
+    OR updatedAt < :updatedAt
+  );
+
+restoreCustomExerciseSyncFields:
+UPDATE Exercise
+SET updatedAt = :updatedAt,
+    serverId = :serverId,
+    deletedAt = :deletedAt
+WHERE id = :id AND isCustom = 1;
 
 selectStockExercisesForRemap:
 SELECT id, name, archived FROM Exercise WHERE isCustom = 0;
@@ -787,17 +809,26 @@ WHERE id = :oldId AND isCustom = 0;
 
 -- Custom Exercise Queries
 selectCustomExercises:
+SELECT * FROM Exercise WHERE isCustom = 1 AND deletedAt IS NULL ORDER BY name ASC;
+
+selectAllCustomExercisesSync:
 SELECT * FROM Exercise WHERE isCustom = 1 ORDER BY name ASC;
 
 updateCustomExercise:
 UPDATE Exercise
 SET name = ?, description = ?, muscleGroup = ?, muscleGroups = ?, muscles = ?,
     equipment = ?, movement = ?, sidedness = ?, grip = ?, gripWidth = ?,
-    minRepRange = ?, aliases = ?, defaultCableConfig = ?, one_rep_max_kg = ?
+    minRepRange = ?, aliases = ?, defaultCableConfig = ?, one_rep_max_kg = ?,
+    updatedAt = ?
 WHERE id = ? AND isCustom = 1;
 
 deleteCustomExercise:
-DELETE FROM Exercise WHERE id = ? AND isCustom = 1;
+UPDATE Exercise
+SET deletedAt = :deletedAt,
+    updatedAt = :updatedAt
+WHERE id = :id
+  AND isCustom = 1
+  AND deletedAt IS NULL;
 
 deleteSession:
 DELETE FROM WorkoutSession WHERE id = ?;
@@ -1203,22 +1234,26 @@ UPDATE WorkoutSession SET targetReps = ?, rpe = ? WHERE id = ?;
 
 updateSessionMode:
 UPDATE WorkoutSession
-SET mode = ?, local_sync_generation = local_sync_generation + 1
+SET mode = ?,
+    local_sync_generation = local_sync_generation + CASE WHEN portalOrigin = 1 THEN 0 ELSE 1 END
 WHERE id = ?;
 
 updateSessionRoutineName:
 UPDATE WorkoutSession
-SET routineName = ?, local_sync_generation = local_sync_generation + 1
+SET routineName = ?,
+    local_sync_generation = local_sync_generation + CASE WHEN portalOrigin = 1 THEN 0 ELSE 1 END
 WHERE id = ?;
 
 updateSessionRoutineSessionId:
 UPDATE WorkoutSession
-SET routineSessionId = ?, local_sync_generation = local_sync_generation + 1
+SET routineSessionId = ?,
+    local_sync_generation = local_sync_generation + CASE WHEN portalOrigin = 1 THEN 0 ELSE 1 END
 WHERE id = ?;
 
 updateSessionRoutineId:
 UPDATE WorkoutSession
-SET routineId = ?, local_sync_generation = local_sync_generation + 1
+SET routineId = ?,
+    local_sync_generation = local_sync_generation + CASE WHEN portalOrigin = 1 THEN 0 ELSE 1 END
 WHERE id = ?;
 
 updateSessionExerciseTag:
@@ -1554,6 +1589,38 @@ WHERE uuid = :uuid
     OR (updatedAt = :updatedAt AND :deletedAt IS NOT NULL AND deletedAt IS NULL)
   );
 
+-- Update a colliding PersonalRecord occupying idx_pr_unique when a newer non-deleted
+-- server PR arrives with a different uuid/achievedAt, without INSERT OR REPLACE.
+updatePulledPersonalRecordOnSlotCollision:
+UPDATE PersonalRecord
+SET exerciseName = :exerciseName,
+    weight = :weight,
+    reps = :reps,
+    oneRepMax = :oneRepMax,
+    achievedAt = :achievedAt,
+    volume = :volume,
+    cable_count = :cableCount,
+    serverId = COALESCE(:serverId, serverId),
+    updatedAt = :updatedAt,
+    deletedAt = NULL,
+    uuid = CASE
+        WHEN NOT EXISTS (
+            SELECT 1 FROM PersonalRecord AS existing
+            WHERE existing.uuid = :uuid AND existing.id != PersonalRecord.id
+        ) THEN :uuid
+        ELSE uuid
+    END
+WHERE exerciseId = :exerciseId
+  AND workoutMode = :workoutMode
+  AND prType = :prType
+  AND phase = :phase
+  AND profile_id = :profileId
+  AND (
+    updatedAt IS NULL
+    OR updatedAt < :updatedAt
+    OR (updatedAt = :updatedAt AND deletedAt IS NULL)
+  );
+
 -- Get all PRs unfiltered (for backup export across all profiles)
 selectAllRecordsSync:
 SELECT * FROM PersonalRecord ORDER BY achievedAt DESC;
@@ -1573,6 +1640,10 @@ SELECT * FROM Routine WHERE id = ?;
 
 insertRoutine:
 INSERT INTO Routine (id, name, description, createdAt, lastUsed, useCount, profile_id, groupId, deletedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+insertRoutineForBackup:
+INSERT INTO Routine (id, name, description, createdAt, lastUsed, useCount, updatedAt, serverId, deletedAt, profile_id, groupId)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- Routine upsert = updateRoutineFields/updateRoutineById, then insertRoutineIgnore.
 -- Never INSERT OR REPLACE a Routine: with foreign keys ON the implicit delete cascades
@@ -1781,7 +1852,7 @@ SELECT * FROM RepMetric WHERE sessionId = ? ORDER BY repNumber ASC;
 selectRepMetricSummariesBySession:
 SELECT repNumber, peakForceA, peakForceB, avgForceConcentricA, avgForceConcentricB,
        peakVelocity, avgVelocityConcentric, rangeOfMotionMm, peakPowerWatts,
-       avgPowerWatts, concentricDurationMs, eccentricDurationMs
+       avgPowerWatts, concentricDurationMs, eccentricDurationMs, metric_unit_version
 FROM RepMetric WHERE sessionId = ? ORDER BY repNumber ASC;
 
 deleteRepMetricsBySession:
@@ -2411,6 +2482,11 @@ UPDATE TrainingCycle
 SET name = ?, description = ?, is_active = ?, template_id = ?, week_number = ?, updatedAt = ?
 WHERE id = ?;
 
+updateTrainingCycleClearingDelete:
+UPDATE TrainingCycle
+SET name = ?, description = ?, is_active = ?, template_id = ?, week_number = ?, updatedAt = ?, deletedAt = NULL
+WHERE id = ?;
+
 updateTrainingCycleWeekNumber:
 UPDATE TrainingCycle SET week_number = ?, updatedAt = ? WHERE id = ?;
 
@@ -2498,6 +2574,12 @@ WHERE profile_id = :profileId
   AND source = 'LOCAL'
   AND acknowledged_at IS NULL;
 
+reassignWorkoutDeletionProfile:
+UPDATE WorkoutDeletion
+SET profile_id = :targetProfileId,
+    owner_user_id = COALESCE(owner_user_id, :targetOwnerUserId)
+WHERE profile_id = :sourceProfileId;
+
 bindPendingCycleDeletionsForProfile:
 UPDATE CycleSyncState
 SET account_id = :accountId
@@ -2512,6 +2594,16 @@ SET profile_id = :profileId,
     dirty_generation = dirty_generation + 1,
     pending_delete_updated_at = :deletedAt,
     pending_delete_generation = dirty_generation + 1
+WHERE cycle_id = :cycleId;
+
+clearCyclePendingDeletion:
+UPDATE CycleSyncState
+SET pending_delete_updated_at = NULL,
+    pending_delete_generation = NULL,
+    acknowledged_generation = CASE
+        WHEN acknowledged_generation < dirty_generation THEN dirty_generation
+        ELSE acknowledged_generation
+    END
 WHERE cycle_id = :cycleId;
 
 selectPendingCycleDeletions:
@@ -2590,6 +2682,9 @@ ORDER BY created_at DESC, id ASC;
 
 pruneExpiredRoutineRecoveries:
 DELETE FROM RoutineRecovery WHERE expires_at < :now;
+
+deleteRoutineRecoveryByProfile:
+DELETE FROM RoutineRecovery WHERE profile_id = :profileId;
 
 -- CycleDay Queries
 selectCycleDaysByCycle:
@@ -2901,7 +2996,7 @@ SELECT * FROM Exercise WHERE TRIM(name) = TRIM(?) ORDER BY archived ASC LIMIT 1;
 -- custom row. Matching is case-insensitive (like findExerciseByAlias) so a portal casing variation
 -- cannot fall through to the alias while an active row claims the name.
 findExerciseByNameActive:
-SELECT * FROM Exercise WHERE LOWER(TRIM(name)) = LOWER(TRIM(:name)) AND archived = 0 ORDER BY isCustom DESC, id ASC LIMIT 1;
+SELECT * FROM Exercise WHERE LOWER(TRIM(name)) = LOWER(TRIM(:name)) AND archived = 0 AND deletedAt IS NULL ORDER BY isCustom DESC, id ASC LIMIT 1;
 
 -- Exercise lookup for sync pull: exact match on name and muscle group
 findExerciseByNameAndMuscle:
@@ -2910,7 +3005,7 @@ SELECT * FROM Exercise WHERE TRIM(name) = TRIM(:name) AND TRIM(muscleGroup) = TR
 -- #857 review follow-up: active-only name + muscle group lookup, same ordering and case-insensitive
 -- matching contract as findExerciseByNameActive.
 findExerciseByNameAndMuscleActive:
-SELECT * FROM Exercise WHERE LOWER(TRIM(name)) = LOWER(TRIM(:name)) AND LOWER(TRIM(muscleGroup)) = LOWER(TRIM(:muscleGroup)) AND archived = 0 ORDER BY isCustom DESC, id ASC LIMIT 1;
+SELECT * FROM Exercise WHERE LOWER(TRIM(name)) = LOWER(TRIM(:name)) AND LOWER(TRIM(muscleGroup)) = LOWER(TRIM(:muscleGroup)) AND archived = 0 AND deletedAt IS NULL ORDER BY isCustom DESC, id ASC LIMIT 1;
 
 -- Exercise lookup for sync pull: case-insensitive fallback by name only
 findExerciseByNameCaseInsensitive:
@@ -3017,6 +3112,25 @@ UPDATE WorkoutSession SET profile_id = :profileId WHERE id = :id AND profile_id 
 
 adoptRoutineProfile:
 UPDATE Routine SET profile_id = :profileId WHERE id = :id AND profile_id != :profileId;
+
+clearCrossProfileRoutineGroupOnMove:
+UPDATE Routine
+SET groupId = NULL
+WHERE id = :routineId
+  AND groupId IS NOT NULL
+  AND NOT EXISTS (
+      SELECT 1 FROM RoutineGroup
+      WHERE RoutineGroup.id = Routine.groupId
+        AND RoutineGroup.profile_id = :targetProfileId
+  );
+
+clearCrossProfileCycleDayRoutineLinks:
+UPDATE CycleDay
+SET routine_id = NULL
+WHERE routine_id = :routineId
+  AND cycle_id IN (
+      SELECT id FROM TrainingCycle WHERE profile_id != :targetProfileId
+  );
 
 -- Pull-merge claim adoption (Issue #1162 merge gate R3): the pull merge adopts an
 -- existing routine row into the claim target only when the row's current profile is
@@ -3194,6 +3308,16 @@ SELECT * FROM AppliedDataRepair WHERE repair_key = :repairKey;
 insertAppliedDataRepair:
 INSERT OR IGNORE INTO AppliedDataRepair(repair_key, applied_at)
 VALUES (:repairKey, :appliedAt);
+
+deleteAppliedDataRepairsForRestore:
+DELETE FROM AppliedDataRepair
+WHERE repair_key IN (
+    'fabricated-routine-session-ids-v1',
+    'workout-mode-keys-v1',
+    'legacy-workout-routine-names-v1',
+    'epoch-zero-session-starts-v1',
+    'personal-record-history-v1'
+);
 
 -- One-shot repair of sessions saved by the "1970" bug: a save read a zeroed workoutStartTime,
 -- so timestamp = 0 and duration = the save time in epoch ms. Only that signature is touched
@@ -4425,7 +4549,7 @@ UPDATE Routine SET serverId = ? WHERE id = ?;
 -- Custom exercises are global (no profile_id column) - intentionally unscoped
 selectCustomExercisesModifiedSince:
 SELECT * FROM Exercise
-WHERE isCustom = 1 AND (updatedAt > ? OR updatedAt IS NULL) AND deletedAt IS NULL;
+WHERE isCustom = 1 AND (updatedAt > ? OR updatedAt IS NULL);
 
 -- Badges scoped to active profile for sync push
 selectBadgesModifiedSince:
@@ -5300,4 +5424,9 @@ SELECT * FROM SessionNotes;
 insertSessionNotesIgnore:
 INSERT OR IGNORE INTO SessionNotes(routineSessionId, notes, updatedAt)
 VALUES (?, ?, ?);
+
+countLiveWorkoutSessionsForPortalParent:
+SELECT COUNT(*) FROM WorkoutSession
+WHERE deletedAt IS NULL
+  AND COALESCE(NULLIF(routineSessionId, ''), id) = :portalSessionId;
 

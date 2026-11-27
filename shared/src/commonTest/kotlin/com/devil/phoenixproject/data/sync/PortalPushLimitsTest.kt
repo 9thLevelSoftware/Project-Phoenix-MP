@@ -1,10 +1,13 @@
 package com.devil.phoenixproject.data.sync
 
 import com.devil.phoenixproject.domain.model.CycleDay
+import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.ProfilePreferenceSectionName
+import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.WorkoutPhase
 import com.devil.phoenixproject.domain.model.WorkoutSession
@@ -1679,6 +1682,127 @@ class PortalPushLimitsTest {
             }
             // Every profile still reaches the portal through its own push's profileId.
             assertEquals(25, fakeApi.pushPayloads.mapNotNull { it.profileId }.toSet().size)
+        }
+    }
+
+    @Test
+    fun customExercisesArriveBeforeBatch1SessionsAndDependentsInMultiRequestPushes() = runTest {
+        authenticate()
+        val customId = "custom_1740000000123"
+        val sessions = buildSessions(55).mapIndexed { index, session ->
+            if (index == 0) session.copy(exerciseId = customId, exerciseName = "Custom Curl") else session
+        }
+        fakeSyncRepo.workoutSessionsToReturn = sessions
+        fakeSyncRepo.customExercisesToReturn = listOf(
+            CustomExerciseSyncDto(
+                clientId = customId,
+                name = "Custom Curl",
+                displayName = "Custom Curl",
+                muscleGroup = "Biceps",
+                equipment = "HANDLES",
+                defaultCableConfig = "DOUBLE",
+                createdAt = 1_740_000_000_000L,
+                updatedAt = 1_740_000_000_000L,
+            ),
+        )
+        fakeSyncRepo.routinesToReturn = listOf(
+            Routine(
+                id = "11111111-1111-4111-8111-111111111111",
+                name = "Custom Routine",
+                profileId = "default",
+                exercises = listOf(
+                    RoutineExercise(
+                        id = "22222222-2222-4222-8222-222222222222",
+                        exercise = Exercise(
+                            id = customId,
+                            name = "Custom Curl",
+                            muscleGroup = "Biceps",
+                            equipment = "HANDLES",
+                            isCustom = true,
+                        ),
+                        orderIndex = 0,
+                        weightPerCableKg = 15f,
+                    ),
+                ),
+            ),
+        )
+        fakeSyncRepo.fullPRsToReturn = listOf(
+            PersonalRecord(
+                exerciseId = customId,
+                exerciseName = "Custom Curl",
+                weightPerCableKg = 15f,
+                reps = 10,
+                oneRepMax = 20f,
+                timestamp = sessions.first().timestamp,
+                workoutMode = "OldSchool",
+                prType = PRType.MAX_WEIGHT,
+                volume = 150f,
+                phase = WorkoutPhase.COMBINED,
+                profileId = "default",
+                uuid = "33333333-3333-4333-8333-333333333333",
+            ),
+        )
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
+
+        assertTrue(createManager().sync().isSuccess)
+
+        val payloads = fakeApi.pushPayloads
+        assertTrue(payloads.size >= 3, "Expected pre-session customExercises + 2 session batches (saw ${payloads.size})")
+        val customRequestIndex = payloads.indexOfFirst { p -> p.customExercises.any { it.clientId == customId } }
+        val firstSessionIndex = payloads.indexOfFirst { it.sessions.isNotEmpty() }
+        val firstRoutineIndex = payloads.indexOfFirst { it.routines.isNotEmpty() }
+        val firstPrIndex = payloads.indexOfFirst { it.personalRecords.isNotEmpty() }
+        assertTrue(customRequestIndex >= 0, "customExercises must be sent")
+        assertTrue(customRequestIndex < firstSessionIndex, "customExercises must precede session batch 1")
+        assertTrue(customRequestIndex < firstRoutineIndex, "customExercises must precede routines")
+        assertTrue(customRequestIndex < firstPrIndex, "customExercises must precede personalRecords")
+        assertTrue(payloads[customRequestIndex].sessions.isEmpty(), "pre-session request must carry no sessions")
+        assertTrue(
+            payloads[customRequestIndex].personalRecords.isEmpty(),
+            "sessionless pre-session request must not trigger PR duplication",
+        )
+    }
+
+    @Test
+    fun planTailRequestsPacksCustomExercisesFirstBeforeDependentEntities() {
+        val envelope = PortalSyncPayload(deviceId = "d", platform = "p", lastSync = 0L)
+        val custom = CustomExerciseSyncDto(
+            clientId = "custom_1",
+            name = "Custom Press",
+            muscleGroup = "Chest",
+            equipment = "HANDLES",
+            defaultCableConfig = "DOUBLE",
+            createdAt = 1L,
+            updatedAt = 1L,
+        )
+        val routine = PortalSyncAdapter.toPortalRoutine(
+            routineWithId(1, name = "R".repeat(2_000)),
+            "user",
+        )
+        val assessment = PortalAssessmentResultDto(
+            id = "assess-1",
+            exerciseId = "custom_1",
+            estimatedOneRepMaxKg = 50f,
+            loadVelocityData = "[" + "1".repeat(2_000) + "]",
+            createdAt = "2026-03-02T12:00:00Z",
+        )
+        val singleCustomSize = PushPlanner.byteSize(envelope.copy(customExercises = listOf(custom)))
+        withByteCap(singleCustomSize + 100L) {
+            val requests = PushPlanner.planTailRequests(
+                envelope = envelope,
+                routines = listOf(routine),
+                deletedRoutineIds = emptyList(),
+                cycles = emptyList(),
+                personalRecords = emptyList(),
+                customExercises = listOf(custom),
+                assessments = listOf(assessment),
+                badges = emptyList(),
+                externalActivities = emptyList(),
+                rpgAttributes = null,
+                gamificationStats = null,
+                allProfiles = null,
+            )
+            assertEquals(0, requests.indexOfFirst { it.customExercises.isNotEmpty() })
         }
     }
 }

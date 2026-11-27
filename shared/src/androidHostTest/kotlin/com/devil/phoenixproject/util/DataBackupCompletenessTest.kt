@@ -30,6 +30,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.SerializationException
@@ -776,6 +777,194 @@ class DataBackupCompletenessTest {
         assertEquals(0, result.gamificationStatsImported)
         assertEquals(1, result.entitiesWithErrors)
         assertEquals(null, target.queries.selectGamificationStats("ghost").executeAsOneOrNull())
+    }
+
+    @Test
+    fun `roundTrip_preservesRoutineAndPrSyncFields_prTombstones_customExerciseServerId_andRejectsOrphanNotes`() = runTest {
+        val source = Fixture()
+        source.seedProfiles()
+        source.queries.insertExerciseIfAbsent(
+            id = "custom-null-updated",
+            name = "Custom Null Updated",
+            displayName = null,
+            description = null,
+            created = 1L,
+            muscleGroup = "Back",
+            muscleGroups = "Back",
+            muscles = null,
+            equipment = "ROPE",
+            movement = null,
+            sidedness = null,
+            grip = null,
+            gripWidth = null,
+            minRepRange = null,
+            popularity = 0.0,
+            archived = 0L,
+            isFavorite = 0L,
+            isCustom = 1L,
+            timesPerformed = 0L,
+            lastPerformed = null,
+            aliases = null,
+            defaultCableConfig = "DOUBLE",
+            one_rep_max_kg = null,
+            mvtOverrideMs = null,
+            isBodyweight = null,
+        )
+        source.queries.restoreCustomExerciseSyncFields(
+            updatedAt = null,
+            serverId = "srv-custom-ex-1",
+            deletedAt = 400L,
+            id = "custom-null-updated",
+        )
+        source.queries.insertRoutineForBackup(
+            id = "routine-synced",
+            name = "Synced Routine",
+            description = "Desc",
+            createdAt = 10L,
+            lastUsed = 20L,
+            useCount = 3L,
+            updatedAt = 100L,
+            serverId = "srv-routine-1",
+            deletedAt = null,
+            profile_id = "default",
+            groupId = null,
+        )
+        source.database.seedExercise("bench", "Bench Press")
+        source.database.seedExercise("squat", "Squat")
+        source.queries.insertPRFromMergeIgnore(
+            exerciseId = "bench",
+            exerciseName = "Bench Press",
+            weight = 80.0,
+            reps = 5L,
+            oneRepMax = 93.33,
+            achievedAt = 150L,
+            workoutMode = "Old School",
+            prType = "MAX_WEIGHT",
+            volume = 400.0,
+            phase = "COMBINED",
+            updatedAt = 200L,
+            serverId = "srv-pr-active",
+            deletedAt = null,
+            profile_id = "default",
+            cable_count = 2L,
+            uuid = "11111111-1111-4111-8111-111111111111",
+        )
+        source.queries.insertPRFromMergeIgnore(
+            exerciseId = "squat",
+            exerciseName = "Squat",
+            weight = 100.0,
+            reps = 3L,
+            oneRepMax = 106.0,
+            achievedAt = 160L,
+            workoutMode = "Old School",
+            prType = "MAX_WEIGHT",
+            volume = 300.0,
+            phase = "COMBINED",
+            updatedAt = 300L,
+            serverId = "srv-pr-deleted",
+            deletedAt = 299L,
+            profile_id = "default",
+            cable_count = 2L,
+            uuid = "22222222-2222-4222-8222-222222222222",
+        )
+        source.saveSession("live-routine-session-row", routineSessionId = "live-portal-routine")
+        source.saveSession("live-standalone-session", routineSessionId = null)
+        source.queries.upsertSessionNotes("live-portal-routine", "routine note", 500L)
+        source.queries.upsertSessionNotes("live-standalone-session", "standalone note", 501L)
+
+        val bufferedJson = source.manager.exportToJson()
+        val streamingPath = source.manager.exportToCachePublic()
+        val streamingJson = File(streamingPath).readText()
+        File(streamingPath).delete()
+
+        listOf(bufferedJson, streamingJson).forEach { exportedJson ->
+            val target = Fixture()
+            target.database.seedExercise("bench", "Bench Press")
+            target.database.seedExercise("squat", "Squat")
+
+            val result = target.manager.importFromJson(exportedJson).getOrThrow()
+            assertEquals(0, result.entitiesWithErrors)
+
+            val restoredCustom = target.queries.selectExerciseById("custom-null-updated").executeAsOne()
+            assertNull(restoredCustom.updatedAt)
+            assertEquals("srv-custom-ex-1", restoredCustom.serverId)
+            assertEquals(400L, restoredCustom.deletedAt)
+
+            val restoredRoutine = target.queries.selectRoutineById("routine-synced").executeAsOne()
+            assertEquals(100L, restoredRoutine.updatedAt)
+            assertEquals("srv-routine-1", restoredRoutine.serverId)
+
+            val activePr = target.queries.selectPersonalRecordsByExerciseId("bench").executeAsOne()
+            assertEquals(200L, activePr.updatedAt)
+            assertEquals("srv-pr-active", activePr.serverId)
+            assertNull(activePr.deletedAt)
+
+            val deletedPr = target.queries.selectPersonalRecordsByExerciseId("squat").executeAsOne()
+            assertEquals(300L, deletedPr.updatedAt)
+            assertEquals("srv-pr-deleted", deletedPr.serverId)
+            assertEquals(299L, deletedPr.deletedAt)
+
+            assertEquals("routine note", target.queries.getSessionNotes("live-portal-routine").executeAsOne().notes)
+            assertEquals("standalone note", target.queries.getSessionNotes("live-standalone-session").executeAsOne().notes)
+        }
+
+        // Verify orphan SessionNotes (missing or soft-deleted parent WorkoutSession) are rejected and do not dirty.
+        val orphanTarget = Fixture()
+        orphanTarget.seedProfiles()
+        orphanTarget.saveSession("soft-deleted-row", routineSessionId = "soft-deleted-portal")
+        orphanTarget.queries.softDeleteSessionsByRoutineSessionId(1L, 1L, "soft-deleted-portal")
+        val beforeGen = orphanTarget.queries.selectSessionById("soft-deleted-row").executeAsOne().local_sync_generation
+
+        val orphanBackup = BackupData(
+            version = CURRENT_BACKUP_VERSION,
+            exportedAt = "2026-11-26T00:00:00Z",
+            appVersion = "test",
+            data = BackupContent(
+                sessionNotes = listOf(
+                    SessionNotesBackup("nonexistent-portal-id", "orphan note", 600L),
+                    SessionNotesBackup("soft-deleted-portal", "deleted parent note", 601L),
+                ),
+            ),
+        )
+        val orphanResult = orphanTarget.manager.importFromJson(testJson.encodeToString(orphanBackup)).getOrThrow()
+        assertEquals(0, orphanResult.sessionNotesImported)
+        assertEquals(2, orphanResult.entitiesWithErrors)
+        assertNull(orphanTarget.queries.getSessionNotes("nonexistent-portal-id").executeAsOneOrNull())
+        assertNull(orphanTarget.queries.getSessionNotes("soft-deleted-portal").executeAsOneOrNull())
+        assertEquals(
+            beforeGen,
+            orphanTarget.queries.selectSessionById("soft-deleted-row").executeAsOne().local_sync_generation,
+        )
+    }
+
+    @Test
+    fun `failed routineGroup import increments entitiesWithErrors without double-counting routineGroupsSkipped`() = runTest {
+        val failingTarget = Fixture(
+            failSessionInsertsWith = "SQLITE_CONSTRAINT constraint failed",
+            failInsertsInto = "RoutineGroup",
+        )
+        failingTarget.seedProfiles()
+        val payload = BackupData(
+            version = CURRENT_BACKUP_VERSION,
+            exportedAt = "2026-11-26T00:00:00Z",
+            appVersion = "test",
+            data = BackupContent(
+                routineGroups = listOf(
+                    RoutineGroupBackup(
+                        id = "group-fail-1",
+                        name = "Push Groups",
+                        orderIndex = 0,
+                        createdAt = 1_700_000_000_000L,
+                        profileId = "default",
+                    ),
+                ),
+            ),
+        )
+
+        val result = failingTarget.manager.importFromJson(testJson.encodeToString(payload)).getOrThrow()
+        assertEquals(0, result.routineGroupsImported)
+        assertEquals(0, result.routineGroupsSkipped)
+        assertEquals(1, result.entitiesWithErrors)
     }
 
     /**
