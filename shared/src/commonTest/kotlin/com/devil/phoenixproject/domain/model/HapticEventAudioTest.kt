@@ -142,7 +142,7 @@ class AudioPreferenceGateTest {
     )
 
     @Test
-    fun `workingRepCueEvents respects audio preferences, final rep, and above-25 fallback`() {
+    fun `workingRepCueEvents respects audio preferences and final rep and above-25 fallback`() {
         val cases = listOf(
             WorkingCueCase(
                 audioRepCountEnabled = true,

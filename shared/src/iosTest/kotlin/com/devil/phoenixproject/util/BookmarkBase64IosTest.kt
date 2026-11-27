@@ -55,7 +55,7 @@ class BookmarkBase64IosTest {
 
         val decoded = assertNotNull(decodeBookmarkBase64(encoded))
         assertEquals(original.length, decoded.length)
-        assertTrue(original.isEqualToData(decoded))
+        assertTrue(original.isEqual(decoded))
 
         assertNull(decodeBookmarkBase64("%%%not-valid-base64%%%"))
     }

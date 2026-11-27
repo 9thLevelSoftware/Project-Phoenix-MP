@@ -32,11 +32,11 @@ class IosSoundPoolSelectionTest {
         loadNamedSoundPool(IOS_BADGE_SOUND_FILES, badgeLoaded, "badges") { name ->
             if (name == "missing_clip") null else name
         }
-        assertEquals(IOS_BADGE_SOUND_FILES, badgeLoaded)
+        assertEquals<List<String?>>(IOS_BADGE_SOUND_FILES, badgeLoaded)
 
         val prLoaded = mutableListOf<String?>()
         loadNamedSoundPool(IOS_PR_SOUND_FILES, prLoaded, "prs") { it }
-        assertEquals(IOS_PR_SOUND_FILES, prLoaded)
+        assertEquals<List<String?>>(IOS_PR_SOUND_FILES, prLoaded)
 
         val neutralLoaded = mutableListOf<String?>()
         loadNumberedSoundPool("encouragement", 15, neutralLoaded, "neutral") { name ->

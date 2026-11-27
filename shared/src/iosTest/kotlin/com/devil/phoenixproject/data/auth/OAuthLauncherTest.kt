@@ -9,11 +9,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import platform.Foundation.NSDate
-import platform.Foundation.NSOrderedAscending
 import platform.Foundation.NSRunLoop
 import platform.Foundation.NSThread
 import platform.Foundation.dateWithTimeIntervalSinceNow
 import platform.Foundation.runUntilDate
+import platform.Foundation.timeIntervalSince1970
 
 class OAuthLauncherTest {
 
@@ -29,7 +29,7 @@ class OAuthLauncherTest {
         }
 
         val deadline = NSDate.dateWithTimeIntervalSinceNow(5.0)
-        while (!completed && NSDate().compare(deadline) == NSOrderedAscending) {
+        while (!completed && NSDate().timeIntervalSince1970 < deadline.timeIntervalSince1970) {
             NSRunLoop.mainRunLoop.runUntilDate(NSDate.dateWithTimeIntervalSinceNow(0.01))
         }
 
@@ -73,7 +73,7 @@ class OAuthLauncherTest {
         }
 
         val startDeadline = NSDate.dateWithTimeIntervalSinceNow(5.0)
-        while (!startCalled && NSDate().compare(startDeadline) == NSOrderedAscending) {
+        while (!startCalled && NSDate().timeIntervalSince1970 < startDeadline.timeIntervalSince1970) {
             NSRunLoop.mainRunLoop.runUntilDate(NSDate.dateWithTimeIntervalSinceNow(0.01))
         }
         assertTrue(startCalled, "Session start must be called")
@@ -84,7 +84,7 @@ class OAuthLauncherTest {
         }
 
         val cancelDeadline = NSDate.dateWithTimeIntervalSinceNow(5.0)
-        while ((!cancelCalled || !finished) && NSDate().compare(cancelDeadline) == NSOrderedAscending) {
+        while ((!cancelCalled || !finished) && NSDate().timeIntervalSince1970 < cancelDeadline.timeIntervalSince1970) {
             NSRunLoop.mainRunLoop.runUntilDate(NSDate.dateWithTimeIntervalSinceNow(0.01))
         }
 
