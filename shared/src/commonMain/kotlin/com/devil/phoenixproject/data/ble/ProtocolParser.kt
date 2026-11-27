@@ -77,18 +77,6 @@ fun getFloatLE(data: ByteArray, offset: Int): Float {
     return Float.fromBits(bits)
 }
 
-/**
- * Convert a Byte to a two-character uppercase hex string.
- * KMP-compatible implementation (no Java dependencies).
- *
- * @return Two-character uppercase hex string (e.g., "FF", "0A", "00")
- */
-fun Byte.toPhoenixHex(): String {
-    val hex = "0123456789ABCDEF"
-    val value = this.toInt() and 0xFF
-    return "${hex[value shr 4]}${hex[value and 0x0F]}"
-}
-
 private const val DIAGNOSTIC_BASE_PAYLOAD_BYTES = 18
 private const val DIAGNOSTIC_OPTIONAL_TEMPERATURE_BYTES = 2
 private const val DIAGNOSTIC_CRASH_BLOCK_BYTES = 52

@@ -15,6 +15,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
@@ -1004,5 +1005,80 @@ class SqlDelightWorkoutRepositoryTest {
             repository.getSessionCountForExercise(exerciseId, profileId),
             "Rows with both totalReps == 0 and workingReps == 0 must not be counted",
         )
+    }
+
+    @Test
+    fun `getAllRoutines_rethrowsCancellationWhenExerciseLookupCancels`() = runTest {
+        database.seedExercise("bench", name = "Bench Press")
+        val routine = Routine(
+            id = "routine-cancel-test",
+            name = "Push",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "rex-cancel-1",
+                    exercise = Exercise(id = "bench", name = "Bench Press", muscleGroup = "Chest"),
+                    orderIndex = 0,
+                    setReps = listOf(10),
+                    weightPerCableKg = 40f,
+                ),
+            ),
+            profileId = "default",
+        )
+        repository.saveRoutine(routine)
+
+        val cancellingExerciseRepo = object : ExerciseRepository by FakeExerciseRepository() {
+            override suspend fun getExerciseById(id: String): Exercise? =
+                throw CancellationException("cancelled lookup")
+        }
+        val cancellingRepo = SqlDelightWorkoutRepository(database, cancellingExerciseRepo)
+
+        assertFailsWith<CancellationException> {
+            cancellingRepo.getAllRoutines("default").first()
+        }
+    }
+
+    @Test
+    fun `moveRoutineToProfile_clearsCrossProfileGroupAndCycleDay`() = runTest {
+        val queries = database.phoenixDatabaseQueries
+        queries.insertUserProfileIgnore("default", "Default", 0L, 1L, 1L)
+        queries.insertUserProfileIgnore("profile-b", "Profile B", 1L, 2L, 0L)
+        queries.insertRoutineGroup("group-a", "Group A", 0L, 1L, "default")
+        queries.insertRoutineGroup("group-b", "Group B", 0L, 1L, "profile-b")
+
+        val routine = Routine(
+            id = "routine-move-1",
+            name = "Move Me",
+            exercises = emptyList(),
+            profileId = "default",
+            groupId = "group-a",
+        )
+        repository.saveRoutine(routine)
+        queries.insertTrainingCycle("cycle-a", "Cycle A", null, 1L, 1L, "default", null, 1L, 1L)
+        queries.insertTrainingCycle("cycle-b", "Cycle B", null, 1L, 1L, "profile-b", null, 1L, 1L)
+        queries.insertCycleDay("day-a", "cycle-a", 1L, "Day A", "routine-move-1", 0L, null, null, null, null, null)
+        queries.insertCycleDay("day-a2", "cycle-a", 2L, "Day A2", routine.id, 0L, null, null, null, null, null)
+        queries.insertCycleSyncState("cycle-a", "default", "account-a", 4L, 4L, null, null)
+        queries.insertCycleDay("day-b", "cycle-b", 1L, "Day B", "routine-move-1", 0L, null, null, null, null, null)
+
+        repository.moveRoutineToProfile("routine-move-1", "profile-b")
+
+        val moved = queries.selectRoutineById("routine-move-1").executeAsOne()
+        assertEquals("profile-b", moved.profile_id)
+        assertNull(moved.groupId, "Cross-profile groupId must be cleared on move")
+        assertNull(queries.selectCycleDayById("day-a").executeAsOne().routine_id, "Source-profile CycleDay link must be cleared")
+        assertEquals("routine-move-1", queries.selectCycleDayById("day-b").executeAsOne().routine_id, "Target-profile CycleDay link must be preserved")
+
+        val sourceSync = queries.selectCycleSyncState("cycle-a").executeAsOne()
+        assertEquals(5L, sourceSync.dirty_generation)
+        assertEquals(4L, sourceSync.acknowledged_generation)
+        assertEquals("account-a", sourceSync.account_id)
+        assertTrue(queries.selectTrainingCycleById("cycle-a").executeAsOne().updatedAt!! > 1L)
+        assertNull(queries.selectCycleSyncState("cycle-b").executeAsOneOrNull())
+
+        // Moving again when the group belongs to the target profile preserves matching groupId.
+        repository.moveRoutineToGroup("routine-move-1", "group-b")
+        repository.moveRoutineToProfile("routine-move-1", "profile-b")
+        assertEquals("group-b", queries.selectRoutineById("routine-move-1").executeAsOne().groupId)
+        assertEquals(sourceSync, queries.selectCycleSyncState("cycle-a").executeAsOne())
     }
 }

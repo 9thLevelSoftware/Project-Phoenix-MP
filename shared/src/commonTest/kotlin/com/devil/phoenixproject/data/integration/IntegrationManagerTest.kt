@@ -12,6 +12,11 @@ import com.devil.phoenixproject.data.sync.IntegrationRoutineSetDto
 import com.devil.phoenixproject.data.sync.IntegrationSyncResponse
 import com.devil.phoenixproject.data.sync.PortalApiException
 import com.devil.phoenixproject.domain.model.ConnectionStatus
+import com.devil.phoenixproject.domain.model.ExternalActivity
+import com.devil.phoenixproject.domain.model.ExternalBodyMeasurement
+import com.devil.phoenixproject.domain.model.ExternalExerciseTemplate
+import com.devil.phoenixproject.domain.model.ExternalProgram
+import com.devil.phoenixproject.domain.model.ExternalRoutine
 import com.devil.phoenixproject.domain.model.IntegrationProvider
 import com.devil.phoenixproject.testutil.FakeExternalActivityRepository
 import com.devil.phoenixproject.testutil.FakeExternalExerciseTemplateRepository
@@ -364,14 +369,65 @@ class IntegrationManagerTest {
     }
 
     @Test
-    fun disconnectProviderSucceedsEvenWhenApiCallFails() = runTest {
-        // Add an activity that should be cleaned up regardless of API failure
-        fakeRepo.activities += com.devil.phoenixproject.domain.model.ExternalActivity(
+    fun disconnectProviderFailsClosedAndPreservesLocalStateWhenApiCallFails() = runTest {
+        fakeRepo.activities += ExternalActivity(
             externalId = "hevy-1",
             provider = IntegrationProvider.HEVY,
             name = "Push Day",
             startedAt = 1000L,
             profileId = "profile-1",
+        )
+        fakeRoutineRepo.upsertRoutines(
+            listOf(
+                ExternalRoutine(
+                    externalId = "r1",
+                    provider = IntegrationProvider.HEVY,
+                    title = "Upper",
+                    profileId = "profile-1",
+                ),
+            ),
+        )
+        fakeProgramRepo.upsertPrograms(
+            listOf(
+                ExternalProgram(
+                    externalId = "p1",
+                    provider = IntegrationProvider.HEVY,
+                    name = "Prog",
+                    profileId = "profile-1",
+                ),
+            ),
+        )
+        fakeMeasurementRepo.upsertMeasurements(
+            listOf(
+                ExternalBodyMeasurement(
+                    externalId = "m1",
+                    provider = IntegrationProvider.HEVY,
+                    measurementType = "weight",
+                    value = 80.0,
+                    unit = "kg",
+                    measuredAt = 1000L,
+                    profileId = "profile-1",
+                ),
+            ),
+        )
+        fakeTemplateRepo.upsertTemplates(
+            listOf(
+                ExternalExerciseTemplate(
+                    externalId = "t1",
+                    provider = IntegrationProvider.HEVY,
+                    title = "Bench",
+                    profileId = "profile-1",
+                ),
+            ),
+        )
+        fakeCursorRepo.upsertCursor(
+            IntegrationSyncCursor(
+                provider = IntegrationProvider.HEVY,
+                profileId = "profile-1",
+                cursorType = "integration_sync",
+                cursorValue = "cursor-1",
+                updatedAt = 1000L,
+            ),
         )
 
         fakeApi.integrationSyncResult = Result.failure(
@@ -384,16 +440,40 @@ class IntegrationManagerTest {
             profileId = "profile-1",
         )
 
-        // Disconnect should still succeed (portal failure is non-critical)
-        assertTrue(result.isSuccess, "Disconnect should succeed even when API call fails")
-
-        // Local cleanup should still happen
+        assertTrue(result.isFailure, "Disconnect must fail closed when API call fails")
+        assertEquals(503, (result.exceptionOrNull() as? PortalApiException)?.statusCode)
+        assertEquals(1, fakeRepo.activities.size, "Activities must be preserved on failed disconnect")
+        assertEquals(1, fakeRoutineRepo.routines.size, "Routines must be preserved on failed disconnect")
+        assertEquals(1, fakeProgramRepo.programs.size, "Programs must be preserved on failed disconnect")
+        assertEquals(1, fakeMeasurementRepo.measurements.size, "Measurements must be preserved on failed disconnect")
+        assertEquals(1, fakeTemplateRepo.templates.size, "Templates must be preserved on failed disconnect")
+        assertEquals(1, fakeCursorRepo.cursors.size, "Cursors must be preserved on failed disconnect")
         assertTrue(
-            fakeRepo.activities.isEmpty(),
-            "Activities should be deleted despite API failure",
+            fakeRepo.statusUpdates.none { it.status == ConnectionStatus.DISCONNECTED },
+            "Status must not transition to DISCONNECTED on failed disconnect",
         )
-        val statusUpdate = fakeRepo.statusUpdates.last()
-        assertEquals(ConnectionStatus.DISCONNECTED, statusUpdate.status)
+    }
+
+    @Test
+    fun disconnectProviderFailsClosedWhenPortalReturnsErrorStatus() = runTest {
+        fakeRepo.activities += ExternalActivity(
+            externalId = "lift-1",
+            provider = IntegrationProvider.LIFTOSAUR,
+            name = "Workout",
+            startedAt = 1000L,
+            profileId = "profile-1",
+        )
+        fakeApi.integrationSyncResult = Result.success(
+            IntegrationSyncResponse(status = "error", error = "Disconnect rejected"),
+        )
+        val manager = createManager()
+
+        val result = manager.disconnectProvider(IntegrationProvider.LIFTOSAUR, "profile-1")
+
+        assertTrue(result.isFailure)
+        assertEquals("Disconnect rejected", result.exceptionOrNull()?.message)
+        assertEquals(1, fakeRepo.activities.size)
+        assertTrue(fakeRepo.statusUpdates.none { it.status == ConnectionStatus.DISCONNECTED })
     }
 
     // ===== connectProvider — empty API key =====
@@ -678,5 +758,136 @@ class IntegrationManagerTest {
         assertEquals(2, fakeApi.integrationSyncCallCount)
         assertEquals("page-2", fakeApi.lastIntegrationSyncRequest?.cursor, "Pagination should still use nextCursor within the loop")
         assertEquals("provider-checkpoint-2", fakeCursorRepo.cursors.single().cursorValue)
+    }
+
+    @Test
+    fun connectProviderContinuesWhenLiftosaurReturnsTruncatedContinuingThenCompletes() = runTest {
+        val requests = mutableListOf<com.devil.phoenixproject.data.sync.IntegrationSyncRequest>()
+        val recordingApi = object : FakePortalApiClient() {
+            override suspend fun callIntegrationSync(
+                request: com.devil.phoenixproject.data.sync.IntegrationSyncRequest,
+            ): Result<IntegrationSyncResponse> {
+                requests += request
+                return super.callIntegrationSync(request)
+            }
+        }
+        recordingApi.integrationSyncResultsQueue = mutableListOf(
+            Result.success(
+                IntegrationSyncResponse(
+                    status = "connected",
+                    activities = listOf(
+                        IntegrationActivityDto("l1", "liftosaur", "Day 1", startedAt = "2026-03-20T10:00:00Z"),
+                    ),
+                    truncated = true,
+                    continuing = true,
+                    message = "Importing Liftosaur history: 1 records stored this run; older records are imported by the next run.",
+                ),
+            ),
+            Result.success(
+                IntegrationSyncResponse(
+                    status = "synced",
+                    activities = listOf(
+                        IntegrationActivityDto("l2", "liftosaur", "Day 2", startedAt = "2026-03-19T10:00:00Z"),
+                    ),
+                    truncated = false,
+                    continuing = false,
+                ),
+            ),
+        )
+        val manager = IntegrationManager(
+            apiClient = recordingApi,
+            activityRepository = fakeRepo,
+            routineRepository = fakeRoutineRepo,
+            programRepository = fakeProgramRepo,
+            measurementRepository = fakeMeasurementRepo,
+            templateRepository = fakeTemplateRepo,
+            cursorRepository = fakeCursorRepo,
+        )
+
+        val result = manager.connectProvider(IntegrationProvider.LIFTOSAUR, "lift-key", "profile-1", true).getOrThrow()
+
+        assertEquals(2, requests.size)
+        assertEquals("connect", requests[0].action)
+        assertEquals("lift-key", requests[0].apiKey)
+        assertEquals("sync", requests[1].action, "Continuation call must use sync so portal does not reset backfill cursor")
+        assertEquals(null, requests[1].apiKey)
+        assertEquals(2, result.progress.activitiesImported)
+        assertFalse(result.partial)
+        assertTrue(result.warnings.isEmpty())
+        assertEquals(null, fakeRepo.statusUpdates.last().errorMessage)
+    }
+
+    @Test
+    fun syncProviderCapsContinuationLoopAndPreservesTruncatedWarning() = runTest {
+        fakeApi.integrationSyncResult = Result.success(
+            IntegrationSyncResponse(
+                status = "synced",
+                activities = listOf(
+                    IntegrationActivityDto("l1", "liftosaur", "Day 1", startedAt = "2026-03-20T10:00:00Z"),
+                ),
+                truncated = true,
+                continuing = true,
+                message = "Importing Liftosaur history; older records are imported by the next run.",
+            ),
+        )
+        val manager = createManager()
+
+        val result = manager.syncProvider(IntegrationProvider.LIFTOSAUR, "profile-1", true).getOrThrow()
+
+        assertEquals(50, fakeApi.integrationSyncCallCount)
+        assertTrue(result.partial)
+        assertTrue(result.warnings.any { it.message.contains("Importing Liftosaur history") })
+        assertTrue(result.warnings.any { it.code == "page_cap_reached" })
+        val statusUpdate = fakeRepo.statusUpdates.last()
+        assertEquals(ConnectionStatus.CONNECTED, statusUpdate.status)
+        assertNotNull(statusUpdate.errorMessage)
+        assertTrue(statusUpdate.errorMessage!!.contains("Importing Liftosaur history"))
+    }
+
+    @Test
+    fun syncProviderTruncatedWithResumeAtStopsAndMarksPartialWithoutClearingStatusError() = runTest {
+        fakeApi.integrationSyncResult = Result.success(
+            IntegrationSyncResponse(
+                status = "synced",
+                activities = listOf(
+                    IntegrationActivityDto("l1", "liftosaur", "Day 1", startedAt = "2026-03-20T10:00:00Z"),
+                ),
+                truncated = true,
+                continuing = false,
+                resumeAt = "2026-11-27T02:00:00.000Z",
+                message = "Liftosaur history is larger than one run can read; resuming from 2026-11-27T02:00:00.000Z",
+            ),
+        )
+        val manager = createManager()
+
+        val result = manager.syncProvider(IntegrationProvider.LIFTOSAUR, "profile-1", true).getOrThrow()
+
+        assertEquals(1, fakeApi.integrationSyncCallCount)
+        assertTrue(result.partial)
+        val warning = result.warnings.single()
+        assertEquals("rate_limited", warning.code)
+        assertTrue(warning.message.contains("2026-11-27T02:00:00.000Z"))
+        val statusUpdate = fakeRepo.statusUpdates.last()
+        assertEquals(ConnectionStatus.CONNECTED, statusUpdate.status)
+        assertEquals(warning.message, statusUpdate.errorMessage)
+    }
+
+    @Test
+    fun syncRequestsActivitiesOnlyAndPlaygroundIsGatedOffByDefault() = runTest {
+        fakeApi.integrationSyncResult = Result.success(IntegrationSyncResponse(status = "ok"))
+        val manager = createManager()
+
+        manager.syncProvider(IntegrationProvider.HEVY, "profile-1", true).getOrThrow()
+        val playgroundResult = manager.simulatePlayground(
+            provider = IntegrationProvider.LIFTOSAUR,
+            externalProgramId = "prog-1",
+            scriptText = "Squat / 3x5",
+            commands = emptyList(),
+            profileId = "profile-1",
+        )
+
+        assertEquals(listOf("activities"), fakeApi.lastIntegrationSyncRequest?.entityTypes)
+        assertTrue(playgroundResult.isFailure)
+        assertEquals(0, fakeApi.playgroundSimulationCallCount)
     }
 }

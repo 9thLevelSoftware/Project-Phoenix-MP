@@ -1,5 +1,9 @@
 package com.devil.phoenixproject.data.sync
 
+import com.devil.phoenixproject.data.preferences.CustomEquipmentContract
+import com.devil.phoenixproject.data.preferences.ProfilePreferencesValidator
+import com.devil.phoenixproject.domain.model.CustomEquipmentItem
+import com.devil.phoenixproject.domain.model.CustomEquipmentPreferences
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -176,5 +180,52 @@ class ProfilePreferenceSyncDtosTest {
         assertEquals(7L, encodedRejection.getValue("serverRevision").jsonPrimitive.long)
         assertEquals("REVISION_CONFLICT", encodedRejection.getValue("reason").jsonPrimitive.content)
         assertEquals(encodedCanonical, encodedRejection.getValue("canonicalSection"))
+    }
+
+    @Test
+    fun `CUSTOM_EQUIPMENT payload and contract match portal schema rules`() {
+        val valid = CustomEquipmentPreferences(
+            version = 1,
+            items = listOf(
+                CustomEquipmentItem(
+                    token = CustomEquipmentContract.tokenFor("EZ Bar")!!,
+                    label = "EZ Bar",
+                    createdAt = 1_791_500_000_000L,
+                ),
+            ),
+        )
+        assertTrue(ProfilePreferencesValidator.customEquipment(valid).isEmpty())
+        val payload = ProfilePreferenceSyncCodec().customEquipmentPayload(valid)
+        assertEquals(1, payload.getValue("version").jsonPrimitive.int)
+        val items = payload.getValue("items") as JsonArray
+        assertEquals(1, items.size)
+        val itemObj = items.single().jsonObject
+        assertEquals(setOf("token", "label", "createdAt"), itemObj.keys)
+        assertEquals("U_EZ_BAR", itemObj.getValue("token").jsonPrimitive.content)
+        assertEquals("EZ Bar", itemObj.getValue("label").jsonPrimitive.content)
+        assertEquals(1_791_500_000_000L, itemObj.getValue("createdAt").jsonPrimitive.long)
+
+        // Comma, control char, reserved slug, >24 items, and >8192 bytes are rejected
+        assertTrue(
+            ProfilePreferencesValidator.customEquipment(
+                CustomEquipmentPreferences(items = listOf(CustomEquipmentItem("U_BAD", "Bar, bell", 1L))),
+            ).isNotEmpty(),
+        )
+        assertTrue(
+            ProfilePreferencesValidator.customEquipment(
+                CustomEquipmentPreferences(items = listOf(CustomEquipmentItem("U_CTRL", "Bad\u0007Label", 1L))),
+            ).isNotEmpty(),
+        )
+        assertTrue(
+            ProfilePreferencesValidator.customEquipment(
+                CustomEquipmentPreferences(items = listOf(CustomEquipmentItem("U_BARBELL", "Barbell", 1L))),
+            ).isNotEmpty(),
+        )
+        val tooMany = (1..25).map { idx ->
+            CustomEquipmentItem("U_ITEM_$idx", "Item $idx", idx.toLong())
+        }
+        assertTrue(
+            ProfilePreferencesValidator.customEquipment(CustomEquipmentPreferences(items = tooMany)).isNotEmpty(),
+        )
     }
 }

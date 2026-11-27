@@ -17,6 +17,7 @@ import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.computeFiveThreeOneSetWeights
 import com.devil.phoenixproject.domain.model.computeFiveThreeOneSetWeightsForWeek
 import com.devil.phoenixproject.domain.model.generateUUID
+import com.devil.phoenixproject.util.roundToHalfKg
 
 /**
  * Convert eccentric load percentage to EccentricLoad enum.
@@ -190,11 +191,7 @@ class TemplateConverter(
                     val fallbackWeight = if (isBodyweight || oneRepMax <= 0f) {
                         DEFAULT_FALLBACK_WEIGHT_KG
                     } else {
-                        (
-                            kotlin.math.round(
-                                (oneRepMax * (templateExercise.percentOfOneRm / 100f)) * 2,
-                            ).toInt() / 2f
-                            ).coerceAtLeast(0.5f)
+                        (oneRepMax * (templateExercise.percentOfOneRm / 100f)).roundToHalfKg().coerceAtLeast(0.5f)
                     }
 
                     val routineExercise = if (templateExercise.isPercentageBased) {

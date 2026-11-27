@@ -661,6 +661,7 @@ class SchemaManifestTest {
     private val replacedIndexNames = listOf(
         "idx_pr_unique",
         "idx_gamification_stats_profile",
+        "idx_rpg_attributes_profile",
         "idx_external_activity_dedup",
     )
 
@@ -1063,10 +1064,10 @@ class SchemaManifestTest {
         driver.execute(null, "CREATE TABLE ExerciseSignature (id INTEGER PRIMARY KEY AUTOINCREMENT, exerciseId TEXT NOT NULL)", 0)
         driver.execute(null, "CREATE TABLE WorkoutCompletionJournal (profile_id TEXT NOT NULL, local_kind TEXT NOT NULL, completion_id TEXT NOT NULL, PRIMARY KEY (profile_id, local_kind, completion_id))", 0)
         driver.execute(null, "CREATE TABLE WorkoutCompletionJournalChild (journal_profile_id TEXT NOT NULL, journal_local_kind TEXT NOT NULL, journal_completion_id TEXT NOT NULL, child_key TEXT NOT NULL, PRIMARY KEY (journal_profile_id, journal_local_kind, journal_completion_id, child_key), FOREIGN KEY (journal_profile_id, journal_local_kind, journal_completion_id) REFERENCES WorkoutCompletionJournal(profile_id, local_kind, completion_id) ON DELETE CASCADE)", 0)
-        driver.execute(null, "CREATE TABLE CycleDay (id TEXT PRIMARY KEY, cycle_id TEXT NOT NULL, day_number INTEGER NOT NULL)", 0)
+        driver.execute(null, "CREATE TABLE CycleDay (id TEXT PRIMARY KEY, cycle_id TEXT NOT NULL, day_number INTEGER NOT NULL, routine_id TEXT)", 0)
         driver.execute(null, "CREATE TABLE CycleProgress (id TEXT PRIMARY KEY, cycle_id TEXT NOT NULL UNIQUE, current_day_number INTEGER NOT NULL DEFAULT 1)", 0)
         driver.execute(null, "CREATE TABLE PlannedSet (id TEXT PRIMARY KEY, routine_exercise_id TEXT NOT NULL, set_number INTEGER NOT NULL)", 0)
-        driver.execute(null, "CREATE TABLE CompletedSet (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, completed_at INTEGER NOT NULL)", 0)
+        driver.execute(null, "CREATE TABLE CompletedSet (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, planned_set_id TEXT, completed_at INTEGER NOT NULL)", 0)
         driver.execute(null, "CREATE TABLE ExternalActivity (id TEXT PRIMARY KEY, externalId TEXT NOT NULL, provider TEXT NOT NULL, name TEXT NOT NULL, startedAt INTEGER NOT NULL, syncedAt INTEGER NOT NULL, profileId TEXT NOT NULL DEFAULT 'default')", 0)
 
         val report = reconcileFullSchema(driver)
@@ -1095,6 +1096,56 @@ class SchemaManifestTest {
         val summary = report.logSummary()
         assertTrue(summary.contains("SchemaReconciliation:"))
         assertTrue(summary.contains("ops"))
+    }
+
+    @Test
+    fun `idx_rpg_attributes_profile deduplicates keeping latest lastComputed then highest id`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        driver.execute(
+            null,
+            """
+            CREATE TABLE RpgAttributes (
+                id INTEGER PRIMARY KEY DEFAULT 1,
+                strength INTEGER NOT NULL DEFAULT 0,
+                power INTEGER NOT NULL DEFAULT 0,
+                stamina INTEGER NOT NULL DEFAULT 0,
+                consistency INTEGER NOT NULL DEFAULT 0,
+                mastery INTEGER NOT NULL DEFAULT 0,
+                characterClass TEXT NOT NULL DEFAULT 'Phoenix',
+                lastComputed INTEGER NOT NULL DEFAULT 0,
+                profile_id TEXT NOT NULL DEFAULT 'default'
+            )
+            """.trimIndent(),
+            0,
+        )
+        driver.execute(
+            null,
+            "CREATE INDEX idx_rpg_attributes_profile ON RpgAttributes(profile_id)",
+            0,
+        )
+        driver.execute(
+            null,
+            """
+            INSERT INTO RpgAttributes(id, strength, lastComputed, profile_id)
+            VALUES
+                (1, 10, 100, 'default'),
+                (2, 20, 300, 'default'),
+                (3, 30, 300, 'default'),
+                (4, 40, 200, 'other')
+            """.trimIndent(),
+            0,
+        )
+
+        val result = applyIndexCreate(
+            driver,
+            manifestIndexes.first { it.name == "idx_rpg_attributes_profile" },
+        )
+
+        assertEquals(ReconciliationStatus.CREATED, result.status)
+        assertEquals("2", queryScalar(driver, "SELECT CAST(COUNT(*) AS TEXT) FROM RpgAttributes"))
+        assertEquals("3", queryScalar(driver, "SELECT CAST(id AS TEXT) FROM RpgAttributes WHERE profile_id = 'default'"))
+        assertEquals("4", queryScalar(driver, "SELECT CAST(id AS TEXT) FROM RpgAttributes WHERE profile_id = 'other'"))
+        assertTrue(indexExists(driver, "idx_rpg_attributes_profile"))
     }
 
     private fun queryScalar(driver: SqlDriver, sql: String): String? {

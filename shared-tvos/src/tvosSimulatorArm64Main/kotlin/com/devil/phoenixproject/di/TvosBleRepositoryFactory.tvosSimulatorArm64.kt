@@ -2,6 +2,7 @@
 
 package com.devil.phoenixproject.di
 
+import com.devil.phoenixproject.data.ble.BleScannerCoordinator
 import com.devil.phoenixproject.data.repository.BleRepository
 import com.devil.phoenixproject.data.repository.KableBleRepository
 import com.devil.phoenixproject.data.repository.PhantomBleConfig
@@ -14,9 +15,9 @@ private const val TV_PHANTOM_FIXTURE_ARGUMENT = "--phoenix-tv-phantom"
 internal actual fun isTvosSimulatorFixtureEnabled(): Boolean =
     Platform.isDebugBinary && NSProcessInfo.processInfo.arguments.contains(TV_PHANTOM_FIXTURE_ARGUMENT)
 
-internal actual fun createTvosBleRepository(): BleRepository =
+internal actual fun createTvosBleRepository(scannerCoordinator: BleScannerCoordinator): BleRepository =
     if (isTvosSimulatorFixtureEnabled()) {
         PhantomBleRepository(initialConfig = PhantomBleConfig(simulateParsedProgramReps = true))
     } else {
-        KableBleRepository()
+        KableBleRepository(scannerCoordinator)
     }

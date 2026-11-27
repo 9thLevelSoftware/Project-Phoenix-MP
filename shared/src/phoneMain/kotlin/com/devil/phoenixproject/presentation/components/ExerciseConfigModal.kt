@@ -240,7 +240,10 @@ private fun ExerciseConfigMetadataRow(
             verticalArrangement = Arrangement.spacedBy(Spacing.extraSmall),
         ) {
             MetaChip(label = stringResource(Res.string.config_meta_sets), value = templateSets.toString())
-            MetaChip(label = stringResource(Res.string.config_meta_reps), value = templateReps?.toString() ?: "AMRAP")
+            MetaChip(
+                label = stringResource(Res.string.config_meta_reps),
+                value = templateReps?.toString() ?: stringResource(Res.string.label_amrap),
+            )
             oneRepMaxKg?.let {
                 MetaChip(label = stringResource(Res.string.config_meta_1rm), value = formatWeight(it, weightUnit))
             }

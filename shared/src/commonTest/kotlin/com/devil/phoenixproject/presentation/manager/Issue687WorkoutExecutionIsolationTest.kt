@@ -838,6 +838,7 @@ class Issue687WorkoutExecutionIsolationTest {
     fun `issue 712 legacy top and bottom packets count every rep after the baseline despite handle movement`() = runTest {
         val harness = DWSMTestHarness(this)
         try {
+            harness.setActiveSummaryCountdownSeconds(0)
             startCableSet(harness, targetReps = 3)
             val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
             val cutover = requireNotNull(lease.activationCutoverTimestampMs)
@@ -1071,6 +1072,7 @@ class Issue687WorkoutExecutionIsolationTest {
     fun `manual stop success publishes summary after the exact lease reset`() = runTest {
         val harness = DWSMTestHarness(this)
         try {
+            harness.setActiveSummaryCountdownSeconds(0)
             startCableSet(harness, targetReps = 3)
             val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
 

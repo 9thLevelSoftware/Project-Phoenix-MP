@@ -6,6 +6,7 @@ package com.devil.phoenixproject.data.repository
 import com.devil.phoenixproject.data.ble.CompositionAdvertisement
 import com.devil.phoenixproject.data.ble.CompositionGattFake
 import com.devil.phoenixproject.domain.model.ConnectionState
+import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.util.BleConstants
@@ -50,6 +51,7 @@ abstract class KableGattCompositionContract {
         val peripherals = mutableListOf<CompositionGattFake>()
         var scanCollectors = 0
         var connectGate: CompletableDeferred<Unit>? = null
+        var repsSubscriptionGate: CompletableDeferred<Unit>? = null
         private val dispatcher = StandardTestDispatcher(scope.testScheduler)
         val repository = KableBleRepository(
             dispatcher = dispatcher,
@@ -67,6 +69,7 @@ abstract class KableGattCompositionContract {
                 constructed += advertisement
                 CompositionGattFake(advertisement, dispatcher).also {
                     it.connectGate = connectGate
+                    it.repsSubscriptionGate = repsSubscriptionGate
                     peripherals += it
                 }
             },
@@ -942,6 +945,301 @@ abstract class KableGattCompositionContract {
             assertEquals(writes, p.writes.size)
             assertTrue(f.repository.scannedDevices.value.isEmpty())
             assertEquals(ConnectionState.Disconnected, f.repository.connectionState.value)
+        }
+    }
+
+    @Test
+    fun monitorTimeoutDisconnectEmitsReconnectionRequest() = runTest {
+        withFixture { f ->
+            val requests = mutableListOf<ReconnectionRequest>()
+            backgroundScope.launch { f.repository.reconnectionRequested.collect { requests += it } }
+            val p = connectChosen(f)
+            p.readGate = CompletableDeferred()
+
+            advanceTimeBy(10_000L)
+            runCurrent()
+
+            assertEquals(ConnectionState.Disconnected, f.repository.connectionState.value)
+            assertEquals(1, requests.size)
+            assertEquals(chosen.identifier.toString(), requests.single().deviceAddress)
+            assertEquals("monitor_polling_timeout", requests.single().reason)
+            assertEquals(1, p.disconnectCalls)
+        }
+    }
+
+    @Test
+    fun monitorNonTimeoutGattErrorsAreBoundedAndEmitSingleReconnectionRequest() = runTest {
+        withFixture { f ->
+            val requests = mutableListOf<ReconnectionRequest>()
+            backgroundScope.launch { f.repository.reconnectionRequested.collect { requests += it } }
+            val p = connectChosen(f)
+            p.monitorReadFailure = IllegalStateException("GATT read failed")
+
+            advanceTimeBy(2_000L)
+            runCurrent()
+
+            assertEquals(ConnectionState.Disconnected, f.repository.connectionState.value)
+            assertEquals(1, requests.size)
+            assertEquals("monitor_polling_timeout", requests.single().reason)
+            assertEquals(1, p.disconnectCalls)
+
+            val readsAtDisconnect = p.reads.size
+            advanceTimeBy(2_000L)
+            runCurrent()
+            assertEquals(readsAtDisconnect, p.reads.size)
+        }
+    }
+
+    @Test
+    fun unvalidatedOverLimitOrMalformedFrameIsRejectedBeforeGattWrite() = runTest {
+        withFixture { f ->
+            discover(f, first)
+            val selection = f.repository.scannedDevices.value.single()
+            assertTrue(f.repository.connect(selection).isSuccess)
+            runCurrent()
+            val p = f.peripherals.single()
+
+            fun patchFloatLE(frame: ByteArray, offset: Int, value: Float) {
+                val bits = value.toRawBits()
+                frame[offset] = (bits and 0xFF).toByte()
+                frame[offset + 1] = ((bits ushr 8) and 0xFF).toByte()
+                frame[offset + 2] = ((bits ushr 16) and 0xFF).toByte()
+                frame[offset + 3] = ((bits ushr 24) and 0xFF).toByte()
+            }
+
+            // "Vee_First" is a V-Form (100 kg/cable); 110 kg must be rejected before GATT write.
+            val overWeightFrame = BlePacketFactory.createProgramParams(
+                WorkoutParameters(ProgramMode.OldSchool, reps = 8, weightPerCableKg = 110f),
+                CommandLimits.TRAINER_PLUS_MAX_WEIGHT_PER_CABLE_KG,
+            )
+            assertTrue(f.repository.sendWorkoutCommand(overWeightFrame).isFailure)
+            assertTrue(p.writes.isEmpty())
+
+            val validBase = BlePacketFactory.createProgramParams(
+                WorkoutParameters(ProgramMode.OldSchool, reps = 8, weightPerCableKg = 100f),
+                CommandLimits.V_FORM_MAX_WEIGHT_PER_CABLE_KG,
+            )
+            val overProgressionFrame = validBase.copyOf().also {
+                patchFloatLE(it, BleConstants.ActivationPacket.OFFSET_PROGRESSION, 10f)
+            }
+            assertTrue(f.repository.sendWorkoutCommand(overProgressionFrame).isFailure)
+            assertTrue(p.writes.isEmpty())
+
+            val nanWeightFrame = validBase.copyOf().also {
+                patchFloatLE(it, BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT, Float.NaN)
+            }
+            assertTrue(f.repository.sendWorkoutCommand(nanWeightFrame).isFailure)
+            assertTrue(p.writes.isEmpty())
+
+            assertTrue(f.repository.sendWorkoutCommand(byteArrayOf(0x04, 0, 0, 0)).isFailure)
+            assertTrue(f.repository.sendWorkoutCommand(byteArrayOf(0x7F, 0, 0, 0)).isFailure)
+            val overEchoFrame = BlePacketFactory.createEchoControl(
+                level = EchoLevel.HARD,
+                warmupReps = 2,
+                targetReps = 8,
+                eccentricPct = 150,
+            ).also {
+                it[0x08] = 200.toByte()
+                it[0x09] = 0
+            }
+            assertTrue(f.repository.sendWorkoutCommand(overEchoFrame).isFailure)
+            assertTrue(p.writes.isEmpty())
+
+            assertTrue(f.repository.sendWorkoutCommand(validBase).isSuccess)
+            assertEquals(1, p.writes.size)
+        }
+    }
+
+    @Test
+    fun disconnectDuringOnDeviceReadyReturnsResultFailure() = runTest {
+        assertTeardownDuringOnDeviceReadyReturnsResultFailure(cancel = false)
+    }
+
+    @Test
+    fun cancelConnectionDuringOnDeviceReadyReturnsResultFailure() = runTest {
+        assertTeardownDuringOnDeviceReadyReturnsResultFailure(cancel = true)
+    }
+
+    private suspend fun TestScope.assertTeardownDuringOnDeviceReadyReturnsResultFailure(cancel: Boolean) {
+        withFixture { f ->
+            discover(f, chosen)
+            val selection = f.repository.scannedDevices.value.single()
+            val requests = mutableListOf<ReconnectionRequest>()
+            backgroundScope.launch { f.repository.reconnectionRequested.collect { requests += it } }
+            val repsGate = CompletableDeferred<Unit>()
+            f.repsSubscriptionGate = repsGate
+
+            val owner = async { f.repository.connect(selection) }
+            try {
+                runCurrent()
+                assertFalse(owner.isCompleted)
+                if (cancel) f.repository.cancelConnection() else f.repository.disconnect()
+                runCurrent()
+
+                assertTrue(owner.isCompleted)
+                assertFalse(owner.isCancelled, "Teardown during onDeviceReady must not leak CancellationException out of connect()")
+                assertTrue(owner.await().isFailure)
+                assertEquals(ConnectionState.Disconnected, f.repository.connectionState.value)
+                assertTrue(requests.isEmpty())
+            } finally {
+                repsGate.complete(Unit)
+                owner.cancelAndJoin()
+            }
+        }
+    }
+
+    @Test
+    fun phoenixPrefixDeviceHasDiscoveryAndPlaceholderEvictionParity() = runTest {
+        withFixture { f ->
+            val unnamed = CompositionAdvertisement(
+                id = "00000000-0000-4000-8000-000000000010",
+                name = null,
+                rssi = -30,
+                uuids = listOf(BleConstants.NUS_SERVICE_UUID),
+            )
+            val phoenixNamed = CompositionAdvertisement(
+                id = "00000000-0000-4000-8000-000000000011",
+                name = "Phoenix_Test",
+                rssi = -50,
+                uuids = listOf(BleConstants.NUS_SERVICE_UUID),
+            )
+            val unnamedLater = CompositionAdvertisement(
+                id = "00000000-0000-4000-8000-000000000012",
+                name = null,
+                rssi = -10,
+                uuids = listOf(BleConstants.NUS_SERVICE_UUID),
+            )
+
+            discover(f, unnamed)
+            assertEquals(listOf("Trainer (${unnamed.identifier})"), f.repository.scannedDevices.value.map { it.name })
+
+            f.advertisements.emit(phoenixNamed)
+            runCurrent()
+            assertEquals(listOf("Phoenix_Test"), f.repository.scannedDevices.value.map { it.name })
+
+            f.advertisements.emit(unnamedLater)
+            runCurrent()
+            assertEquals(listOf("Phoenix_Test"), f.repository.scannedDevices.value.map { it.name })
+
+            f.repository.stopScanning()
+            runCurrent()
+
+            val scanConnect = async { f.repository.scanAndConnect(5_000L) }
+            try {
+                runCurrent()
+                f.advertisements.emit(phoenixNamed)
+                runCurrent()
+                assertTrue(scanConnect.await().isSuccess)
+                val state = assertIs<ConnectionState.Connected>(f.repository.connectionState.value)
+                assertEquals("Phoenix_Test", state.deviceName)
+            } finally {
+                scanConnect.cancelAndJoin()
+            }
+        }
+    }
+
+    @Test
+    fun stopScanningCancelsInFlightScanAndConnect() = runTest {
+        withFixture { f ->
+            val scanConnect = async { f.repository.scanAndConnect(5_000L) }
+            try {
+                runCurrent()
+                assertEquals(1, f.scanCollectors)
+                assertEquals(ConnectionState.Scanning, f.repository.connectionState.value)
+
+                f.repository.stopScanning()
+                runCurrent()
+
+                assertEquals(0, f.scanCollectors)
+                assertTrue(scanConnect.isCompleted)
+                assertFalse(scanConnect.isCancelled)
+                assertTrue(scanConnect.await().isFailure)
+                assertEquals(ConnectionState.Disconnected, f.repository.connectionState.value)
+            } finally {
+                scanConnect.cancelAndJoin()
+            }
+        }
+    }
+
+    @Test
+    fun initialDropMidReadyUpFailsWithoutReconnectionRequest() = runTest {
+        withFixture { f ->
+            discover(f, chosen)
+            val selection = f.repository.scannedDevices.value.single()
+            val requests = mutableListOf<ReconnectionRequest>()
+            backgroundScope.launch { f.repository.reconnectionRequested.collect { requests += it } }
+            val repsGate = CompletableDeferred<Unit>()
+            f.repsSubscriptionGate = repsGate
+
+            val owner = async { f.repository.connect(selection) }
+            try {
+                runCurrent()
+                val p = f.peripherals.single()
+                assertFalse(owner.isCompleted)
+
+                p.dropConnection()
+                runCurrent()
+
+                assertTrue(owner.isCompleted)
+                assertTrue(owner.await().isFailure)
+                assertTrue(requests.isEmpty(), "Drop before ready-up completes must not request reconnect")
+                assertEquals(0, p.activeObservations)
+            } finally {
+                repsGate.complete(Unit)
+                owner.cancelAndJoin()
+            }
+        }
+    }
+
+    @Test
+    fun disconnectCancelsObserverRetryAndNonCriticalObserverJobs() = runTest {
+        withFixture { f ->
+            val p = connectChosen(f)
+            advanceTimeBy(100)
+            runCurrent()
+            assertEquals(3, p.activeObservations)
+
+            f.repository.disconnect()
+            runCurrent()
+            val readsAtDisconnect = p.reads.size
+            val writesAtDisconnect = p.writes.size
+            advanceTimeBy(5_000L)
+            runCurrent()
+
+            assertEquals(0, p.activeObservations)
+            assertEquals(readsAtDisconnect, p.reads.size)
+            assertEquals(writesAtDisconnect, p.writes.size)
+        }
+    }
+
+    @Test
+    fun discoModeStopsOnUnexpectedDisconnectAndExplicitDisconnect() = runTest {
+        withFixture { f ->
+            val p1 = connectChosen(f)
+            f.repository.startDiscoMode()
+            runCurrent()
+            assertTrue(f.repository.discoModeActive.value)
+            val writesBeforeDrop = p1.writes.size
+
+            p1.dropConnection()
+            runCurrent()
+            assertFalse(f.repository.discoModeActive.value)
+            advanceTimeBy(600L)
+            runCurrent()
+            assertEquals(writesBeforeDrop, p1.writes.size)
+
+            val p2 = connectChosen(f)
+            f.repository.startDiscoMode()
+            runCurrent()
+            assertTrue(f.repository.discoModeActive.value)
+            val writesBeforeDisconnect = p2.writes.size
+
+            f.repository.disconnect()
+            runCurrent()
+            assertFalse(f.repository.discoModeActive.value)
+            advanceTimeBy(600L)
+            runCurrent()
+            assertEquals(writesBeforeDisconnect, p2.writes.size)
         }
     }
 }

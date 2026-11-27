@@ -1,5 +1,7 @@
 package com.devil.phoenixproject.ui.theme
 
+import com.devil.phoenixproject.testutil.findProjectRoot
+import com.devil.phoenixproject.testutil.readProjectFile
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertTrue
@@ -20,16 +22,8 @@ import kotlin.test.assertTrue
  */
 class MaterialYouDarkClampContractTest {
 
-    private val projectRoot: File by lazy {
-        var dir = File(System.getProperty("user.dir") ?: ".")
-        while (!File(dir, "shared/src/commonMain").exists()) {
-            dir = dir.parentFile ?: break
-        }
-        dir
-    }
-
     private fun read(relativePath: String): String =
-        File(projectRoot, relativePath).readText()
+        requireNotNull(readProjectFile(relativePath)) { "Missing $relativePath" }
 
     private val themeKt: String by lazy {
         read("shared/src/phoneMain/kotlin/com/devil/phoenixproject/ui/theme/Theme.kt")
@@ -69,7 +63,7 @@ class MaterialYouDarkClampContractTest {
         // discoverable from the theme module. If a future refactor moves the helper
         // into a non-theme package, surface the failure here and re-document.
         val helper = File(
-            projectRoot,
+            findProjectRoot(),
             "shared/src/phoneMain/kotlin/com/devil/phoenixproject/ui/theme/ClampedDynamicDarkScheme.kt",
         )
         assertTrue(

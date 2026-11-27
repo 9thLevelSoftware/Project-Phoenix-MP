@@ -6,6 +6,9 @@ import com.devil.phoenixproject.data.repository.HandleState
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.util.BleConstants
+import kotlin.concurrent.Volatile
+import kotlinx.atomicfu.locks.reentrantLock
+import kotlinx.atomicfu.locks.withLock
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -31,6 +34,7 @@ class HandleStateDetector(
     private val timeProvider: () -> Long = { currentTimeMillis() },
 ) {
     private val log = Logger.withTag("HandleStateDetector")
+    private val stateLock = reentrantLock()
 
     companion object {
         /** Position threshold (mm) for simple left/right handle detection booleans */
@@ -54,10 +58,13 @@ class HandleStateDetector(
     val handleDetection: StateFlow<HandleDetection> = _handleDetection.asStateFlow()
 
     // Configuration
+    @Volatile
     var isEnabled: Boolean = false
         private set
+    @Volatile
     var isAutoStartMode: Boolean = false
         private set
+    private var disableEpoch: Long = 0L
 
     // Hysteresis timers (Task 14)
     private var pendingGrabbedStartTime: Long? = null
@@ -75,14 +82,17 @@ class HandleStateDetector(
     private var restBaselinePosB: Double? = null
 
     // Position range diagnostics. Unset values are UNSET_MIN_POSITION_MM and UNSET_MAX_POSITION_MM.
+    @Volatile
     var minPositionSeen: Double = UNSET_MIN_POSITION_MM
         private set
+    @Volatile
     var maxPositionSeen: Double = UNSET_MAX_POSITION_MM
         private set
 
     /** Both extremes have moved off [UNSET_MIN_POSITION_MM] and [UNSET_MAX_POSITION_MM]. */
-    internal fun hasObservedPositionRange(): Boolean =
+    internal fun hasObservedPositionRange(): Boolean = stateLock.withLock {
         minPositionSeen != UNSET_MIN_POSITION_MM && maxPositionSeen != UNSET_MAX_POSITION_MM
+    }
 
     // Periodic logging counter
     private var logCounter = 0L
@@ -91,7 +101,7 @@ class HandleStateDetector(
      * Process a workout metric and update handle state.
      * Called from MetricPollingEngine.parseMonitorData().
      */
-    fun processMetric(metric: WorkoutMetric) {
+    fun processMetric(metric: WorkoutMetric) = stateLock.withLock {
         if (!isEnabled) return
 
         // Simple handle detection (left/right boolean)
@@ -116,7 +126,7 @@ class HandleStateDetector(
      *
      * @param autoStart If true, uses lower velocity threshold (Issue #96)
      */
-    fun enable(autoStart: Boolean) {
+    fun enable(autoStart: Boolean) = stateLock.withLock {
         isEnabled = true
         isAutoStartMode = autoStart
         _handleState.value = HandleState.WaitingForRest
@@ -125,11 +135,28 @@ class HandleStateDetector(
         log.i { "Handle detection enabled (autoStart=$autoStart)" }
     }
 
+    internal fun currentDisableEpoch(): Long = stateLock.withLock { disableEpoch }
+
+    internal fun enableIfUnchanged(autoStart: Boolean, expectedDisableEpoch: Long): Boolean = stateLock.withLock {
+        if (disableEpoch != expectedDisableEpoch) {
+            log.d { "Skipping deferred handle detection enable(autoStart=$autoStart): disabled since scheduling" }
+            return false
+        }
+        isEnabled = true
+        isAutoStartMode = autoStart
+        _handleState.value = HandleState.WaitingForRest
+        logCounter = 0L
+        resetInternalState()
+        log.i { "Handle detection enabled (autoStart=$autoStart)" }
+        true
+    }
+
     /**
      * Disable handle detection.
      * Clears all state including baseline tracking.
      */
-    fun disable() {
+    fun disable() = stateLock.withLock {
+        disableEpoch++
         isEnabled = false
         isAutoStartMode = false
         // F090: fully clear runtime state when disabled, not just the baselines.
@@ -146,7 +173,7 @@ class HandleStateDetector(
      * Reset state machine to WaitingForRest.
      * Preserves enabled/autoStart state.
      */
-    fun reset() {
+    fun reset() = stateLock.withLock {
         log.d { "Resetting handle state to WaitingForRest" }
         _handleState.value = HandleState.WaitingForRest
         resetInternalState()
@@ -156,7 +183,7 @@ class HandleStateDetector(
      * Enable Just Lift waiting mode.
      * Resets state and enables autoStart for next set detection.
      */
-    fun enableJustLiftWaiting() {
+    fun enableJustLiftWaiting() = stateLock.withLock {
         log.i { "Enabling Just Lift waiting mode - ready for next set" }
         isEnabled = true
         isAutoStartMode = true

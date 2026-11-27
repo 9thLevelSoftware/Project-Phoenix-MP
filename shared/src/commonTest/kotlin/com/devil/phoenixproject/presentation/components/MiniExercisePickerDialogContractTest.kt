@@ -344,17 +344,27 @@ class MiniExercisePickerDialogContractTest {
         assertTrue(branchStart >= 0, "The custom-empty state branch not found.")
         val branch = balancedBlock(src, branchStart)
 
-        // The spec's "Create your own exercises..." pin maps to this source literal.
-        val subtitle = "Create your own exercises to track workouts"
-        val titleIdx = branch.indexOf("\"No custom exercises yet\"")
+        // The spec's "No custom exercises yet" / "Create your own exercises..." pin maps to these resource keys.
+        val stringsXml = readProjectFile("src/commonMain/composeResources/values/strings.xml")
+        assertNotNull(stringsXml, "Could not locate values/strings.xml on disk.")
+        assertTrue(
+            stringsXml.contains("""<string name="empty_custom_exercises_title">No custom exercises yet</string>"""),
+            "values/strings.xml must preserve empty_custom_exercises_title.",
+        )
+        assertTrue(
+            stringsXml.contains("Create your own exercises to track workouts"),
+            "values/strings.xml must preserve empty_custom_exercises_subtitle.",
+        )
+
+        val titleIdx = branch.indexOf("Res.string.empty_custom_exercises_title")
         val ifIdx = branch.indexOf("if (enableCustomExercises)")
-        val subtitleIdx = branch.indexOf(subtitle)
+        val subtitleIdx = branch.indexOf("Res.string.empty_custom_exercises_subtitle")
 
         assertTrue(titleIdx >= 0, "The empty-state title must stay unconditional.")
         assertTrue(ifIdx >= 0, "The create affordance must be gated on enableCustomExercises (ADR-5).")
         assertTrue(
             titleIdx < ifIdx,
-            "The title \"No custom exercises yet\" must be emitted before the if (enableCustomExercises) gate.",
+            "The title Res.string.empty_custom_exercises_title must be emitted before the if (enableCustomExercises) gate.",
         )
         val ifBlockStart = branch.indexOf('{', ifIdx)
         val ifBlock = balancedBlock(branch, ifIdx)

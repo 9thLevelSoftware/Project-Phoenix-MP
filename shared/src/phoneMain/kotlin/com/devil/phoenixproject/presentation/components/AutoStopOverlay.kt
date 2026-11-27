@@ -101,7 +101,7 @@ fun AutoStopOverlay(autoStopState: AutoStopUiState, isJustLift: Boolean, modifie
 
                 // Title
                 Text(
-                    text = "AUTO-STOP",
+                    text = stringResource(Res.string.autostop_title),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onErrorContainer,
@@ -128,11 +128,13 @@ fun AutoStopOverlay(autoStopState: AutoStopUiState, isJustLift: Boolean, modifie
 
                 // Instruction text
                 Text(
-                    text = if (isJustLift) {
-                        "Pick up handles to continue"
-                    } else {
-                        "Lift to continue set"
-                    },
+                    text = stringResource(
+                        if (isJustLift) {
+                            Res.string.autostop_pick_up_handles
+                        } else {
+                            Res.string.autostop_lift_to_continue
+                        },
+                    ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onErrorContainer,
                     textAlign = TextAlign.Center,

@@ -65,6 +65,9 @@ import com.devil.phoenixproject.util.HrmTelemetryUtils
 import com.devil.phoenixproject.util.HrmTelemetryUtils.computeRollingRmssd
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
+import org.jetbrains.compose.resources.stringResource
+import projectphoenix.shared.generated.resources.*
+import projectphoenix.shared.generated.resources.Res
 
 private const val MAX_ECG_DISPLAY_SAMPLES = 260 // ~2 seconds at 130 Hz
 
@@ -174,7 +177,7 @@ private fun HrmWorkoutStripContent(
             ) {
                 Icon(
                     Icons.Default.Favorite,
-                    contentDescription = "Heart Rate",
+                    contentDescription = stringResource(Res.string.hrm_strip_heart_rate),
                     tint = if (hasContact) accessColors.error else accessColors.warning,
                     modifier = Modifier.size(20.dp),
                 )
@@ -188,7 +191,7 @@ private fun HrmWorkoutStripContent(
                         color = colorScheme.onSurface,
                     )
                     Text(
-                        text = "BPM",
+                        text = stringResource(Res.string.hrm_strip_bpm_caps),
                         style = MaterialTheme.typography.labelSmall,
                         color = colorScheme.onSurfaceVariant,
                     )
@@ -201,7 +204,7 @@ private fun HrmWorkoutStripContent(
                 Column(horizontalAlignment = Alignment.Start) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = "RR: ",
+                            text = stringResource(Res.string.hrm_strip_rr_label),
                             style = MaterialTheme.typography.labelSmall,
                             color = colorScheme.onSurfaceVariant,
                         )
@@ -215,7 +218,7 @@ private fun HrmWorkoutStripContent(
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = "RMSSD: ",
+                            text = stringResource(Res.string.hrm_strip_rmssd_label),
                             style = MaterialTheme.typography.labelSmall,
                             color = colorScheme.onSurfaceVariant,
                         )
@@ -230,7 +233,7 @@ private fun HrmWorkoutStripContent(
                 }
             } else {
                 Text(
-                    text = "HRV unavailable",
+                    text = stringResource(Res.string.hrm_hrv_unavailable),
                     style = MaterialTheme.typography.labelSmall,
                     color = colorScheme.onSurfaceVariant,
                 )
@@ -266,7 +269,7 @@ private fun HrmWorkoutStripContent(
                 Column(horizontalAlignment = Alignment.End) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = "Hinge: ",
+                            text = stringResource(Res.string.hrm_strip_hinge_label),
                             style = MaterialTheme.typography.labelSmall,
                             color = colorScheme.onSurfaceVariant,
                         )
@@ -280,7 +283,7 @@ private fun HrmWorkoutStripContent(
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = "Tilt: ",
+                            text = stringResource(Res.string.hrm_strip_tilt_label),
                             style = MaterialTheme.typography.labelSmall,
                             color = colorScheme.onSurfaceVariant,
                         )
@@ -319,7 +322,7 @@ private fun HrmWorkoutStripContent(
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
-                            text = "0° Tare",
+                            text = stringResource(Res.string.hrm_strip_tare_zero),
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold,
                             color = colorScheme.onSecondaryContainer,

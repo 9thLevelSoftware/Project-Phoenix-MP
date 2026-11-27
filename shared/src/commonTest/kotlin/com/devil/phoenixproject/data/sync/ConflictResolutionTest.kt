@@ -711,12 +711,12 @@ class ConflictResolutionTest {
         assertTrue(badgeIds.contains("PORTAL_BADGE_2"), "Portal badge 2 should be added")
     }
 
-    // ─── Personal Record Merge Tests (LOCAL WINS) ─────────────────────
+    // ─── Personal Record Merge Tests (LWW on idx_pr_unique) ────────────
 
     @Test
-    fun `mergePersonalRecords - local PR wins on compound key conflict`() = runTest {
-        // GIVEN: A PR exists locally
-        database.phoenixDatabaseQueries.insertPRIgnore(
+    fun `mergePersonalRecords - newer local PR wins on compound key conflict`() = runTest {
+        // GIVEN: A PR exists locally with a newer updatedAt than the incoming portal PR
+        database.phoenixDatabaseQueries.insertPRFromMergeIgnore(
             exerciseId = "bench-press",
             exerciseName = "Bench Press",
             weight = 100.0,
@@ -727,6 +727,9 @@ class ConflictResolutionTest {
             prType = "MAX_WEIGHT",
             volume = 500.0,
             phase = "COMBINED",
+            updatedAt = now + 10_000,
+            serverId = null,
+            deletedAt = null,
             profile_id = testProfileId,
             cable_count = null,
             uuid = null,
@@ -742,14 +745,14 @@ class ConflictResolutionTest {
         assertNotNull(prBefore)
         assertEquals(100.0, prBefore.weight, "Local PR should have weight 100")
 
-        // WHEN: Portal sends a PR with the same compound key but different values
+        // WHEN: Portal sends an older PR with the same compound key
         val portalPRs = listOf(
             PersonalRecordSyncDto(
                 clientId = "portal-pr-1",
                 serverId = null,
                 exerciseId = "bench-press",
                 exerciseName = "Bench Press",
-                weight = 120f, // Higher weight from portal
+                weight = 120f,
                 reps = 5,
                 oneRepMax = 136f,
                 achievedAt = now,
@@ -763,7 +766,7 @@ class ConflictResolutionTest {
         )
         repository.mergePersonalRecords(portalPRs, testProfileId)
 
-        // THEN: Local PR should be preserved (INSERT OR IGNORE)
+        // THEN: Newer local PR should be preserved
         val prAfter = database.phoenixDatabaseQueries.selectPR(
             exerciseId = "bench-press",
             workoutMode = "OLD_SCHOOL",
@@ -772,7 +775,7 @@ class ConflictResolutionTest {
             profileId = testProfileId,
         ).executeAsOneOrNull()
         assertNotNull(prAfter)
-        assertEquals(100.0, prAfter.weight, "Local PR weight should be preserved")
+        assertEquals(100.0, prAfter.weight, "Newer local PR weight should be preserved")
     }
 
     @Test

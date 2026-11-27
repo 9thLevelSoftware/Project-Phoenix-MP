@@ -1,5 +1,7 @@
 package com.devil.phoenixproject.domain.model
 
+import com.devil.phoenixproject.util.roundToHalfKg
+
 /**
  * Configuration for a single exercise in a template.
  * Captures mode selection and mode-specific settings.
@@ -32,7 +34,7 @@ data class ExerciseConfig(
             val mode = suggestedMode ?: ProgramMode.OldSchool
             // Default weight is 70% of 1RM if available
             // Keep confirmation aligned with runtime's nearest-half-kg policy.
-            val weight = oneRepMaxKg?.let { kotlin.math.round(it * 0.70f * 2f) / 2f } ?: 0f
+            val weight = oneRepMaxKg?.let { (it * 0.70f).roundToHalfKg() } ?: 0f
 
             return ExerciseConfig(
                 exerciseName = exerciseName,

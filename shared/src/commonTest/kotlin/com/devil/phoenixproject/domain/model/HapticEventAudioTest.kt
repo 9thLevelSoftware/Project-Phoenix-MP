@@ -1,9 +1,20 @@
 package com.devil.phoenixproject.domain.model
 
+import com.devil.phoenixproject.presentation.manager.ExerciseCountdownCuePolicy
+import com.devil.phoenixproject.presentation.manager.isFinalWorkingRep
+import com.devil.phoenixproject.presentation.manager.warmupRepCueEvent
+import com.devil.phoenixproject.presentation.manager.workingRepCueEvents
+import com.devil.phoenixproject.testutil.DWSMTestHarness
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runTest
 
 /**
  * Issue #100: Tests for audio feedback improvements including FINAL_REP event,
@@ -16,66 +27,6 @@ import kotlin.test.assertTrue
  * 4. COUNTDOWN_TICK equality semantics
  */
 class HapticEventAudioTest {
-
-    // ========== FINAL_REP Event Tests ==========
-
-    @Test
-    fun `FINAL_REP is a distinct HapticEvent singleton`() {
-        val event: HapticEvent = HapticEvent.FINAL_REP
-        assertEquals(HapticEvent.FINAL_REP, event)
-    }
-
-    @Test
-    fun `FINAL_REP is not equal to REP_COMPLETED`() {
-        assertNotEquals(HapticEvent.FINAL_REP as HapticEvent, HapticEvent.REP_COMPLETED as HapticEvent)
-    }
-
-    @Test
-    fun `FINAL_REP is not equal to WORKOUT_COMPLETE`() {
-        assertNotEquals(HapticEvent.FINAL_REP as HapticEvent, HapticEvent.WORKOUT_COMPLETE as HapticEvent)
-    }
-
-    @Test
-    fun `FINAL_REP has consistent hashCode`() {
-        assertEquals(HapticEvent.FINAL_REP.hashCode(), HapticEvent.FINAL_REP.hashCode())
-    }
-
-    @Test
-    fun `FINAL_REP can be used as map key`() {
-        val soundMap = mapOf<HapticEvent, String>(
-            HapticEvent.REP_COMPLETED to "rep_complete_strong",
-            HapticEvent.FINAL_REP to "boopbeepbeep",
-            HapticEvent.WORKOUT_COMPLETE to "boopbeepbeep",
-        )
-        assertEquals("boopbeepbeep", soundMap[HapticEvent.FINAL_REP])
-        assertEquals("rep_complete_strong", soundMap[HapticEvent.REP_COMPLETED])
-        assertNotEquals(soundMap[HapticEvent.FINAL_REP], soundMap[HapticEvent.REP_COMPLETED])
-    }
-
-    // ========== Issue #1356: AUTO_START_READY Event Tests ==========
-
-    @Test
-    fun `AUTO_START_READY has stable equality and hashCode`() {
-        assertEquals(HapticEvent.AUTO_START_READY, HapticEvent.AUTO_START_READY)
-        assertEquals(HapticEvent.AUTO_START_READY.hashCode(), HapticEvent.AUTO_START_READY.hashCode())
-    }
-
-    @Test
-    fun `AUTO_START_READY is distinct from WORKOUT_START and COUNTDOWN_TICK`() {
-        assertNotEquals(HapticEvent.AUTO_START_READY as HapticEvent, HapticEvent.WORKOUT_START as HapticEvent)
-        assertNotEquals(HapticEvent.AUTO_START_READY as HapticEvent, HapticEvent.COUNTDOWN_TICK(5) as HapticEvent)
-    }
-
-    @Test
-    fun `AUTO_START_READY can be used as map key`() {
-        val soundMap = mapOf<HapticEvent, String>(
-            HapticEvent.WORKOUT_START to "chirpchirp",
-            HapticEvent.AUTO_START_READY to "auto_start_ready",
-        )
-        assertEquals("auto_start_ready", soundMap[HapticEvent.AUTO_START_READY])
-        assertEquals("chirpchirp", soundMap[HapticEvent.WORKOUT_START])
-        assertNotEquals(soundMap[HapticEvent.AUTO_START_READY], soundMap[HapticEvent.WORKOUT_START])
-    }
 
     @Test
     fun `all HapticEvent singleton types are distinct`() {
@@ -129,309 +80,284 @@ class HapticEventAudioTest {
 }
 
 /**
- * Issue #100: Final rep detection logic tests.
- *
- * These verify the decision logic for when to emit FINAL_REP vs REP_COMPLETED,
- * tested against the conditions used in ActiveSessionEngine.
+ * Issue #100: Final rep detection logic tests against production [isFinalWorkingRep].
  */
 class FinalRepDetectionLogicTest {
 
-    /**
-     * Helper that replicates the FINAL_REP decision logic from ActiveSessionEngine.
-     * This avoids needing the full coordinator/engine setup for unit testing pure logic.
-     */
-    private fun isFinalRep(
-        isJustLift: Boolean,
-        isAMRAP: Boolean,
-        targetReps: Int,
-        currentRep: Int,
-    ): Boolean = !isJustLift && !isAMRAP && targetReps > 0 && currentRep >= targetReps
+    private fun params(
+        isJustLift: Boolean = false,
+        isAMRAP: Boolean = false,
+        reps: Int = 10,
+    ) = WorkoutParameters(
+        programMode = ProgramMode.OldSchool,
+        reps = reps,
+        isJustLift = isJustLift,
+        isAMRAP = isAMRAP,
+    )
 
     @Test
-    fun `final rep detected when currentRep equals targetReps`() {
-        assertTrue(isFinalRep(isJustLift = false, isAMRAP = false, targetReps = 10, currentRep = 10))
-    }
-
-    @Test
-    fun `final rep detected when currentRep exceeds targetReps`() {
-        // Edge case: machine sometimes reports one more than expected
-        assertTrue(isFinalRep(isJustLift = false, isAMRAP = false, targetReps = 10, currentRep = 11))
-    }
-
-    @Test
-    fun `non-final rep when currentRep less than targetReps`() {
-        val result = isFinalRep(isJustLift = false, isAMRAP = false, targetReps = 10, currentRep = 5)
-        assertEquals(false, result)
-    }
-
-    @Test
-    fun `not final rep in Just Lift mode even at target`() {
-        val result = isFinalRep(isJustLift = true, isAMRAP = false, targetReps = 10, currentRep = 10)
-        assertEquals(false, result)
-    }
-
-    @Test
-    fun `not final rep in AMRAP mode even at target`() {
-        val result = isFinalRep(isJustLift = false, isAMRAP = true, targetReps = 10, currentRep = 10)
-        assertEquals(false, result)
-    }
-
-    @Test
-    fun `not final rep when targetReps is zero`() {
-        val result = isFinalRep(isJustLift = false, isAMRAP = false, targetReps = 0, currentRep = 5)
-        assertEquals(false, result)
-    }
-
-    @Test
-    fun `first rep is not final when target is more than 1`() {
-        val result = isFinalRep(isJustLift = false, isAMRAP = false, targetReps = 10, currentRep = 1)
-        assertEquals(false, result)
-    }
-
-    @Test
-    fun `single rep set - rep 1 is final when target is 1`() {
-        assertTrue(isFinalRep(isJustLift = false, isAMRAP = false, targetReps = 1, currentRep = 1))
+    fun `isFinalWorkingRep matches expected boundary cases`() {
+        val cases = listOf(
+            Triple(params(reps = 10), 10, true),
+            Triple(params(reps = 10), 11, true),
+            Triple(params(reps = 10), 5, false),
+            Triple(params(isJustLift = true, reps = 10), 10, false),
+            Triple(params(isAMRAP = true, reps = 10), 10, false),
+            Triple(params(reps = 0), 5, false),
+            Triple(params(reps = 10), 1, false),
+            Triple(params(reps = 1), 1, true),
+        )
+        for ((workoutParams, repNumber, expected) in cases) {
+            assertEquals(
+                expected,
+                isFinalWorkingRep(workoutParams, repNumber),
+                "params=$workoutParams, repNumber=$repNumber",
+            )
+        }
     }
 }
 
 /**
- * Issue #100: Preference gate decision logic tests.
- *
- * These test the gating conditions applied in ActiveSessionEngine before emitting events.
+ * Issue #100: Production cue policy & ActiveSessionEngine audio preference gate tests.
  */
 class AudioPreferenceGateTest {
 
-    /**
-     * Simulates the event selection logic for working rep completion (BOTTOM timing path).
-     * Returns the HapticEvent that would be emitted, or null if gated off.
-     */
-    private fun selectWorkingRepEvent(
-        audioRepCountEnabled: Boolean,
-        repSoundEnabled: Boolean,
-        repNumber: Int,
-        isFinalRep: Boolean,
-    ): HapticEvent? = if (audioRepCountEnabled && repNumber in 1..25) {
-        HapticEvent.REP_COUNT_ANNOUNCED(repNumber)
-    } else if (repSoundEnabled && isFinalRep) {
-        HapticEvent.FINAL_REP
-    } else if (repSoundEnabled) {
-        HapticEvent.REP_COMPLETED
-    } else {
-        null
-    }
+    private fun params(
+        isJustLift: Boolean = false,
+        isAMRAP: Boolean = false,
+        reps: Int = 10,
+    ) = WorkoutParameters(
+        programMode = ProgramMode.OldSchool,
+        reps = reps,
+        isJustLift = isJustLift,
+        isAMRAP = isAMRAP,
+    )
+
+    private data class WorkingCueCase(
+        val audioRepCountEnabled: Boolean,
+        val repSoundEnabled: Boolean,
+        val targetReps: Int,
+        val repNumber: Int,
+        val expected: List<HapticEvent>,
+    )
 
     @Test
-    fun `audioRepCount takes priority over FINAL_REP`() {
-        // When audio rep count is enabled, it takes priority even on final rep
-        val event = selectWorkingRepEvent(
-            audioRepCountEnabled = true,
-            repSoundEnabled = true,
-            repNumber = 10,
-            isFinalRep = true,
-        )
-        assertTrue(event is HapticEvent.REP_COUNT_ANNOUNCED)
-        val announced = event as HapticEvent.REP_COUNT_ANNOUNCED
-        assertEquals(10, announced.repNumber)
-    }
-
-    @Test
-    fun `FINAL_REP emitted when audio rep count disabled and is final rep`() {
-        val event = selectWorkingRepEvent(
-            audioRepCountEnabled = false,
-            repSoundEnabled = true,
-            repNumber = 10,
-            isFinalRep = true,
-        )
-        assertEquals(HapticEvent.FINAL_REP, event)
-    }
-
-    @Test
-    fun `REP_COMPLETED emitted for non-final rep when audio rep count disabled`() {
-        val event = selectWorkingRepEvent(
-            audioRepCountEnabled = false,
-            repSoundEnabled = true,
-            repNumber = 5,
-            isFinalRep = false,
-        )
-        assertEquals(HapticEvent.REP_COMPLETED, event)
-    }
-
-    @Test
-    fun `no event emitted when repSoundEnabled is false and audioRepCount disabled`() {
-        val event = selectWorkingRepEvent(
-            audioRepCountEnabled = false,
-            repSoundEnabled = false,
-            repNumber = 5,
-            isFinalRep = false,
-        )
-        assertEquals(null, event)
-    }
-
-    @Test
-    fun `no event emitted when repSoundEnabled is false for final rep`() {
-        val event = selectWorkingRepEvent(
-            audioRepCountEnabled = false,
-            repSoundEnabled = false,
-            repNumber = 10,
-            isFinalRep = true,
-        )
-        assertEquals(null, event)
-    }
-
-    @Test
-    fun `audio rep count still works when repSoundEnabled is false`() {
-        // audioRepCountEnabled overrides repSoundEnabled for announced reps
-        val event = selectWorkingRepEvent(
-            audioRepCountEnabled = true,
-            repSoundEnabled = false,
-            repNumber = 5,
-            isFinalRep = false,
-        )
-        assertTrue(event is HapticEvent.REP_COUNT_ANNOUNCED)
-    }
-
-    @Test
-    fun `warmup rep gated by repSoundEnabled true`() {
-        // Simulates the warmup gating logic
-        val repSoundEnabled = true
-        val event = if (repSoundEnabled) HapticEvent.REP_COMPLETED else null
-        assertEquals(HapticEvent.REP_COMPLETED, event)
-    }
-
-    @Test
-    fun `warmup rep gated by repSoundEnabled false`() {
-        val repSoundEnabled = false
-        val event = if (repSoundEnabled) HapticEvent.REP_COMPLETED else null
-        assertEquals(null, event)
-    }
-
-    @Test
-    fun `countdown tick gated by beepsEnabled AND countdownBeepsEnabled`() {
-        // Both must be true for countdown tick to emit
-        data class GateState(val beepsEnabled: Boolean, val countdownBeepsEnabled: Boolean)
-
+    fun `workingRepCueEvents respects audio preferences and final rep and above-25 fallback`() {
         val cases = listOf(
-            GateState(true, true) to true,
-            GateState(true, false) to false,
-            GateState(false, true) to false,
-            GateState(false, false) to false,
+            WorkingCueCase(
+                audioRepCountEnabled = true,
+                repSoundEnabled = true,
+                targetReps = 10,
+                repNumber = 10,
+                expected = listOf(HapticEvent.REP_COUNT_ANNOUNCED(10), HapticEvent.FINAL_REP),
+            ),
+            WorkingCueCase(
+                audioRepCountEnabled = false,
+                repSoundEnabled = true,
+                targetReps = 10,
+                repNumber = 10,
+                expected = listOf(HapticEvent.FINAL_REP),
+            ),
+            WorkingCueCase(
+                audioRepCountEnabled = false,
+                repSoundEnabled = true,
+                targetReps = 10,
+                repNumber = 5,
+                expected = listOf(HapticEvent.REP_COMPLETED),
+            ),
+            WorkingCueCase(
+                audioRepCountEnabled = false,
+                repSoundEnabled = false,
+                targetReps = 10,
+                repNumber = 5,
+                expected = emptyList(),
+            ),
+            WorkingCueCase(
+                audioRepCountEnabled = false,
+                repSoundEnabled = false,
+                targetReps = 10,
+                repNumber = 10,
+                expected = emptyList(),
+            ),
+            WorkingCueCase(
+                audioRepCountEnabled = true,
+                repSoundEnabled = false,
+                targetReps = 10,
+                repNumber = 5,
+                expected = listOf(HapticEvent.REP_COUNT_ANNOUNCED(5)),
+            ),
+            WorkingCueCase(
+                audioRepCountEnabled = true,
+                repSoundEnabled = true,
+                targetReps = 10,
+                repNumber = 5,
+                expected = listOf(HapticEvent.REP_COUNT_ANNOUNCED(5)),
+            ),
+            WorkingCueCase(
+                audioRepCountEnabled = true,
+                repSoundEnabled = true,
+                targetReps = 40,
+                repNumber = 30,
+                expected = listOf(HapticEvent.REP_COMPLETED),
+            ),
+            WorkingCueCase(
+                audioRepCountEnabled = true,
+                repSoundEnabled = true,
+                targetReps = 30,
+                repNumber = 30,
+                expected = listOf(HapticEvent.FINAL_REP),
+            ),
         )
-
-        for ((state, expected) in cases) {
-            val shouldEmit = state.beepsEnabled && state.countdownBeepsEnabled
+        for (case in cases) {
             assertEquals(
-                expected,
-                shouldEmit,
-                "beepsEnabled=${state.beepsEnabled}, countdownBeepsEnabled=${state.countdownBeepsEnabled}",
+                case.expected,
+                workingRepCueEvents(
+                    prefs = UserPreferences(
+                        audioRepCountEnabled = case.audioRepCountEnabled,
+                        repSoundEnabled = case.repSoundEnabled,
+                    ),
+                    params = params(reps = case.targetReps),
+                    repNumber = case.repNumber,
+                ),
+                "case=$case",
             )
         }
     }
 
     @Test
-    fun `rep count beyond 25 falls through to chirp or final rep`() {
-        // When rep number exceeds 25, audioRepCount can't announce it (1-25 range)
-        // Should fall through to REP_COMPLETED or FINAL_REP based on final rep check
-        val event = selectWorkingRepEvent(
-            audioRepCountEnabled = true,
-            repSoundEnabled = true,
-            repNumber = 30,
-            isFinalRep = false,
+    fun `warmup rep gated by repSoundEnabled`() {
+        assertEquals(
+            HapticEvent.REP_COMPLETED,
+            warmupRepCueEvent(UserPreferences(repSoundEnabled = true)),
         )
-        // repNumber 30 is not in 1..25, so audioRepCount is skipped
-        assertEquals(HapticEvent.REP_COMPLETED, event)
+        assertNull(warmupRepCueEvent(UserPreferences(repSoundEnabled = false)))
     }
 
     @Test
-    fun `rep count beyond 25 on final rep emits FINAL_REP`() {
-        val event = selectWorkingRepEvent(
-            audioRepCountEnabled = true,
-            repSoundEnabled = true,
-            repNumber = 30,
-            isFinalRep = true,
-        )
-        assertEquals(HapticEvent.FINAL_REP, event)
-    }
-
-    @Test
-    fun `REST_ENDING countdown warning gated by beep toggles`() {
-        // REST_ENDING fires near the end of the rest timer.
-        // It is part of the countdown window, so both the general and countdown toggles apply.
-        data class GateState(val beepsEnabled: Boolean, val countdownBeepsEnabled: Boolean)
-
+    fun `countdown tick gated by ExerciseCountdownCuePolicy`() {
         val cases = listOf(
-            GateState(beepsEnabled = true, countdownBeepsEnabled = true) to true,
-            GateState(beepsEnabled = true, countdownBeepsEnabled = false) to false,
-            GateState(beepsEnabled = false, countdownBeepsEnabled = true) to false,
-            GateState(beepsEnabled = false, countdownBeepsEnabled = false) to false,
+            Triple(true, true, true),
+            Triple(true, false, false),
+            Triple(false, true, false),
+            Triple(false, false, false),
         )
-
-        for ((state, expected) in cases) {
-            val shouldEmit = state.beepsEnabled && state.countdownBeepsEnabled
+        for ((beepsEnabled, countdownBeepsEnabled, expected) in cases) {
             assertEquals(
                 expected,
-                shouldEmit,
-                "beepsEnabled=${state.beepsEnabled}, countdownBeepsEnabled=${state.countdownBeepsEnabled}",
+                ExerciseCountdownCuePolicy.shouldEmitTick(
+                    remainingSeconds = 5,
+                    isPaused = false,
+                    lastTickedSecond = 6,
+                    beepsEnabled = beepsEnabled,
+                    countdownBeepsEnabled = countdownBeepsEnabled,
+                ),
+                "beepsEnabled=$beepsEnabled, countdownBeepsEnabled=$countdownBeepsEnabled",
             )
         }
     }
 
-    /**
-     * Returns the LIST of HapticEvents that would be emitted for a working rep.
-     * Unlike selectWorkingRepEvent (single event), this models dual-emission
-     * on the final rep when voice counting is active.
-     */
-    private fun selectWorkingRepEvents(
-        audioRepCountEnabled: Boolean,
-        repSoundEnabled: Boolean,
-        repNumber: Int,
-        isFinalRep: Boolean,
-    ): List<HapticEvent> {
+    @Test
+    fun `REST_ENDING countdown warning gated by ExerciseCountdownCuePolicy`() {
+        val cases = listOf(
+            Triple(true, true, true),
+            Triple(true, false, false),
+            Triple(false, true, false),
+            Triple(false, false, false),
+        )
+        for ((beepsEnabled, countdownBeepsEnabled, expected) in cases) {
+            assertEquals(
+                expected,
+                ExerciseCountdownCuePolicy.shouldEmitRestEndingCue(
+                    remainingSeconds = ExerciseCountdownCuePolicy.REST_ENDING_CUE_REMAINING_SECONDS,
+                    isPaused = false,
+                    restEndingEmitted = false,
+                    beepsEnabled = beepsEnabled,
+                    countdownBeepsEnabled = countdownBeepsEnabled,
+                ),
+                "beepsEnabled=$beepsEnabled, countdownBeepsEnabled=$countdownBeepsEnabled",
+            )
+        }
+    }
+
+    @Test
+    fun `ActiveSessionEngine emits dual cue on final rep and falls back above 25 and gates warmup and respects AMRAP`() = runTest {
+        val harness = DWSMTestHarness(this)
         val events = mutableListOf<HapticEvent>()
-        if (audioRepCountEnabled && repNumber in 1..25) {
-            events.add(HapticEvent.REP_COUNT_ANNOUNCED(repNumber))
+        val collector = launch(UnconfinedTestDispatcher(testScheduler)) {
+            harness.coordinator.hapticEvents.toList(events)
         }
-        if (isFinalRep && repSoundEnabled) {
-            events.add(HapticEvent.FINAL_REP)
-        } else if ((!audioRepCountEnabled || repNumber !in 1..25) && repSoundEnabled) {
-            events.add(HapticEvent.REP_COMPLETED)
+
+        try {
+            harness.fakeBleRepo.simulateConnect("Vee_Test", "AA:BB:CC:DD:EE:FF")
+            harness.startCableSet(targetReps = 10)
+            harness.coordinator._workoutParameters.value = harness.coordinator._workoutParameters.value.copy(
+                repCountTiming = RepCountTiming.BOTTOM,
+                reps = 10,
+                isJustLift = false,
+                isAMRAP = false,
+            )
+            harness.setActiveProfilePreferences(
+                UserPreferences(audioRepCountEnabled = true, repSoundEnabled = true),
+            )
+            advanceUntilIdle()
+
+            // Final rep emits BOTH REP_COUNT_ANNOUNCED and FINAL_REP
+            events.clear()
+            harness.repCounter.onRepEvent?.invoke(
+                RepEvent(type = RepType.WORKING_COMPLETED, warmupCount = 0, workingCount = 10),
+            )
+            advanceUntilIdle()
+            assertEquals(
+                listOf(HapticEvent.REP_COUNT_ANNOUNCED(10), HapticEvent.FINAL_REP),
+                events,
+            )
+
+            // Rep > 25 falls back to REP_COMPLETED when not final
+            harness.coordinator._workoutParameters.value = harness.coordinator._workoutParameters.value.copy(reps = 40)
+            events.clear()
+            harness.repCounter.onRepEvent?.invoke(
+                RepEvent(type = RepType.WORKING_COMPLETED, warmupCount = 0, workingCount = 30),
+            )
+            advanceUntilIdle()
+            assertEquals(listOf<HapticEvent>(HapticEvent.REP_COMPLETED), events)
+
+            // Warmup gated by repSoundEnabled
+            events.clear()
+            harness.repCounter.onRepEvent?.invoke(
+                RepEvent(type = RepType.WARMUP_COMPLETED, warmupCount = 1, workingCount = 0),
+            )
+            advanceUntilIdle()
+            assertEquals(listOf<HapticEvent>(HapticEvent.REP_COMPLETED), events)
+
+            harness.setActiveProfilePreferences(
+                UserPreferences(audioRepCountEnabled = true, repSoundEnabled = false),
+            )
+            advanceUntilIdle()
+            events.clear()
+            harness.repCounter.onRepEvent?.invoke(
+                RepEvent(type = RepType.WARMUP_COMPLETED, warmupCount = 2, workingCount = 0),
+            )
+            advanceUntilIdle()
+            assertTrue(events.isEmpty())
+
+            // AMRAP never emits FINAL_REP even when workingCount >= reps
+            harness.setActiveProfilePreferences(
+                UserPreferences(audioRepCountEnabled = false, repSoundEnabled = true),
+            )
+            harness.coordinator._workoutParameters.value = harness.coordinator._workoutParameters.value.copy(
+                reps = 10,
+                isAMRAP = true,
+            )
+            advanceUntilIdle()
+            events.clear()
+            harness.repCounter.onRepEvent?.invoke(
+                RepEvent(type = RepType.WORKING_COMPLETED, warmupCount = 0, workingCount = 10),
+            )
+            advanceUntilIdle()
+            assertEquals(listOf<HapticEvent>(HapticEvent.REP_COMPLETED), events)
+        } finally {
+            collector.cancel()
+            harness.cleanup()
         }
-        return events
-    }
-
-    @Test
-    fun `final rep with audioRepCount emits BOTH announced AND final_rep`() {
-        val events = selectWorkingRepEvents(
-            audioRepCountEnabled = true,
-            repSoundEnabled = true,
-            repNumber = 10,
-            isFinalRep = true,
-        )
-        assertEquals(2, events.size, "Final rep with voice counting should emit 2 events")
-        assertTrue(events[0] is HapticEvent.REP_COUNT_ANNOUNCED, "First event should be rep count")
-        assertEquals(HapticEvent.FINAL_REP, events[1], "Second event should be FINAL_REP")
-    }
-
-    @Test
-    fun `non-final rep with audioRepCount emits only announced`() {
-        val events = selectWorkingRepEvents(
-            audioRepCountEnabled = true,
-            repSoundEnabled = true,
-            repNumber = 5,
-            isFinalRep = false,
-        )
-        assertEquals(1, events.size)
-        assertTrue(events[0] is HapticEvent.REP_COUNT_ANNOUNCED)
-    }
-
-    @Test
-    fun `final rep without audioRepCount emits only FINAL_REP`() {
-        val events = selectWorkingRepEvents(
-            audioRepCountEnabled = false,
-            repSoundEnabled = true,
-            repNumber = 10,
-            isFinalRep = true,
-        )
-        assertEquals(1, events.size)
-        assertEquals(HapticEvent.FINAL_REP, events[0])
     }
 }

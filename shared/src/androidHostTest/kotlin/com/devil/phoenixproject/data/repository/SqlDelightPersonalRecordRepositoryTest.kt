@@ -345,6 +345,52 @@ class SqlDelightPersonalRecordRepositoryTest {
         assertEquals(50f, benchPr.weightPerCableKg)
     }
 
+    @Test
+    fun `updatePRsIfBetter_preservesRowIdAndServerIdOnExistingPR`() = runTest {
+        val driver = createTestDriver()
+        val isolatedDb = PhoenixDatabase(driver)
+        isolatedDb.phoenixDatabaseQueries.insertProfile("default", "Default", 0L, 0L, 1L)
+        val isolatedRepo = SqlDelightPersonalRecordRepository(isolatedDb)
+        driver.execute(
+            null,
+            """
+            INSERT INTO PersonalRecord(
+                id, exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt,
+                workoutMode, prType, volume, phase, updatedAt, serverId, deletedAt,
+                profile_id, cable_count, uuid
+            ) VALUES (
+                100, 'bench', 'Bench Press', 50.0, 5, 56.25, 1000,
+                'Old School', 'MAX_WEIGHT', 250.0, 'COMBINED', 5000, 'srv-pr-1', NULL,
+                'default', 2, 'pr-uuid-1'
+            )
+            """.trimIndent(),
+            0,
+        )
+
+        val broken = isolatedRepo.updatePRsIfBetter(
+            exerciseId = "bench",
+            weightPRWeightPerCableKg = 70f,
+            volumePRWeightPerCableKg = 70f,
+            reps = 5,
+            workoutMode = "Old School",
+            timestamp = 6_000L,
+            profileId = "default",
+            cableCount = 2,
+        ).getOrThrow()
+
+        assertTrue(PRType.MAX_WEIGHT in broken)
+        val row = isolatedDb.phoenixDatabaseQueries
+            .selectPRsModifiedSince(5_000L, "default")
+            .executeAsList()
+            .single { it.prType == PRType.MAX_WEIGHT.name }
+        assertEquals(100L, row.id)
+        assertEquals("srv-pr-1", row.serverId)
+        assertEquals("pr-uuid-1", row.uuid)
+        assertEquals(70.0, row.weight)
+        assertNull(row.deletedAt)
+        assertNull(row.updatedAt)
+    }
+
     private fun insertExerciseIfAbsent(id: String, name: String) {
         database.phoenixDatabaseQueries.insertExerciseIfAbsent(
             id = id,

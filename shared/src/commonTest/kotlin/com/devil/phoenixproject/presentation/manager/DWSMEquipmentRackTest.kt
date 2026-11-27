@@ -424,7 +424,7 @@ class DWSMEquipmentRackTest {
      * just like [RoutineFlowManager.enterSetReady] and [RoutineFlowManager.jumpToExercise].
      */
     @Test
-    fun `autoplay startNextSet clears rack selection so weighted vest does not leak to next exercise`() = runTest {
+    fun `autoplay skipRest clears rack selection so weighted vest does not leak to next exercise`() = runTest {
         val harness = DWSMTestHarness(this)
         harness.fakeBleRepo.simulateConnect("Vee_Test")
         harness.fakeEquipmentRackRepo.saveItems(
@@ -457,7 +457,7 @@ class DWSMEquipmentRackTest {
             currentSet = 1,
             totalSets = 1,
         )
-        harness.dwsm.startNextSet()
+        harness.dwsm.skipRest()
 
         assertEquals(emptyList(), harness.dwsm.coordinator.activeRackItemIds.value)
         assertEquals(0f, harness.dwsm.coordinator._workoutParameters.value.externalAddedLoadKg)
@@ -501,7 +501,7 @@ class DWSMEquipmentRackTest {
                 mapOf("vest" to RackItemBehavior.COUNTERWEIGHT),
             )
 
-            harness.dwsm.startNextSet()
+            harness.dwsm.skipRest()
             advanceUntilIdle()
 
             assertEquals(1, harness.dwsm.coordinator.currentExerciseIndex.value)
@@ -550,7 +550,7 @@ class DWSMEquipmentRackTest {
                 mapOf("vest" to RackItemBehavior.COUNTERWEIGHT),
             )
 
-            harness.dwsm.startNextSet()
+            harness.dwsm.skipRest()
             advanceUntilIdle()
 
             assertEquals(0, harness.dwsm.coordinator.currentExerciseIndex.value)
@@ -603,7 +603,7 @@ class DWSMEquipmentRackTest {
                 mapOf("vest" to RackItemBehavior.COUNTERWEIGHT),
             )
 
-            harness.dwsm.startNextSet()
+            harness.dwsm.skipRest()
             advanceUntilIdle()
 
             assertEquals(1, harness.dwsm.coordinator.currentExerciseIndex.value)
@@ -655,7 +655,7 @@ class DWSMEquipmentRackTest {
             harness.dwsm.updateActiveRackSelection(listOf("vest"))
             harness.activeSessionEngine.beginRoutineCompletedRuntimeCleanup()
 
-            harness.dwsm.startNextSet()
+            harness.dwsm.skipRest()
 
             assertEquals(listOf("assist"), harness.dwsm.coordinator.activeRackItemIds.value)
         } finally {

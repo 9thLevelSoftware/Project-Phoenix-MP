@@ -57,6 +57,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -102,6 +103,7 @@ import com.devil.phoenixproject.presentation.util.LocalWeightTextScale
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import com.devil.phoenixproject.presentation.util.effectiveWeightTextScale
+import com.devil.phoenixproject.util.rethrowIfCancellation
 import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
 import com.devil.phoenixproject.presentation.util.scaledForWeightValue
 import com.devil.phoenixproject.presentation.util.shouldStackExerciseSetPickers
@@ -119,20 +121,8 @@ import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
+import projectphoenix.shared.generated.resources.*
 import projectphoenix.shared.generated.resources.Res
-import projectphoenix.shared.generated.resources.cd_add_set
-import projectphoenix.shared.generated.resources.cd_close
-import projectphoenix.shared.generated.resources.cd_delete_set
-import projectphoenix.shared.generated.resources.cd_personal_record
-import projectphoenix.shared.generated.resources.drop_set_min_weight
-import projectphoenix.shared.generated.resources.drop_set_min_weight_error
-import projectphoenix.shared.generated.resources.drop_set_min_weight_supporting
-import projectphoenix.shared.generated.resources.drop_set_offer_toggle
-import projectphoenix.shared.generated.resources.drop_set_title
-import projectphoenix.shared.generated.resources.echo_level
-import projectphoenix.shared.generated.resources.label_duration
-import projectphoenix.shared.generated.resources.label_reps
-import projectphoenix.shared.generated.resources.percent_label
 
 /**
  * Exercise configuration bottom sheet for SingleExerciseScreen
@@ -171,6 +161,11 @@ fun ExerciseEditBottomSheet(
             completedSetRepository = completedSetRepository,
         )
     }
+    DisposableEffect(viewModel) {
+        onDispose {
+            viewModel.clear()
+        }
+    }
     val userProfileRepository: UserProfileRepository = koinInject()
     val activeProfile by userProfileRepository.activeProfile.collectAsState()
     val activeProfileId = activeProfile?.id ?: "default"
@@ -180,7 +175,8 @@ fun ExerciseEditBottomSheet(
         exercise.exercise.id?.let { exerciseId ->
             try {
                 images = exerciseRepository.getImages(exerciseId)
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                e.rethrowIfCancellation()
                 // Handle error - images will remain empty
             }
         }
@@ -250,27 +246,39 @@ fun ExerciseEditBottomSheet(
                 sharedBaseline.source == RoutineScalingBaselineSource.VELOCITY_ESTIMATE ||
                 sharedBaseline.source == RoutineScalingBaselineSource.REP_DERIVED_ESTIMATE
             ) {
-                sharedBaseline.sourceAgeDays?.let { " ($it days old)" }.orEmpty()
+                sharedBaseline.sourceAgeDays?.let { stringResource(Res.string.exercise_edit_days_old, it) }.orEmpty()
             } else {
                 ""
             }
-            "Using ${sharedBaseline.source.displayLabel}$ageNote. ${sharedBaseline.resolutionReason.orEmpty()}"
+            stringResource(
+                Res.string.exercise_edit_using_baseline_source,
+                sharedBaseline.source.displayLabel,
+                ageNote,
+                sharedBaseline.resolutionReason.orEmpty(),
+            )
         }
 
         effectiveScalingBasis == ScalingBasis.ESTIMATED_1RM && baselineLoadStatus == ScalingBaselineLoadStatus.LOADING ->
-            "Checking eligible 1RM sources…"
+            stringResource(Res.string.exercise_edit_checking_1rm)
 
         effectiveScalingBasis == ScalingBasis.ESTIMATED_1RM && baselineLoadStatus == ScalingBaselineLoadStatus.UNAVAILABLE ->
-            "No valid 1RM baseline; saved absolute weights will be kept. ${baselineResolutionReason.orEmpty()}"
+            stringResource(Res.string.exercise_edit_no_valid_1rm, baselineResolutionReason.orEmpty())
 
         sharedBaseline?.source == RoutineScalingBaselineSource.CROSS_MODE_PR ->
             sharedBaseline.sourceMode?.let { sourceMode ->
-                val basisLabel = when (effectiveScalingBasis) {
-                    ScalingBasis.MAX_WEIGHT_PR -> "Max-weight PR"
-                    ScalingBasis.MAX_VOLUME_PR -> "Max-volume PR"
-                    ScalingBasis.ESTIMATED_1RM -> "Est. 1RM"
-                }
-                "No ${selectedMode.displayName} PR yet; using your best available $basisLabel from $sourceMode."
+                val basisLabel = stringResource(
+                    when (effectiveScalingBasis) {
+                        ScalingBasis.MAX_WEIGHT_PR -> Res.string.exercise_edit_basis_max_weight
+                        ScalingBasis.MAX_VOLUME_PR -> Res.string.exercise_edit_basis_max_volume
+                        ScalingBasis.ESTIMATED_1RM -> Res.string.exercise_edit_basis_est_1rm
+                    },
+                )
+                stringResource(
+                    Res.string.exercise_edit_cross_mode_pr,
+                    selectedMode.displayName,
+                    basisLabel,
+                    sourceMode.toString(),
+                )
             }
 
         else -> null
@@ -286,7 +294,7 @@ fun ExerciseEditBottomSheet(
         sharedBaselineKg != null ||
         estimatedOneRepMaxBaselineAvailable
 
-    val weightSuffix = if (weightUnit == WeightUnit.LB) "lbs" else "kg"
+    val weightSuffix = stringResource(if (weightUnit == WeightUnit.LB) Res.string.label_lbs else Res.string.label_kg)
     val maxWeight = kgToDisplay(planningMaxWeightPerCableKg, weightUnit)
     // Issue #266/#410: Use configured increment if provided, otherwise default for unit
     val weightStep = if (weightStepOverride > 0f) {
@@ -338,7 +346,7 @@ fun ExerciseEditBottomSheet(
                 .padding(horizontal = Spacing.small, vertical = Spacing.extraSmall),
         ) {
             PhoenixSheetHeader(
-                title = "Configure Exercise",
+                title = stringResource(Res.string.exercise_edit_title),
                 subtitle = exercise.exercise.displayName,
                 onClose = dismissSheet,
             )
@@ -402,13 +410,20 @@ fun ExerciseEditBottomSheet(
                                 )
                                 Column {
                                     Text(
-                                        "${pr.phase.displayLabel()} Personal Record",
+                                        stringResource(
+                                            Res.string.exercise_edit_pr_title,
+                                            pr.phase.displayLabel(),
+                                        ),
                                         style = MaterialTheme.typography.labelMedium,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                                     )
                                     Text(
-                                        "${formatWeight(pr.weightPerCableKg, weightUnit)}/cable x ${pr.reps} reps",
+                                        stringResource(
+                                            Res.string.exercise_edit_pr_summary,
+                                            formatWeight(pr.weightPerCableKg, weightUnit),
+                                            pr.reps,
+                                        ),
                                         style = MaterialTheme.typography.titleMedium.scaledForWeightValue(LocalWeightTextScale.current),
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -445,7 +460,7 @@ fun ExerciseEditBottomSheet(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
-                                "Beast Mode",
+                                stringResource(Res.string.exercise_edit_beast_mode),
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold,
                             )
@@ -517,7 +532,7 @@ fun ExerciseEditBottomSheet(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            text = "Per Set Rest Time",
+                            text = stringResource(Res.string.exercise_edit_per_set_rest),
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = if (perSetRestTime) FontWeight.Bold else FontWeight.Normal,
                             color = if (perSetRestTime) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
@@ -541,7 +556,7 @@ fun ExerciseEditBottomSheet(
                     ) {
                         Column(modifier = Modifier.padding(Spacing.small)) {
                             Text(
-                                "Rest Time: ${rest}s",
+                                stringResource(Res.string.exercise_edit_rest_time_seconds, rest),
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier.padding(bottom = Spacing.extraSmall),
@@ -600,7 +615,7 @@ fun ExerciseEditBottomSheet(
                                 .padding(Spacing.medium),
                         ) {
                             Text(
-                                "Weight Change Per Rep",
+                                stringResource(Res.string.exercise_edit_weight_change_per_rep),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface,
@@ -614,7 +629,7 @@ fun ExerciseEditBottomSheet(
                                 modifier = Modifier.fillMaxWidth(),
                             )
                             Text(
-                                "Negative = Regression, Positive = Progression",
+                                stringResource(Res.string.exercise_edit_weight_change_hint),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(top = Spacing.small),
@@ -641,13 +656,13 @@ fun ExerciseEditBottomSheet(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "Stall Detection",
+                                    text = stringResource(Res.string.exercise_edit_stall_detection_title),
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = if (stallDetectionEnabled) FontWeight.Bold else FontWeight.Normal,
                                     color = if (stallDetectionEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                                 )
                                 Text(
-                                    text = "Auto-stop set when movement pauses for 5 seconds",
+                                    text = stringResource(Res.string.exercise_edit_stall_detection_desc),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -690,17 +705,19 @@ fun ExerciseEditBottomSheet(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "Rep Count Timing",
+                                    text = stringResource(Res.string.rep_count_timing),
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = if (repCountTiming == RepCountTiming.TOP) FontWeight.Bold else FontWeight.Normal,
                                     color = if (repCountTiming == RepCountTiming.TOP) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                                 )
                                 Text(
-                                    text = if (repCountTiming == RepCountTiming.TOP) {
-                                        "Count at top of lift (concentric peak)"
-                                    } else {
-                                        "Count at bottom (eccentric valley)"
-                                    },
+                                    text = stringResource(
+                                        if (repCountTiming == RepCountTiming.TOP) {
+                                            Res.string.rep_count_timing_top
+                                        } else {
+                                            Res.string.rep_count_timing_bottom
+                                        },
+                                    ),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -735,17 +752,19 @@ fun ExerciseEditBottomSheet(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "Stop at Top",
+                                    text = stringResource(Res.string.exercise_edit_stop_at_top_title),
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = if (stopAtTop) FontWeight.Bold else FontWeight.Normal,
                                     color = if (stopAtTop) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                                 )
                                 Text(
-                                    text = if (stopAtTop) {
-                                        "Final rep stops at contracted position (top of lift)"
-                                    } else {
-                                        "Final rep stops at extended position (bottom)"
-                                    },
+                                    text = stringResource(
+                                        if (stopAtTop) {
+                                            Res.string.exercise_edit_stop_at_top_desc
+                                        } else {
+                                            Res.string.exercise_edit_stop_at_bottom_desc
+                                        },
+                                    ),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -815,7 +834,7 @@ internal fun ExerciseEditBottomActions(
             shape = MaterialTheme.shapes.medium,
         ) {
             Text(
-                "Cancel",
+                stringResource(Res.string.action_cancel),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
             )
@@ -837,7 +856,7 @@ internal fun ExerciseEditBottomActions(
             ),
         ) {
             Text(
-                buttonText,
+                if (buttonText == "Save") stringResource(Res.string.action_save) else buttonText,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
             )
@@ -859,7 +878,7 @@ private fun SetModeToggle(
         verticalArrangement = Arrangement.spacedBy(Spacing.small),
     ) {
         Text(
-            "Set Mode",
+            stringResource(Res.string.exercise_edit_set_mode),
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(bottom = Spacing.extraSmall),
@@ -908,7 +927,10 @@ private fun SetsConfiguration(
         verticalArrangement = Arrangement.spacedBy(Spacing.small),
     ) {
         Text(
-            "Sets & ${if (setMode == SetMode.REPS) "Reps" else "Duration"}",
+            stringResource(
+                Res.string.exercise_edit_sets_and_target,
+                stringResource(if (setMode == SetMode.REPS) Res.string.label_reps else Res.string.label_duration),
+            ),
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(bottom = Spacing.extraSmall),
@@ -941,7 +963,7 @@ private fun SetsConfiguration(
         if (sets.any { it.repeatCount > 1 }) {
             val total = sets.sumOf { it.repeatCount.coerceIn(1, 20) }
             Text(
-                "Total sets after expansion: $total",
+                stringResource(Res.string.exercise_edit_total_sets_expanded, total),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.primary,
                 fontWeight = FontWeight.Medium,
@@ -964,7 +986,7 @@ private fun SetsConfiguration(
             )
             Spacer(modifier = Modifier.width(Spacing.small))
             Text(
-                "Add Set",
+                stringResource(Res.string.exercise_edit_add_set),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
             )
@@ -1016,7 +1038,7 @@ internal fun SetRow(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    "Set ${setConfig.setNumber}",
+                    stringResource(Res.string.set_ready_set_numbered, setConfig.setNumber),
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Bold,
                 )
@@ -1057,7 +1079,7 @@ internal fun SetRow(
                         },
                     )
                     Text(
-                        text = "AMRAP (As Many Reps As Possible)",
+                        text = stringResource(Res.string.exercise_edit_amrap_full),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = if (setConfig.reps == null) FontWeight.Bold else FontWeight.Normal,
                         color = if (setConfig.reps == null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
@@ -1074,7 +1096,7 @@ internal fun SetRow(
             ) {
                 if (!stackPickers) {
                     Text(
-                        "Repeat:",
+                        stringResource(Res.string.exercise_edit_repeat_colon),
                         style = MaterialTheme.typography.bodySmall,
                         fontWeight = FontWeight.Medium,
                     )
@@ -1083,7 +1105,7 @@ internal fun SetRow(
                     value = repeatCount,
                     onValueChange = onRepeatCountChange,
                     range = 1..20,
-                    label = if (stackPickers) "Repeat" else "",
+                    label = if (stackPickers) stringResource(Res.string.exercise_edit_repeat) else "",
                     suffix = "x",
                     modifier = if (stackPickers) Modifier.fillMaxWidth() else Modifier,
                     applySelectorScale = true,
@@ -1105,8 +1127,8 @@ internal fun SetRow(
                                 value = setConfig.reps,
                                 onValueChange = onRepsChange,
                                 range = 1..50,
-                                label = if (showPickerLabels) "Reps" else "",
-                                suffix = "reps",
+                                label = if (showPickerLabels) stringResource(Res.string.label_reps) else "",
+                                suffix = stringResource(Res.string.label_reps_suffix),
                                 modifier = Modifier.fillMaxWidth(),
                                 applySelectorScale = true,
                             )
@@ -1119,7 +1141,7 @@ internal fun SetRow(
                             ) {
                                 if (showPickerLabels) {
                                     Text(
-                                        "Target",
+                                        stringResource(Res.string.exercise_edit_target),
                                         style = MaterialTheme.typography.labelMedium.scaledForWeightValue(weightTextScale, fontScale),
                                         fontWeight = FontWeight.Bold,
                                         modifier = Modifier.padding(bottom = 8.dp),
@@ -1127,7 +1149,7 @@ internal fun SetRow(
                                 }
                                 Spacer(modifier = Modifier.height(spacerHeight))
                                 Text(
-                                    "AMRAP",
+                                    stringResource(Res.string.label_amrap),
                                     style = MaterialTheme.typography.titleMedium.scaledForWeightValue(weightTextScale, fontScale),
                                     color = MaterialTheme.colorScheme.primary,
                                     fontWeight = FontWeight.Bold,
@@ -1139,8 +1161,8 @@ internal fun SetRow(
                             value = setConfig.duration,
                             onValueChange = onDurationChange,
                             range = RoutineExercise.MIN_TIMED_DURATION_SECONDS..RoutineExercise.MAX_TIMED_DURATION_SECONDS,
-                            label = if (showPickerLabels) "Duration" else "",
-                            suffix = "sec",
+                            label = if (showPickerLabels) stringResource(Res.string.label_duration) else "",
+                            suffix = stringResource(Res.string.label_sec_suffix),
                             modifier = Modifier.fillMaxWidth(),
                             applySelectorScale = true,
                         )
@@ -1158,7 +1180,7 @@ internal fun SetRow(
                             ) {
                                 if (showPickerLabels) {
                                     Text(
-                                        "Force per Cable",
+                                        stringResource(Res.string.exercise_edit_force_per_cable),
                                         style = MaterialTheme.typography.labelMedium.scaledForWeightValue(weightTextScale, fontScale),
                                         fontWeight = FontWeight.Bold,
                                         modifier = Modifier.padding(bottom = 8.dp),
@@ -1166,7 +1188,7 @@ internal fun SetRow(
                                 }
                                 Spacer(modifier = Modifier.height(spacerHeight))
                                 Text(
-                                    "Adaptive",
+                                    stringResource(Res.string.hud_adaptive),
                                     style = MaterialTheme.typography.bodyMedium.scaledForWeightValue(weightTextScale),
                                     color = MaterialTheme.colorScheme.primary,
                                     fontWeight = FontWeight.Bold,
@@ -1180,7 +1202,7 @@ internal fun SetRow(
                                 onValueChange = onWeightChange,
                                 range = 1f..maxWeight,
                                 step = weightStep,
-                                label = if (showPickerLabels) "Weight per Cable" else "",
+                                label = if (showPickerLabels) stringResource(Res.string.exercise_edit_weight_per_cable) else "",
                                 suffix = weightSuffix,
                                 modifier = Modifier.fillMaxWidth(),
                                 applySelectorScale = true,
@@ -1195,7 +1217,7 @@ internal fun SetRow(
                             ) {
                                 if (showPickerLabels) {
                                     Text(
-                                        "Weight",
+                                        stringResource(Res.string.label_weight),
                                         style = MaterialTheme.typography.labelMedium.scaledForWeightValue(weightTextScale, fontScale),
                                         fontWeight = FontWeight.Bold,
                                         modifier = Modifier.padding(bottom = 8.dp),
@@ -1203,7 +1225,7 @@ internal fun SetRow(
                                 }
                                 Spacer(modifier = Modifier.height(spacerHeight))
                                 Text(
-                                    "Bodyweight",
+                                    stringResource(Res.string.label_bodyweight),
                                     style = MaterialTheme.typography.bodyMedium.scaledForWeightValue(weightTextScale),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -1237,7 +1259,7 @@ internal fun SetRow(
             // Rest Time picker (per-set)
             if (perSetRestTime) {
                 Text(
-                    "Rest Time: ${setConfig.restSeconds}s",
+                    stringResource(Res.string.exercise_edit_rest_time_seconds, setConfig.restSeconds),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(bottom = Spacing.extraSmall),
@@ -1278,7 +1300,7 @@ private fun ModeSelector(
     ) {
         Column(modifier = Modifier.padding(Spacing.medium)) {
             Text(
-                "Workout Mode",
+                stringResource(Res.string.exercise_edit_workout_mode),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(bottom = Spacing.small),
@@ -1295,7 +1317,7 @@ private fun ModeSelector(
                         IconButton(onClick = { expanded = !expanded }) {
                             Icon(
                                 imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                                contentDescription = if (expanded) "Collapse" else "Expand",
+                                contentDescription = stringResource(if (expanded) Res.string.cd_collapse else Res.string.cd_expand),
                             )
                         }
                     },
@@ -1350,7 +1372,7 @@ private fun EccentricLoadSelector(
                 .padding(Spacing.medium),
         ) {
             Text(
-                "Eccentric Load",
+                stringResource(Res.string.eccentric_load),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
@@ -1391,7 +1413,7 @@ private fun EccentricLoadSelector(
             Spacer(modifier = Modifier.height(Spacing.small))
 
             Text(
-                "Load percentage applied during eccentric (lowering) phase",
+                stringResource(Res.string.exercise_edit_eccentric_hint),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1482,7 +1504,7 @@ internal fun WeightConfigurationCard(
                 .padding(Spacing.medium),
         ) {
             Text(
-                "Weight Configuration",
+                stringResource(Res.string.exercise_edit_weight_config),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
@@ -1498,7 +1520,7 @@ internal fun WeightConfigurationCard(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Use % of PR",
+                        text = stringResource(Res.string.exercise_edit_use_percent_pr),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = if (usePercentOfPR) FontWeight.Bold else FontWeight.Normal,
                         color = if (usePercentOfPR) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
@@ -1507,19 +1529,25 @@ internal fun WeightConfigurationCard(
                     Text(
                         text = when {
                             baselineWeightKg != null && effectiveScalingBasis == ScalingBasis.ESTIMATED_1RM ->
-                                "Scale weight based on ${baselineSourceLabel ?: "the selected 1RM baseline"}"
+                                stringResource(
+                                    Res.string.exercise_edit_scale_from_1rm,
+                                    baselineSourceLabel ?: stringResource(Res.string.exercise_edit_selected_1rm_baseline),
+                                )
 
                             baselineWeightKg != null && effectiveScalingBasis == ScalingBasis.MAX_VOLUME_PR ->
-                                "Scale weight based on your max-volume personal record"
+                                stringResource(Res.string.exercise_edit_scale_from_max_volume)
 
                             baselineWeightKg != null && effectiveScalingBasis == ScalingBasis.MAX_WEIGHT_PR ->
-                                "Scale weight based on your max-weight personal record"
+                                stringResource(Res.string.exercise_edit_scale_from_max_weight)
 
                             currentExercisePR != null ->
-                                "Scale weight based on your ${currentExercisePR.phase.displayLabel().lowercase()} personal record"
+                                stringResource(
+                                    Res.string.exercise_edit_scale_from_phase_pr,
+                                    currentExercisePR.phase.displayLabel().lowercase(),
+                                )
 
                             else ->
-                                "No baseline available for the selected scaling type"
+                                stringResource(Res.string.exercise_edit_no_baseline_selected)
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1552,16 +1580,16 @@ internal fun WeightConfigurationCard(
                 // Issue #517: 3-way scaling basis selector (always shown while scaling enabled)
                 Spacer(modifier = Modifier.height(Spacing.medium))
                 Text(
-                    text = "Scale from",
+                    text = stringResource(Res.string.exercise_edit_scale_from),
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(modifier = Modifier.height(Spacing.extraSmall))
                 val basisOptions = listOf(
-                    ScalingBasis.MAX_WEIGHT_PR to "Max-weight PR",
-                    ScalingBasis.MAX_VOLUME_PR to "Max-volume PR",
-                    ScalingBasis.ESTIMATED_1RM to "Est. 1RM",
+                    ScalingBasis.MAX_WEIGHT_PR to stringResource(Res.string.exercise_edit_basis_max_weight),
+                    ScalingBasis.MAX_VOLUME_PR to stringResource(Res.string.exercise_edit_basis_max_volume),
+                    ScalingBasis.ESTIMATED_1RM to stringResource(Res.string.exercise_edit_basis_est_1rm),
                 )
                 ResponsiveSegmentedSelector(
                     options = basisOptions.map { it.first },
@@ -1585,12 +1613,24 @@ internal fun WeightConfigurationCard(
                     val percentageLabelText: @Composable () -> Unit = {
                         Text(
                             text = when (effectiveBasisForControls) {
-                                ScalingBasis.ESTIMATED_1RM -> "$weightPercentOfPR% of Est. 1RM"
+                                ScalingBasis.ESTIMATED_1RM -> stringResource(
+                                    Res.string.exercise_edit_percent_of_basis,
+                                    weightPercentOfPR,
+                                    stringResource(Res.string.exercise_edit_basis_est_1rm),
+                                )
 
-                                ScalingBasis.MAX_VOLUME_PR -> "$weightPercentOfPR% of Max-volume PR"
+                                ScalingBasis.MAX_VOLUME_PR -> stringResource(
+                                    Res.string.exercise_edit_percent_of_basis,
+                                    weightPercentOfPR,
+                                    stringResource(Res.string.exercise_edit_basis_max_volume),
+                                )
 
-                                ScalingBasis.MAX_WEIGHT_PR ->
-                                    "$weightPercentOfPR% of ${currentExercisePR?.phase?.displayLabel() ?: "Max-weight"} PR"
+                                ScalingBasis.MAX_WEIGHT_PR -> stringResource(
+                                    Res.string.exercise_edit_percent_of_phase_pr,
+                                    weightPercentOfPR,
+                                    currentExercisePR?.phase?.displayLabel()
+                                        ?: stringResource(Res.string.exercise_edit_max_weight_short),
+                                )
                             },
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
@@ -1599,7 +1639,10 @@ internal fun WeightConfigurationCard(
                     }
                     val resolvedWeightText: @Composable () -> Unit = {
                         Text(
-                            text = "= ${formatWeight(resolvedWeight, weightUnit)}/cable",
+                            text = stringResource(
+                                Res.string.exercise_edit_resolved_per_cable,
+                                formatWeight(resolvedWeight, weightUnit),
+                            ),
                             style = MaterialTheme.typography.titleMedium.scaledForWeightValue(weightTextScale, fontScale),
                             fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1659,7 +1702,7 @@ internal fun WeightConfigurationCard(
                     // Selected basis has no baseline — guide the user to pick one that does.
                     Spacer(modifier = Modifier.height(Spacing.small))
                     Text(
-                        text = "No data for the selected basis yet. Pick a basis with a recorded baseline.",
+                        text = stringResource(Res.string.exercise_edit_no_data_for_basis),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -1686,7 +1729,7 @@ internal fun WeightConfigurationCard(
                             modifier = Modifier.size(16.dp),
                         )
                         Text(
-                            text = "Complete a workout to record data and enable percentage scaling",
+                            text = stringResource(Res.string.exercise_edit_complete_workout_for_scaling),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onTertiaryContainer,
                         )
@@ -1849,7 +1892,7 @@ private fun WarmupSetsConfiguration(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        "Warm-up Sets",
+                        stringResource(Res.string.exercise_edit_warmup_sets),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = if (warmupSets.isNotEmpty()) {
@@ -1859,10 +1902,10 @@ private fun WarmupSetsConfiguration(
                         },
                     )
                     Text(
-                        if (warmupSets.isEmpty()) {
-                            "Add warm-up sets before working sets"
-                        } else {
-                            "${warmupSets.size} warm-up set${if (warmupSets.size > 1) "s" else ""} configured"
+                        when (warmupSets.size) {
+                            0 -> stringResource(Res.string.exercise_edit_warmup_empty)
+                            1 -> stringResource(Res.string.exercise_edit_warmup_count_one)
+                            else -> stringResource(Res.string.exercise_edit_warmup_count_other, warmupSets.size)
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1871,7 +1914,7 @@ private fun WarmupSetsConfiguration(
                 IconButton(onClick = { expanded = !expanded }) {
                     Icon(
                         imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                        contentDescription = if (expanded) "Collapse" else "Expand",
+                        contentDescription = stringResource(if (expanded) Res.string.cd_collapse else Res.string.cd_expand),
                     )
                 }
             }
@@ -1890,7 +1933,7 @@ private fun WarmupSetsConfiguration(
                             contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
                         ),
                     ) {
-                        Text("Apply 12-8-4 Preset (50%/70%/85%)")
+                        Text(stringResource(Res.string.exercise_edit_warmup_preset))
                     }
                     Spacer(modifier = Modifier.height(Spacing.small))
                 }
@@ -1924,7 +1967,7 @@ private fun WarmupSetsConfiguration(
                     ) {
                         Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Add Warm-up")
+                        Text(stringResource(Res.string.exercise_edit_add_warmup))
                     }
                     if (warmupSets.isNotEmpty()) {
                         TextButton(
@@ -1933,7 +1976,7 @@ private fun WarmupSetsConfiguration(
                                 contentColor = MaterialTheme.colorScheme.error,
                             ),
                         ) {
-                            Text("Clear All")
+                            Text(stringResource(Res.string.clear_all))
                         }
                     }
                 }
@@ -1977,7 +2020,7 @@ internal fun WarmupSetRow(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
-                "Reps",
+                stringResource(Res.string.label_reps),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -2013,7 +2056,7 @@ internal fun WarmupSetRow(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
-                "% of Working",
+                stringResource(Res.string.exercise_edit_warmup_percent_working),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -2051,7 +2094,7 @@ internal fun WarmupSetRow(
         ) {
             Icon(
                 Icons.Default.Delete,
-                contentDescription = "Remove warm-up set",
+                contentDescription = stringResource(Res.string.exercise_edit_cd_remove_warmup),
                 tint = MaterialTheme.colorScheme.error,
                 modifier = Modifier.size(20.dp),
             )
@@ -2136,7 +2179,7 @@ internal fun WarmupSetRow(
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text(
-                        "Weight",
+                        stringResource(Res.string.label_weight),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -2158,8 +2201,11 @@ internal fun WarmupSetRow(
     }
 }
 
-private fun WorkoutPhase.displayLabel(): String = when (this) {
-    WorkoutPhase.CONCENTRIC -> "Concentric"
-    WorkoutPhase.ECCENTRIC -> "Eccentric"
-    WorkoutPhase.COMBINED -> "Combined"
-}
+@Composable
+private fun WorkoutPhase.displayLabel(): String = stringResource(
+    when (this) {
+        WorkoutPhase.CONCENTRIC -> Res.string.phase_concentric
+        WorkoutPhase.ECCENTRIC -> Res.string.phase_eccentric
+        WorkoutPhase.COMBINED -> Res.string.phase_combined
+    },
+)

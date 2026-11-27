@@ -2,6 +2,7 @@ package com.devil.phoenixproject.data.preferences
 
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.ble.BleCompatibilityMode
+import com.devil.phoenixproject.data.migration.MigrationManager
 import com.devil.phoenixproject.domain.model.BleCompatibilitySetting
 import com.devil.phoenixproject.domain.model.PhoenixModel
 import com.devil.phoenixproject.domain.model.RepCountTiming
@@ -88,7 +89,7 @@ interface PreferencesManager {
      * work that derives from or rewrites stored rows is cleared here and that work runs again
      * on next launch. Add each new marker of that kind (e.g. a catalogue-remap version) here.
      */
-    suspend fun resetOneShotWorkAfterRestore()
+    suspend fun resetOneShotWorkAfterRestore(clearProfilePreferencesMigration: Boolean = false)
     suspend fun setBleCompatibilityMode(setting: BleCompatibilitySetting)
 
     /**
@@ -321,8 +322,11 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
         updateAndEmit { copy(weightSuggestionsEnabled = enabled) }
     }
 
-    override suspend fun resetOneShotWorkAfterRestore() {
+    override suspend fun resetOneShotWorkAfterRestore(clearProfilePreferencesMigration: Boolean) {
         settings.remove(KEY_VELOCITY_1RM_BACKFILL_DONE)
+        if (clearProfilePreferencesMigration) {
+            settings.remove(MigrationManager.KEY_PROFILE_PREFERENCES_MIGRATION_COMPLETE)
+        }
         updateAndEmit { copy(velocityOneRepMaxBackfillDone = false) }
     }
 

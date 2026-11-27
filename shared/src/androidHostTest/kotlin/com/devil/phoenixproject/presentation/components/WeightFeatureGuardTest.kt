@@ -1,5 +1,7 @@
 package com.devil.phoenixproject.presentation.components
 
+import com.devil.phoenixproject.testutil.findProjectRoot
+import com.devil.phoenixproject.testutil.readProjectFile
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertFalse
@@ -25,13 +27,7 @@ import kotlin.test.assertTrue
  */
 class WeightFeatureGuardTest {
 
-    private val projectRoot: File by lazy {
-        var dir = File(System.getProperty("user.dir") ?: ".")
-        while (!File(dir, "shared/src/commonMain").exists()) {
-            dir = dir.parentFile ?: break
-        }
-        dir
-    }
+    private val projectRoot: File by lazy { findProjectRoot() }
 
     private val commonMainRoot: File
         get() = File(projectRoot, "shared/src/commonMain/kotlin")
@@ -42,10 +38,8 @@ class WeightFeatureGuardTest {
     private val iosMainRoot: File
         get() = File(projectRoot, "shared/src/iosMain/kotlin")
 
-    private fun readSourceFile(relativePath: String): String? {
-        val file = File(commonMainRoot, relativePath)
-        return if (file.exists()) file.readText() else null
-    }
+    private fun readSourceFile(relativePath: String): String? =
+        readProjectFile("shared/src/commonMain/kotlin/$relativePath")
 
     /**
      * Scan all .kt files in a directory tree for any of the given patterns.

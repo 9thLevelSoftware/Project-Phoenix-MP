@@ -78,6 +78,8 @@ class SqlDelightRepMetricRepository(private val db: PhoenixDatabase) : RepMetric
                     rangeOfMotionMm = row.rangeOfMotionMm.toFloat(),
                     peakPowerWatts = row.peakPowerWatts.toFloat(),
                     avgPowerWatts = row.avgPowerWatts.toFloat(),
+                    metricUnitVersion = row.metric_unit_version.toInt(),
+                    powerMethod = row.power_method,
                 )
             }
         } catch (e: Exception) {
@@ -103,6 +105,8 @@ class SqlDelightRepMetricRepository(private val db: PhoenixDatabase) : RepMetric
                     avgPowerWatts = row.avgPowerWatts.toFloat(),
                     concentricDurationMs = row.concentricDurationMs,
                     eccentricDurationMs = row.eccentricDurationMs,
+                    metricUnitVersion = row.metric_unit_version.toInt(),
+                    powerMethod = row.power_method,
                 )
             }
         } catch (e: Exception) {
@@ -160,6 +164,7 @@ internal fun PhoenixDatabaseQueries.insertRepMetricRow(sessionId: String, metric
         avgPowerWatts = metric.avgPowerWatts.toDouble(),
         updatedAt = null,
         serverId = null,
+        power_method = metric.powerMethod,
     )
 }
 

@@ -588,6 +588,12 @@ class SqlDelightUserProfileRepository(
                 queries.reassignRoutineGroupProfile(targetProfileId, id)
                 queries.reassignRoutineProfile(targetProfileId, id)
                 queries.reassignSessionProfile(targetProfileId, id)
+                queries.reassignWorkoutDeletionProfile(
+                    targetProfileId = targetProfileId,
+                    targetOwnerUserId = targetProfile.supabase_user_id ?: ownerUserId,
+                    sourceProfileId = id,
+                )
+                queries.deleteRoutineRecoveryByProfile(id)
                 queries.reassignTrainingCycleProfile(targetProfileId, id)
                 queries.adoptCycleSyncStateProfile(targetProfileId, id)
                 queries.reassignStreakProfile(targetProfileId, id)

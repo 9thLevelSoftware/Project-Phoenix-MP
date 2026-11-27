@@ -495,7 +495,7 @@ class WorkoutMachineTeardownTest {
     }
 
     @Test
-    fun `exit reset calls are centralized with pause as documented non-exit exception`() {
+    fun `exit reset calls are strictly centralized without non-exit exceptions`() {
         val activeSessionSource = requireNotNull(
             readProjectFile(
                 "src/commonMain/kotlin/com/devil/phoenixproject/presentation/manager/ActiveSessionEngine.kt",
@@ -512,9 +512,10 @@ class WorkoutMachineTeardownTest {
             ),
         )
 
-        assertEquals(3, Regex("bleRepository\\.stopWorkout\\(\\)").findAll(activeSessionSource).count())
+        assertEquals(2, Regex("bleRepository\\.stopWorkout\\(\\)").findAll(activeSessionSource).count())
         assertTrue(activeSessionSource.contains("launchRestoredMachineTeardownReset"))
-        assertTrue(activeSessionSource.contains("pause/resume non-exit RESET exception"))
+        assertTrue(!activeSessionSource.contains("fun pauseWorkout"))
+        assertTrue(!activeSessionSource.contains("fun resumeWorkout"))
         assertTrue(!defaultManagerSource.contains("bleRepository.stopWorkout()"))
         assertTrue(!routineFlowSource.contains("stopMachineWorkout"))
     }

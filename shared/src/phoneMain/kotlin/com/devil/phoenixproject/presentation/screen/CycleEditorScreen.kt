@@ -170,7 +170,7 @@ fun CycleEditorScreen(
                         )
                         Button(
                             onClick = { saveCycle() },
-                            enabled = canPreview,
+                            enabled = canPreview && !uiState.isSaving,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .heightIn(min = 48.dp),
@@ -198,7 +198,7 @@ fun CycleEditorScreen(
                         )
                         Button(
                             onClick = { saveCycle() },
-                            enabled = canPreview,
+                            enabled = canPreview && !uiState.isSaving,
                             modifier = Modifier.heightIn(min = 48.dp),
                         ) {
                             Text(stringResource(Res.string.action_preview))

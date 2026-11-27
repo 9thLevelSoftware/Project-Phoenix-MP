@@ -68,11 +68,6 @@ class WorkoutStateTest {
     // ========== WorkoutState Tests ==========
 
     @Test
-    fun `WorkoutState Idle is singleton`() {
-        assertEquals(WorkoutState.Idle, WorkoutState.Idle)
-    }
-
-    @Test
     fun `WorkoutState Countdown stores seconds remaining`() {
         val state = WorkoutState.Countdown(3)
         assertIs<WorkoutState.Countdown>(state)

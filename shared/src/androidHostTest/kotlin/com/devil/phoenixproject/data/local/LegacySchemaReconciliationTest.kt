@@ -5,6 +5,7 @@ import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.devil.phoenixproject.database.PhoenixDatabase
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import org.junit.Test
 
@@ -408,6 +409,80 @@ class LegacySchemaReconciliationTest {
         assertTrue(indexExists(driver, "idx_gamification_stats_profile"))
         assertEquals(1, countGamificationStatsRows(driver, "default"))
         assertEquals(200L, latestGamificationLastUpdated(driver, "default"))
+    }
+
+    @Test
+    fun `migrateStepWithPreHeal heals pre-v21 database missing profile_id and bootstrap tables before dependent migrations`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        buildPreV21Schema(driver)
+        driver.execute(null, "PRAGMA user_version = 20", 0)
+
+        for (v in 20L until PhoenixDatabase.Schema.version) {
+            val stepTo = v + 1
+            migrateStepWithPreHeal(
+                driver = driver,
+                fromVersion = v,
+                stepTo = stepTo,
+                migrateStep = { PhoenixDatabase.Schema.migrate(driver, v, stepTo) },
+            )
+            driver.execute(null, "PRAGMA user_version = $stepTo", 0)
+        }
+
+        val report = reconcileFullSchema(driver)
+        assertFalse(report.hasFailures, "Unexpected reconciliation failures: ${report.logSummary()}")
+        assertTrue(columnNames(driver, "WorkoutSession").contains("profile_id"))
+        assertTrue(columnNames(driver, "RpgAttributes").contains("profile_id"))
+        assertTrue(indexExists(driver, "idx_earned_badge_profile"))
+        assertTrue(indexExists(driver, "idx_gamification_stats_profile"))
+        assertTrue(indexExists(driver, "idx_rpg_attributes_profile"))
+    }
+
+    @Test
+    fun `migrateStepWithPreHeal upgrades minimal v1 schema through current version`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        buildMinimalV1Schema(driver, includeWorkoutSessionRoutineId = false)
+
+        for (v in 1L until PhoenixDatabase.Schema.version) {
+            val stepTo = v + 1
+            migrateStepWithPreHeal(
+                driver = driver,
+                fromVersion = v,
+                stepTo = stepTo,
+                migrateStep = { PhoenixDatabase.Schema.migrate(driver, v, stepTo) },
+            )
+            driver.execute(null, "PRAGMA user_version = $stepTo", 0)
+        }
+
+        val report = reconcileFullSchema(driver)
+        assertFalse(report.hasFailures, "Unexpected reconciliation failures: ${report.logSummary()}")
+        assertEquals(PhoenixDatabase.Schema.version, queryLong(driver, "PRAGMA user_version"))
+        assertTrue(indexExists(driver, "idx_session_server_id"))
+        assertTrue(indexExists(driver, "idx_rpg_attributes_profile"))
+    }
+
+    private fun buildPreV21Schema(driver: SqlDriver) {
+        buildMinimalV1Schema(driver, includeWorkoutSessionRoutineId = false)
+        for (v in 1L until 20L) {
+            PhoenixDatabase.Schema.migrate(driver, v, v + 1)
+        }
+        // Explicitly verify pre-v21 state lacks heal-only profile_id and bootstrap tables.
+        assertFalse(columnNames(driver, "WorkoutSession").contains("profile_id"))
+        assertFalse(tableExists(driver, "EarnedBadge"))
+        assertFalse(tableExists(driver, "GamificationStats"))
+    }
+
+    private fun queryLong(driver: SqlDriver, sql: String): Long? {
+        var value: Long? = null
+        driver.executeQuery(
+            identifier = null,
+            sql = sql,
+            mapper = { cursor ->
+                if (cursor.next().value) value = cursor.getLong(0)
+                QueryResult.Value(Unit)
+            },
+            parameters = 0,
+        )
+        return value
     }
 
     private fun columnNames(driver: SqlDriver, table: String): List<String> {

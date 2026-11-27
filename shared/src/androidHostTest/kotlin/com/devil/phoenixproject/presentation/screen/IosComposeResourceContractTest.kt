@@ -13,17 +13,28 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlin.test.fail
 import org.junit.Assume
-import org.junit.Before
 
 class IosComposeResourceContractTest {
-    /** The staging script runs under /bin/sh; skip on hosts without it (Windows). CI runs it on Linux. */
-    @Before
-    fun requirePosixShell() {
+    /** The staging script runs under /bin/sh; skip only shell-executing tests on hosts without it (Windows). */
+    private fun requirePosixShell() {
         Assume.assumeTrue("/bin/sh not available on this host", File("/bin/sh").canExecute())
     }
 
     @Test
+    fun xcodeCopyComposeResourcesPhaseTargetsDeviceSdkOnly() {
+        val shellScript = resourceStagingScript()
+        assertTrue(shellScript.contains("iphoneos*"), "staging script must allow iphoneos SDK")
+        assertTrue(shellScript.contains("iosArm64"), "staging script must copy iosArm64 resources")
+        assertTrue(shellScript.contains("unsupported SDK_NAME"), "staging script must reject unsupported SDKs")
+        assertTrue(
+            shellScript.contains("Processed Compose resources not found"),
+            "staging script must fail when processed resources are missing",
+        )
+    }
+
+    @Test
     fun xcodeStagesIosArm64ResourcesForDeviceSdk() {
+        requirePosixShell()
         val shellScript = resourceStagingScript()
         val fixture = Files.createTempDirectory("ios-compose-resources")
         try {
@@ -43,6 +54,7 @@ class IosComposeResourceContractTest {
 
     @Test
     fun xcodeResourceStagingRejectsSimulatorSdk() {
+        requirePosixShell()
         val shellScript = resourceStagingScript()
         val fixture = Files.createTempDirectory("ios-compose-resources-simulator")
         try {
@@ -64,6 +76,7 @@ class IosComposeResourceContractTest {
 
     @Test
     fun xcodeResourceStagingFailsWhenProcessedResourcesAreMissing() {
+        requirePosixShell()
         val shellScript = resourceStagingScript()
         val fixture = Files.createTempDirectory("ios-compose-resources-missing")
         try {

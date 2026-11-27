@@ -35,7 +35,7 @@ internal fun planProfilePreferencePushChunks(
         .eachCount()
         .filterValues { it > 1 }
         .keys
-    val valid = mutableListOf<PreparedProfilePreferenceMutation>()
+    val valid = mutableListOf<ValidPreferenceMutation>()
     val issues = mutableListOf<ProfilePreferenceSyncIssue>()
 
     sorted.forEach { mutation ->
@@ -48,14 +48,16 @@ internal fun planProfilePreferencePushChunks(
             return@forEach
         }
 
-        val oneElement = encodePortalSyncPayload(preferencePayload(listOf(mutation)))
+        val oneElementPayload = preferencePayload(listOf(mutation))
+        val oneElement = encodePortalSyncPayload(oneElementPayload)
         val sectionBytes = oneElement.preferenceElementByteCount(
             oneElement.preferenceElementSpans.single(),
         )
+        val oneElementBytes = oneElement.rawBytes.size
         val reason = when {
             sectionBytes > MAX_PROFILE_PREFERENCE_SECTION_BYTES ->
                 ProfilePreferenceSyncIssueReason.SECTION_TOO_LARGE
-            oneElement.rawBytes.size > MAX_PROFILE_PREFERENCE_REQUEST_BYTES ->
+            oneElementBytes > MAX_PROFILE_PREFERENCE_REQUEST_BYTES ->
                 ProfilePreferenceSyncIssueReason.REQUEST_TOO_LARGE
             else -> null
         }
@@ -67,16 +69,21 @@ internal fun planProfilePreferencePushChunks(
             )
             return@forEach
         }
-        valid += mutation
+        valid += ValidPreferenceMutation(
+            mutation = mutation,
+            singlePayload = oneElementPayload,
+            singleByteCount = oneElementBytes,
+        )
     }
 
     val chunks = mutableListOf<ProfilePreferencePushChunk>()
     var current = mutableListOf<PreparedProfilePreferenceMutation>()
+    var currentPayload: PortalSyncPayload? = null
+    var currentByteCount = 0
     fun emit() {
         if (current.isEmpty()) return
-        val payload = preferencePayload(current)
-        val encoded = encodePortalSyncPayload(payload)
-        check(encoded.rawBytes.size <= MAX_PROFILE_PREFERENCE_REQUEST_BYTES) {
+        val payload = checkNotNull(currentPayload)
+        check(currentByteCount <= MAX_PROFILE_PREFERENCE_REQUEST_BYTES) {
             "PROFILE_PREFERENCE_PLANNER_OVERSIZED_REQUEST"
         }
         val ledger = current.associate { it.key to it.sentLocalGeneration }
@@ -91,23 +98,38 @@ internal fun planProfilePreferencePushChunks(
             ledger = ledger,
         )
         current = mutableListOf()
+        currentPayload = null
+        currentByteCount = 0
     }
 
-    valid.forEach { mutation ->
-        val candidate = current + mutation
-        val bytes = encodePortalSyncPayload(preferencePayload(candidate)).rawBytes.size
-        if (bytes > MAX_PROFILE_PREFERENCE_REQUEST_BYTES) emit()
-        current += mutation
+    valid.forEach { item ->
+        if (current.isEmpty()) {
+            current += item.mutation
+            currentPayload = item.singlePayload
+            currentByteCount = item.singleByteCount
+        } else {
+            val candidate = current + item.mutation
+            val candidatePayload = preferencePayload(candidate)
+            val candidateBytes = encodePortalSyncPayload(candidatePayload).rawBytes.size
+            if (candidateBytes > MAX_PROFILE_PREFERENCE_REQUEST_BYTES) {
+                emit()
+                current += item.mutation
+                currentPayload = item.singlePayload
+                currentByteCount = item.singleByteCount
+            } else {
+                current += item.mutation
+                currentPayload = candidatePayload
+                currentByteCount = candidateBytes
+            }
+        }
     }
     emit()
 
-    check(
-        chunks.all {
-            encodePortalSyncPayload(it.payload).rawBytes.size <=
-                MAX_PROFILE_PREFERENCE_REQUEST_BYTES
-        },
-    ) {
-        "PROFILE_PREFERENCE_PLANNER_OVERSIZED_REQUEST"
-    }
     return ProfilePreferencePushPlan(chunks = chunks, unsyncable = issues)
 }
+
+private class ValidPreferenceMutation(
+    val mutation: PreparedProfilePreferenceMutation,
+    val singlePayload: PortalSyncPayload,
+    val singleByteCount: Int,
+)

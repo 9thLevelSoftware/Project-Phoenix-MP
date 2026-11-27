@@ -78,6 +78,7 @@ import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.usecase.BodyweightVolumeCalculator
 import com.devil.phoenixproject.presentation.components.BackHandler
 import com.devil.phoenixproject.presentation.components.EccentricLoadSlider
+import com.devil.phoenixproject.util.rethrowIfCancellation
 import com.devil.phoenixproject.presentation.components.EchoLevelPillSelector
 import com.devil.phoenixproject.presentation.components.EquipmentRackSelectionCard
 import com.devil.phoenixproject.presentation.components.ExerciseDemoImage
@@ -223,7 +224,8 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
         currentExercise.exercise.id?.let { exerciseId ->
             try {
                 images = exerciseRepository.getImages(exerciseId)
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                e.rethrowIfCancellation()
                 // Image loading failed - images stay empty
             }
         }
@@ -830,7 +832,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
     if (showSessionBodyweightEditor) {
         AlertDialog(
             onDismissRequest = { showSessionBodyweightEditor = false },
-            title = { Text("Edit current bodyweight") },
+            title = { Text(stringResource(Res.string.set_ready_edit_bodyweight)) },
             text = {
                 Column(
                     modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -863,7 +865,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                             checked = saveSessionBodyweightToProfile,
                             onCheckedChange = { saveSessionBodyweightToProfile = it },
                         )
-                        Text("Save to profile for next time")
+                        Text(stringResource(Res.string.set_ready_save_to_profile))
                     }
                 }
             },
@@ -880,7 +882,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                         showSessionBodyweightEditor = false
                     },
                 ) {
-                    Text("Save for session")
+                    Text(stringResource(Res.string.set_ready_save_for_session))
                 }
             },
             dismissButton = {
@@ -981,15 +983,15 @@ private fun CurrentBodyweightPromptCard(
             verticalArrangement = Arrangement.spacedBy(Spacing.small),
         ) {
             Text(
-                "Current bodyweight",
+                stringResource(Res.string.set_ready_current_bodyweight),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
             )
             Text(
                 if (hasSavedBodyweight) {
-                    "Used for bodyweight effective load and volume in this session."
+                    stringResource(Res.string.set_ready_bodyweight_has_saved)
                 } else {
-                    "Add bodyweight to calculate bodyweight effective load and volume for this session."
+                    stringResource(Res.string.set_ready_bodyweight_missing)
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1012,7 +1014,7 @@ private fun CurrentBodyweightPromptCard(
                         onClick = onConfirmStored,
                         modifier = Modifier.heightIn(min = 48.dp),
                     ) {
-                        Text("Use for this session")
+                        Text(stringResource(Res.string.set_ready_use_for_session))
                     }
                     TextButton(
                         onClick = onEdit,
@@ -1025,13 +1027,13 @@ private fun CurrentBodyweightPromptCard(
                         onClick = onEdit,
                         modifier = Modifier.heightIn(min = 48.dp),
                     ) {
-                        Text("Save for session")
+                        Text(stringResource(Res.string.set_ready_save_for_session))
                     }
                     TextButton(
                         onClick = onSkip,
                         modifier = Modifier.heightIn(min = 48.dp),
                     ) {
-                        Text("Not now")
+                        Text(stringResource(Res.string.set_ready_not_now))
                     }
                 }
             }
@@ -1061,7 +1063,7 @@ private fun HandledSessionBodyweightCard(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    "Current bodyweight",
+                    stringResource(Res.string.set_ready_current_bodyweight),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1079,7 +1081,7 @@ private fun HandledSessionBodyweightCard(
                 onClick = onEdit,
                 modifier = Modifier.heightIn(min = 48.dp),
             ) {
-                Text("Edit current bodyweight")
+                Text(stringResource(Res.string.set_ready_edit_bodyweight))
             }
         }
     }

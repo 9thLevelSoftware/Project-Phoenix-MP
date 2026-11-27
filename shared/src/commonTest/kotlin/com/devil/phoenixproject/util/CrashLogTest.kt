@@ -92,6 +92,43 @@ class CrashLogTest {
     }
 
     @Test
+    fun redactionStaysFastOnRepeatedAnchorTokens() {
+        val inputs = listOf(
+            "@".repeat(200_000),
+            "eyJ".repeat(66_000),
+            ("eyJ".repeat(1366) + ".a").repeat(50),
+            ("a@b." + "1".repeat(250) + "@").repeat(800),
+        )
+        for (input in inputs) {
+            val elapsed = measureTime { CrashLog.redact(input) }
+            assertTrue(elapsed < 1.seconds, "redact took $elapsed for repeated anchor ${input.take(8)}...")
+        }
+    }
+
+    @Test
+    fun redactionPreservesEdgeCaseAndPrecedenceSemantics() {
+        // >64 local-part chars before '@': only the trailing 64 chars + domain are redacted.
+        assertEquals(
+            "prefix " + "a".repeat(6) + "[redacted]",
+            CrashLog.redact("prefix " + "a".repeat(70) + "@example.com"),
+        )
+        // Multi-dot domains and trailing non-TLD segments.
+        assertEquals("user=[redacted]", CrashLog.redact("user=a@b.c.com"))
+        assertEquals("user=[redacted].123", CrashLog.redact("user=a@b.com.123"))
+        // Invalid TLDs / missing domain prefix are not redacted.
+        assertEquals("a@b.123 a@b.c a@.com", CrashLog.redact("a@b.123 a@b.c a@.com"))
+        // Adjacent/nested eyJ tokens: partial prefix before a valid eyJ still leaves the valid JWT redacted.
+        assertEquals("[redacted]", CrashLog.redact("eyJfooeyJbar.baz.qux"))
+        assertEquals(
+            "eyJ" + "a".repeat(4097) + "[redacted]",
+            CrashLog.redact("eyJ" + "a".repeat(4097) + "eyJabc.def.ghi"),
+        )
+        // Bearer runs before JWT and Email so a token containing either becomes a single [redacted].
+        assertEquals("auth=[redacted]", CrashLog.redact("auth=Bearer eyJabc.def.ghi"))
+        assertEquals("auth=[redacted]", CrashLog.redact("auth=bearer jane@example.com"))
+    }
+
+    @Test
     fun recordedReportIsPresentedUntilAnsweredThenNeverAgain() {
         val store = InMemoryStore()
         CrashLog.record(store, RuntimeException("boom"), "1.2.3", "p", 0L)

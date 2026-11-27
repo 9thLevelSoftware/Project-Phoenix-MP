@@ -153,6 +153,7 @@ CREATE INDEX idx_session_exercise ON WorkoutSession(exerciseId, profile_id);
 CREATE INDEX idx_session_exercise_profile_ts ON WorkoutSession(exerciseId, profile_id, timestamp DESC);
 -- Routine-group lookups and sync repair (migration 55).
 CREATE INDEX idx_session_routine_session ON WorkoutSession(routineSessionId);
+CREATE INDEX idx_session_server_id ON WorkoutSession(serverId);
 
 -- Exercise metrics (samples during workout)
 CREATE TABLE MetricSample (
@@ -212,6 +213,7 @@ CREATE TABLE PolarEcgSegment (
 );
 
 CREATE INDEX idx_polar_ecg_segment_session_wall ON PolarEcgSegment(sessionId, wallClockTimestampMs);
+CREATE INDEX idx_polar_ecg_segment_wall ON PolarEcgSegment(wallClockTimestampMs);
 
 -- Personal records
 -- Supports two PR types: MAX_WEIGHT (heaviest lift) and MAX_VOLUME (weight × reps)
@@ -274,6 +276,7 @@ CREATE TABLE Routine (
 );
 
 CREATE INDEX idx_routine_profile ON Routine(profile_id);
+CREATE INDEX idx_routine_group ON Routine(groupId);
 
 -- Supersets (first-class container for grouped exercises)
 CREATE TABLE Superset (
@@ -450,6 +453,7 @@ CREATE TABLE RepMetric (
     rangeOfMotionMm REAL NOT NULL,
     peakPowerWatts REAL NOT NULL,
     avgPowerWatts REAL NOT NULL,
+    power_method TEXT,
     updatedAt INTEGER,
     serverId TEXT,
     -- Issue #1400 (migration 65): 1 = legacy cm/cm-s scale, 2 = mm/mm-s. Insert paths write 2.
@@ -515,6 +519,7 @@ CREATE TABLE AssessmentResult (
 
 CREATE INDEX idx_assessment_result_exercise ON AssessmentResult(exerciseId);
 CREATE INDEX idx_assessment_profile ON AssessmentResult(profile_id);
+CREATE INDEX idx_assessment_result_session ON AssessmentResult(assessmentSessionId);
 
 -- ==================== VELOCITY-BASED 1RM ESTIMATES ====================
 -- Auto-computed velocity 1RM time-series (issue #517). Separate from
@@ -624,11 +629,12 @@ UPDATE ExerciseMvt SET profile_id = :targetProfileId WHERE profile_id = :sourceP
 
 -- Exercise Queries
 selectAllExercises:
-SELECT * FROM Exercise WHERE archived = 0 ORDER BY name ASC;
+SELECT * FROM Exercise WHERE archived = 0 AND deletedAt IS NULL ORDER BY name ASC;
 
 searchExercises:
 SELECT * FROM Exercise
 WHERE archived = 0
+  AND deletedAt IS NULL
   AND (
     name LIKE ('%' || :query || '%')
     OR muscleGroups LIKE ('%' || :query || '%')
@@ -690,11 +696,32 @@ UPDATE Exercise SET
     defaultCableConfig = :defaultCableConfig,
     updatedAt = :updatedAt,
     serverId = COALESCE(:serverId, serverId),
-    deletedAt = COALESCE(:deletedAt, deletedAt)
+    archived = CASE
+        WHEN :deletedAt IS NOT NULL THEN 1
+        WHEN updatedAt IS NULL OR updatedAt < :updatedAt THEN 0
+        ELSE archived
+    END,
+    deletedAt = CASE
+        WHEN :deletedAt IS NOT NULL THEN :deletedAt
+        WHEN updatedAt IS NULL OR updatedAt < :updatedAt THEN NULL
+        ELSE deletedAt
+    END
 WHERE id = :id
   AND isCustom = 1
   AND (updatedAt IS NULL OR updatedAt <= :updatedAt)
-  AND (deletedAt IS NULL OR :deletedAt IS NOT NULL);
+  AND (
+    deletedAt IS NULL
+    OR :deletedAt IS NOT NULL
+    OR updatedAt IS NULL
+    OR updatedAt < :updatedAt
+  );
+
+restoreCustomExerciseSyncFields:
+UPDATE Exercise
+SET updatedAt = :updatedAt,
+    serverId = :serverId,
+    deletedAt = :deletedAt
+WHERE id = :id AND isCustom = 1;
 
 selectStockExercisesForRemap:
 SELECT id, name, archived FROM Exercise WHERE isCustom = 0;
@@ -783,17 +810,27 @@ WHERE id = :oldId AND isCustom = 0;
 
 -- Custom Exercise Queries
 selectCustomExercises:
+SELECT * FROM Exercise WHERE isCustom = 1 AND deletedAt IS NULL ORDER BY name ASC;
+
+selectAllCustomExercisesSync:
 SELECT * FROM Exercise WHERE isCustom = 1 ORDER BY name ASC;
 
 updateCustomExercise:
 UPDATE Exercise
 SET name = ?, description = ?, muscleGroup = ?, muscleGroups = ?, muscles = ?,
     equipment = ?, movement = ?, sidedness = ?, grip = ?, gripWidth = ?,
-    minRepRange = ?, aliases = ?, defaultCableConfig = ?, one_rep_max_kg = ?
+    minRepRange = ?, aliases = ?, defaultCableConfig = ?, one_rep_max_kg = ?,
+    updatedAt = ?
 WHERE id = ? AND isCustom = 1;
 
 deleteCustomExercise:
-DELETE FROM Exercise WHERE id = ? AND isCustom = 1;
+UPDATE Exercise
+SET archived = 1,
+    deletedAt = :deletedAt,
+    updatedAt = :updatedAt
+WHERE id = :id
+  AND isCustom = 1
+  AND deletedAt IS NULL;
 
 deleteSession:
 DELETE FROM WorkoutSession WHERE id = ?;
@@ -1199,22 +1236,26 @@ UPDATE WorkoutSession SET targetReps = ?, rpe = ? WHERE id = ?;
 
 updateSessionMode:
 UPDATE WorkoutSession
-SET mode = ?, local_sync_generation = local_sync_generation + 1
+SET mode = ?,
+    local_sync_generation = local_sync_generation + CASE WHEN portalOrigin = 1 THEN 0 ELSE 1 END
 WHERE id = ?;
 
 updateSessionRoutineName:
 UPDATE WorkoutSession
-SET routineName = ?, local_sync_generation = local_sync_generation + 1
+SET routineName = ?,
+    local_sync_generation = local_sync_generation + CASE WHEN portalOrigin = 1 THEN 0 ELSE 1 END
 WHERE id = ?;
 
 updateSessionRoutineSessionId:
 UPDATE WorkoutSession
-SET routineSessionId = ?, local_sync_generation = local_sync_generation + 1
+SET routineSessionId = ?,
+    local_sync_generation = local_sync_generation + CASE WHEN portalOrigin = 1 THEN 0 ELSE 1 END
 WHERE id = ?;
 
 updateSessionRoutineId:
 UPDATE WorkoutSession
-SET routineId = ?, local_sync_generation = local_sync_generation + 1
+SET routineId = ?,
+    local_sync_generation = local_sync_generation + CASE WHEN portalOrigin = 1 THEN 0 ELSE 1 END
 WHERE id = ?;
 
 updateSessionExerciseTag:
@@ -1424,16 +1465,74 @@ insertRecord:
 INSERT INTO PersonalRecord (exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, phase, profile_id, cable_count, uuid)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
--- Upsert PR by unique key (exerciseId, workoutMode, prType, phase) - no ID required
--- Uses INSERT OR REPLACE which replaces on unique index conflict (idx_pr_unique)
-upsertPR:
-INSERT OR REPLACE INTO PersonalRecord (exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, phase, profile_id, cable_count, uuid)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+-- Update an existing PR from a local lift while preserving PK, serverId, and uuid
+-- and clearing updatedAt/deletedAt so the row is picked up by the next delta push.
+updatePRFromLocalLift:
+UPDATE PersonalRecord
+SET exerciseName = CASE WHEN :exerciseName != '' THEN :exerciseName ELSE exerciseName END,
+    weight = :weight,
+    reps = :reps,
+    oneRepMax = :oneRepMax,
+    achievedAt = :achievedAt,
+    volume = :volume,
+    cable_count = :cableCount,
+    uuid = COALESCE(uuid, :uuid),
+    updatedAt = NULL,
+    deletedAt = NULL
+WHERE exerciseId = :exerciseId
+  AND workoutMode = :workoutMode
+  AND prType = :prType
+  AND phase = :phase
+  AND profile_id = :profileId;
+
+-- Update an active PR from a server merge without resurrecting local tombstones and
+-- while preserving PK, serverId, and updatedAt.
+updatePRFromMerge:
+UPDATE PersonalRecord
+SET exerciseName = :exerciseName,
+    weight = :weight,
+    reps = :reps,
+    oneRepMax = :oneRepMax,
+    achievedAt = :achievedAt,
+    volume = :volume,
+    cable_count = :cableCount,
+    uuid = CASE
+        WHEN uuid IS NOT NULL THEN uuid
+        WHEN NOT EXISTS (
+            SELECT 1 FROM PersonalRecord AS existing
+            WHERE existing.uuid = :uuid
+        ) THEN :uuid
+        ELSE NULL
+    END,
+    serverId = COALESCE(:serverId, serverId),
+    updatedAt = COALESCE(:updatedAt, updatedAt)
+WHERE exerciseId = :exerciseId
+  AND workoutMode = :workoutMode
+  AND prType = :prType
+  AND phase = :phase
+  AND profile_id = :profileId
+  AND deletedAt IS NULL;
+
+-- Insert a PR from a server merge if no row already occupies idx_pr_unique (preserving
+-- local tombstones and existing active rows).
+insertPRFromMergeIgnore:
+INSERT OR IGNORE INTO PersonalRecord (
+    exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt,
+    workoutMode, prType, volume, phase, updatedAt, serverId, deletedAt,
+    profile_id, cable_count, uuid
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- Insert PR but ignore on conflict (local wins) - for portal pull merge
 insertPRIgnore:
 INSERT OR IGNORE INTO PersonalRecord (exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, phase, profile_id, cable_count, uuid)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectPersonalRecordByUuid:
+SELECT * FROM PersonalRecord WHERE uuid = :uuid AND profile_id = :profileId;
+
+updatePersonalRecordModeById:
+UPDATE PersonalRecord SET workoutMode = :workoutMode WHERE id = :id;
 
 adoptServerPrUuid:
 UPDATE PersonalRecord
@@ -1446,6 +1545,12 @@ WHERE id = (
     AND candidate.phase = :phase
     AND candidate.profile_id = :profileId
     AND candidate.achievedAt = :achievedAt
+    AND (candidate.uuid IS NULL OR candidate.updatedAt IS NOT NULL)
+    AND (
+      candidate.workoutMode = :workoutMode
+      OR candidate.workoutMode IN ('MAX_WEIGHT', 'MAX_VOLUME', '1RM')
+      OR (:workoutMode IN ('MAX_WEIGHT', 'MAX_VOLUME', '1RM') AND candidate.uuid IS NULL)
+    )
     AND (candidate.uuid IS NULL OR candidate.uuid != :uuid)
     AND NOT EXISTS (
       SELECT 1 FROM PersonalRecord AS existing WHERE existing.uuid = :uuid
@@ -1498,6 +1603,38 @@ WHERE uuid = :uuid
     OR (updatedAt = :updatedAt AND :deletedAt IS NOT NULL AND deletedAt IS NULL)
   );
 
+-- Update a colliding PersonalRecord occupying idx_pr_unique when a newer non-deleted
+-- server PR arrives with a different uuid/achievedAt, without INSERT OR REPLACE.
+updatePulledPersonalRecordOnSlotCollision:
+UPDATE PersonalRecord
+SET exerciseName = :exerciseName,
+    weight = :weight,
+    reps = :reps,
+    oneRepMax = :oneRepMax,
+    achievedAt = :achievedAt,
+    volume = :volume,
+    cable_count = :cableCount,
+    serverId = COALESCE(:serverId, serverId),
+    updatedAt = :updatedAt,
+    deletedAt = NULL,
+    uuid = CASE
+        WHEN NOT EXISTS (
+            SELECT 1 FROM PersonalRecord AS existing
+            WHERE existing.uuid = :uuid AND existing.id != PersonalRecord.id
+        ) THEN :uuid
+        ELSE uuid
+    END
+WHERE exerciseId = :exerciseId
+  AND workoutMode = :workoutMode
+  AND prType = :prType
+  AND phase = :phase
+  AND profile_id = :profileId
+  AND (
+    updatedAt IS NULL
+    OR updatedAt < :updatedAt
+    OR (updatedAt = :updatedAt AND deletedAt IS NULL)
+  );
+
 -- Get all PRs unfiltered (for backup export across all profiles)
 selectAllRecordsSync:
 SELECT * FROM PersonalRecord ORDER BY achievedAt DESC;
@@ -1517,6 +1654,10 @@ SELECT * FROM Routine WHERE id = ?;
 
 insertRoutine:
 INSERT INTO Routine (id, name, description, createdAt, lastUsed, useCount, profile_id, groupId, deletedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+insertRoutineForBackup:
+INSERT INTO Routine (id, name, description, createdAt, lastUsed, useCount, updatedAt, serverId, deletedAt, profile_id, groupId)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- Routine upsert = updateRoutineFields/updateRoutineById, then insertRoutineIgnore.
 -- Never INSERT OR REPLACE a Routine: with foreign keys ON the implicit delete cascades
@@ -1711,9 +1852,9 @@ INSERT INTO RepMetric (
     peakForceA, peakForceB, avgForceConcentricA, avgForceConcentricB,
     avgForceEccentricA, avgForceEccentricB, peakVelocity,
     avgVelocityConcentric, avgVelocityEccentric, rangeOfMotionMm,
-    peakPowerWatts, avgPowerWatts, updatedAt, serverId
+    peakPowerWatts, avgPowerWatts, updatedAt, serverId, power_method
 , metric_unit_version)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 2);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 2);
 
 selectRepMetricsBySession:
 SELECT * FROM RepMetric WHERE sessionId = ? ORDER BY repNumber ASC;
@@ -1725,7 +1866,7 @@ SELECT * FROM RepMetric WHERE sessionId = ? ORDER BY repNumber ASC;
 selectRepMetricSummariesBySession:
 SELECT repNumber, peakForceA, peakForceB, avgForceConcentricA, avgForceConcentricB,
        peakVelocity, avgVelocityConcentric, rangeOfMotionMm, peakPowerWatts,
-       avgPowerWatts, concentricDurationMs, eccentricDurationMs
+       avgPowerWatts, concentricDurationMs, eccentricDurationMs, metric_unit_version, power_method
 FROM RepMetric WHERE sessionId = ? ORDER BY repNumber ASC;
 
 deleteRepMetricsBySession:
@@ -1894,7 +2035,7 @@ CREATE TABLE RpgAttributes (
     profile_id TEXT NOT NULL DEFAULT 'default'
 );
 
-CREATE INDEX idx_rpg_attributes_profile ON RpgAttributes(profile_id);
+CREATE UNIQUE INDEX idx_rpg_attributes_profile ON RpgAttributes(profile_id);
 
 -- ==================== GAMIFICATION QUERIES ====================
 
@@ -1933,19 +2074,40 @@ WHERE profile_id = :profileId
 ORDER BY COALESCE(lastUpdated, 0) DESC, COALESCE(updatedAt, 0) DESC, id DESC
 LIMIT 1;
 
-upsertGamificationStats:
-INSERT OR REPLACE INTO GamificationStats
-(id, totalWorkouts, totalReps, totalVolumeKg, longestStreak, currentStreak, uniqueExercisesUsed, prsAchieved, lastWorkoutDate, streakStartDate, lastUpdated, profile_id)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, :profileId);
+upsertGamificationStats {
+UPDATE GamificationStats
+SET totalWorkouts = :totalWorkouts,
+    totalReps = :totalReps,
+    totalVolumeKg = :totalVolumeKg,
+    longestStreak = :longestStreak,
+    currentStreak = :currentStreak,
+    uniqueExercisesUsed = :uniqueExercisesUsed,
+    prsAchieved = :prsAchieved,
+    lastWorkoutDate = :lastWorkoutDate,
+    streakStartDate = :streakStartDate,
+    lastUpdated = :lastUpdated
+WHERE profile_id = :profileId;
+
+INSERT OR IGNORE INTO GamificationStats (
+    totalWorkouts, totalReps, totalVolumeKg, longestStreak, currentStreak,
+    uniqueExercisesUsed, prsAchieved, lastWorkoutDate, streakStartDate,
+    lastUpdated, profile_id
+)
+VALUES (
+    :totalWorkouts, :totalReps, :totalVolumeKg, :longestStreak, :currentStreak,
+    :uniqueExercisesUsed, :prsAchieved, :lastWorkoutDate, :streakStartDate,
+    :lastUpdated, :profileId
+);
+}
 
 insertGamificationStatsRestoreIfAbsent:
 INSERT OR IGNORE INTO GamificationStats(
-    id, totalWorkouts, totalReps, totalVolumeKg, longestStreak, currentStreak,
+    totalWorkouts, totalReps, totalVolumeKg, longestStreak, currentStreak,
     uniqueExercisesUsed, prsAchieved, lastWorkoutDate, streakStartDate,
     lastUpdated, updatedAt, serverId, profile_id
 )
 VALUES (
-    :id, :totalWorkouts, :totalReps, :totalVolumeKg, :longestStreak, :currentStreak,
+    :totalWorkouts, :totalReps, :totalVolumeKg, :longestStreak, :currentStreak,
     :uniqueExercisesUsed, :prsAchieved, :lastWorkoutDate, :streakStartDate,
     :lastUpdated, :updatedAt, :serverId, :profileId
 );
@@ -1973,7 +2135,7 @@ countUniqueExercises:
 SELECT COUNT(DISTINCT exerciseId) FROM WorkoutSession WHERE exerciseId IS NOT NULL AND exerciseId != '' AND profile_id = :profileId AND deletedAt IS NULL AND workingReps > 0;
 
 countPersonalRecords:
-SELECT COUNT(*) FROM PersonalRecord WHERE profile_id = :profileId;
+SELECT COUNT(*) FROM PersonalRecord WHERE profile_id = :profileId AND deletedAt IS NULL;
 
 -- Distinct local calendar days. Streak math compares these strings to the device's
 -- local today; UTC bucketing breaks an east-of-UTC streak the next local morning.
@@ -1987,17 +2149,31 @@ SELECT DISTINCT DATE(timestamp / 1000, 'unixepoch', 'localtime') AS workoutDate 
 selectRpgAttributes:
 SELECT * FROM RpgAttributes WHERE profile_id = :profileId;
 
-upsertRpgAttributes:
-INSERT OR REPLACE INTO RpgAttributes
-(id, strength, power, stamina, consistency, mastery, characterClass, lastComputed, profile_id)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, :profileId);
+upsertRpgAttributes {
+UPDATE RpgAttributes
+SET strength = :strength,
+    power = :power,
+    stamina = :stamina,
+    consistency = :consistency,
+    mastery = :mastery,
+    characterClass = :characterClass,
+    lastComputed = :lastComputed
+WHERE profile_id = :profileId;
+
+INSERT OR IGNORE INTO RpgAttributes (
+    strength, power, stamina, consistency, mastery, characterClass, lastComputed, profile_id
+)
+VALUES (
+    :strength, :power, :stamina, :consistency, :mastery, :characterClass, :lastComputed, :profileId
+);
+}
 
 -- RPG computation helpers (profile-scoped)
 selectMaxWeightLifted:
-SELECT MAX(heaviestLiftKg) FROM WorkoutSession WHERE heaviestLiftKg IS NOT NULL AND profile_id = :profileId AND workingReps > 0;
+SELECT MAX(heaviestLiftKg) FROM WorkoutSession WHERE heaviestLiftKg IS NOT NULL AND profile_id = :profileId AND deletedAt IS NULL AND workingReps > 0;
 
 selectAvgWorkingWeight:
-SELECT AVG(workingAvgWeightKg) FROM WorkoutSession WHERE workingAvgWeightKg IS NOT NULL AND profile_id = :profileId AND workingReps > 0;
+SELECT AVG(workingAvgWeightKg) FROM WorkoutSession WHERE workingAvgWeightKg IS NOT NULL AND profile_id = :profileId AND deletedAt IS NULL AND workingReps > 0;
 
 -- Profile-scoped peak rep power (audit F019): join to WorkoutSession so one
 -- profile's RepMetric rows cannot influence another profile's RPG power.
@@ -2007,17 +2183,17 @@ INNER JOIN WorkoutSession ws ON rm.sessionId = ws.id
 WHERE ws.profile_id = ? AND ws.deletedAt IS NULL;
 
 countTrainingDays:
-SELECT COUNT(DISTINCT DATE(timestamp / 1000, 'unixepoch')) FROM WorkoutSession WHERE profile_id = :profileId AND workingReps > 0;
+SELECT COUNT(DISTINCT DATE(timestamp / 1000, 'unixepoch', 'localtime')) FROM WorkoutSession WHERE profile_id = :profileId AND deletedAt IS NULL AND workingReps > 0;
 
 -- ==================== ADDITIONAL GAMIFICATION QUERIES ====================
 
 -- Count workouts by workout mode (profile-scoped)
 countWorkoutsByMode:
-SELECT mode, COUNT(*) AS count FROM WorkoutSession WHERE profile_id = :profileId AND workingReps > 0 GROUP BY mode;
+SELECT mode, COUNT(*) AS count FROM WorkoutSession WHERE profile_id = :profileId AND deletedAt IS NULL AND workingReps > 0 GROUP BY mode;
 
 -- Get all unique workout modes used (profile-scoped)
 selectUniqueWorkoutModes:
-SELECT DISTINCT mode FROM WorkoutSession WHERE profile_id = :profileId AND workingReps > 0;
+SELECT DISTINCT mode FROM WorkoutSession WHERE profile_id = :profileId AND deletedAt IS NULL AND workingReps > 0;
 
 -- Profile-scoped peak power (audit F019).
 selectPeakPowerForProfile:
@@ -2030,7 +2206,7 @@ selectUniqueMuscleGroupsFromWorkouts:
 SELECT DISTINCT e.muscleGroup
 FROM WorkoutSession ws
 INNER JOIN Exercise e ON ws.exerciseId = e.id
-WHERE ws.exerciseId IS NOT NULL AND ws.exerciseId != '' AND ws.profile_id = :profileId AND ws.workingReps > 0;
+WHERE ws.exerciseId IS NOT NULL AND ws.exerciseId != '' AND ws.profile_id = :profileId AND ws.deletedAt IS NULL AND ws.workingReps > 0;
 
 -- F-034 badge helpers: aggregate in SQL instead of loading every session. All use the
 -- row filter the old Kotlin helpers applied to selectAllSessions (profile-scoped,
@@ -2075,12 +2251,12 @@ WHERE profile_id = :profileId AND deletedAt IS NULL AND workingReps > 0;
 -- Count workouts completed on weekends (profile-scoped)
 countWeekendWorkouts:
 SELECT COUNT(*) FROM WorkoutSession
-WHERE CAST(strftime('%w', timestamp / 1000, 'unixepoch') AS INTEGER) IN (0, 6)
-AND profile_id = :profileId AND workingReps > 0;
+WHERE CAST(strftime('%w', timestamp / 1000, 'unixepoch', 'localtime') AS INTEGER) IN (0, 6)
+AND profile_id = :profileId AND deletedAt IS NULL AND workingReps > 0;
 
 -- Count completed routine sessions (profile-scoped)
 countCompletedRoutineSessions:
-SELECT COUNT(DISTINCT routineSessionId) FROM WorkoutSession WHERE routineSessionId IS NOT NULL AND routineSessionId != '' AND profile_id = :profileId AND workingReps > 0;
+SELECT COUNT(DISTINCT routineSessionId) FROM WorkoutSession WHERE routineSessionId IS NOT NULL AND routineSessionId != '' AND profile_id = :profileId AND deletedAt IS NULL AND workingReps > 0;
 
 -- Count custom routines created (profile-scoped)
 countCreatedRoutines:
@@ -2262,9 +2438,11 @@ CREATE TABLE ProgressionEvent (
 -- ==================== TRAINING CYCLES INDEXES ====================
 
 CREATE INDEX idx_cycle_day_cycle ON CycleDay(cycle_id);
+CREATE INDEX idx_cycle_day_routine ON CycleDay(routine_id);
 CREATE INDEX idx_cycle_progress_cycle ON CycleProgress(cycle_id);
 CREATE INDEX idx_planned_set_exercise ON PlannedSet(routine_exercise_id);
 CREATE INDEX idx_completed_set_session ON CompletedSet(session_id);
+CREATE INDEX idx_completed_set_planned_set ON CompletedSet(planned_set_id);
 CREATE INDEX idx_completed_set_completed_at ON CompletedSet(completed_at);
 CREATE INDEX idx_progression_exercise ON ProgressionEvent(exercise_id);
 CREATE INDEX idx_progression_profile ON ProgressionEvent(profile_id);
@@ -2316,6 +2494,11 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
 updateTrainingCycle:
 UPDATE TrainingCycle
 SET name = ?, description = ?, is_active = ?, template_id = ?, week_number = ?, updatedAt = ?
+WHERE id = ?;
+
+updateTrainingCycleClearingDelete:
+UPDATE TrainingCycle
+SET name = ?, description = ?, is_active = ?, template_id = ?, week_number = ?, updatedAt = ?, deletedAt = NULL
 WHERE id = ?;
 
 updateTrainingCycleWeekNumber:
@@ -2405,6 +2588,12 @@ WHERE profile_id = :profileId
   AND source = 'LOCAL'
   AND acknowledged_at IS NULL;
 
+reassignWorkoutDeletionProfile:
+UPDATE WorkoutDeletion
+SET profile_id = :targetProfileId,
+    owner_user_id = COALESCE(owner_user_id, :targetOwnerUserId)
+WHERE profile_id = :sourceProfileId;
+
 bindPendingCycleDeletionsForProfile:
 UPDATE CycleSyncState
 SET account_id = :accountId
@@ -2419,6 +2608,16 @@ SET profile_id = :profileId,
     dirty_generation = dirty_generation + 1,
     pending_delete_updated_at = :deletedAt,
     pending_delete_generation = dirty_generation + 1
+WHERE cycle_id = :cycleId;
+
+clearCyclePendingDeletion:
+UPDATE CycleSyncState
+SET pending_delete_updated_at = NULL,
+    pending_delete_generation = NULL,
+    acknowledged_generation = CASE
+        WHEN acknowledged_generation < dirty_generation THEN dirty_generation
+        ELSE acknowledged_generation
+    END
 WHERE cycle_id = :cycleId;
 
 selectPendingCycleDeletions:
@@ -2497,6 +2696,9 @@ ORDER BY created_at DESC, id ASC;
 
 pruneExpiredRoutineRecoveries:
 DELETE FROM RoutineRecovery WHERE expires_at < :now;
+
+deleteRoutineRecoveryByProfile:
+DELETE FROM RoutineRecovery WHERE profile_id = :profileId;
 
 -- CycleDay Queries
 selectCycleDaysByCycle:
@@ -2808,7 +3010,7 @@ SELECT * FROM Exercise WHERE TRIM(name) = TRIM(?) ORDER BY archived ASC LIMIT 1;
 -- custom row. Matching is case-insensitive (like findExerciseByAlias) so a portal casing variation
 -- cannot fall through to the alias while an active row claims the name.
 findExerciseByNameActive:
-SELECT * FROM Exercise WHERE LOWER(TRIM(name)) = LOWER(TRIM(:name)) AND archived = 0 ORDER BY isCustom DESC, id ASC LIMIT 1;
+SELECT * FROM Exercise WHERE LOWER(TRIM(name)) = LOWER(TRIM(:name)) AND archived = 0 AND deletedAt IS NULL ORDER BY isCustom DESC, id ASC LIMIT 1;
 
 -- Exercise lookup for sync pull: exact match on name and muscle group
 findExerciseByNameAndMuscle:
@@ -2817,7 +3019,7 @@ SELECT * FROM Exercise WHERE TRIM(name) = TRIM(:name) AND TRIM(muscleGroup) = TR
 -- #857 review follow-up: active-only name + muscle group lookup, same ordering and case-insensitive
 -- matching contract as findExerciseByNameActive.
 findExerciseByNameAndMuscleActive:
-SELECT * FROM Exercise WHERE LOWER(TRIM(name)) = LOWER(TRIM(:name)) AND LOWER(TRIM(muscleGroup)) = LOWER(TRIM(:muscleGroup)) AND archived = 0 ORDER BY isCustom DESC, id ASC LIMIT 1;
+SELECT * FROM Exercise WHERE LOWER(TRIM(name)) = LOWER(TRIM(:name)) AND LOWER(TRIM(muscleGroup)) = LOWER(TRIM(:muscleGroup)) AND archived = 0 AND deletedAt IS NULL ORDER BY isCustom DESC, id ASC LIMIT 1;
 
 -- Exercise lookup for sync pull: case-insensitive fallback by name only
 findExerciseByNameCaseInsensitive:
@@ -2924,6 +3126,31 @@ UPDATE WorkoutSession SET profile_id = :profileId WHERE id = :id AND profile_id 
 
 adoptRoutineProfile:
 UPDATE Routine SET profile_id = :profileId WHERE id = :id AND profile_id != :profileId;
+
+clearCrossProfileRoutineGroupOnMove:
+UPDATE Routine
+SET groupId = NULL
+WHERE id = :routineId
+  AND groupId IS NOT NULL
+  AND NOT EXISTS (
+      SELECT 1 FROM RoutineGroup
+      WHERE RoutineGroup.id = Routine.groupId
+        AND RoutineGroup.profile_id = :targetProfileId
+  );
+
+selectLiveCyclesUnlinkedByRoutineMove:
+SELECT DISTINCT tc.id, tc.profile_id
+FROM TrainingCycle tc
+JOIN CycleDay cd ON cd.cycle_id = tc.id
+WHERE cd.routine_id = :routineId AND tc.profile_id != :targetProfileId AND tc.deletedAt IS NULL;
+
+clearCrossProfileCycleDayRoutineLinks:
+UPDATE CycleDay
+SET routine_id = NULL
+WHERE routine_id = :routineId
+  AND cycle_id IN (
+      SELECT id FROM TrainingCycle WHERE profile_id != :targetProfileId
+  );
 
 -- Pull-merge claim adoption (Issue #1162 merge gate R3): the pull merge adopts an
 -- existing routine row into the claim target only when the row's current profile is
@@ -3101,6 +3328,16 @@ SELECT * FROM AppliedDataRepair WHERE repair_key = :repairKey;
 insertAppliedDataRepair:
 INSERT OR IGNORE INTO AppliedDataRepair(repair_key, applied_at)
 VALUES (:repairKey, :appliedAt);
+
+deleteAppliedDataRepairsForRestore:
+DELETE FROM AppliedDataRepair
+WHERE repair_key IN (
+    'fabricated-routine-session-ids-v1',
+    'workout-mode-keys-v1',
+    'legacy-workout-routine-names-v1',
+    'epoch-zero-session-starts-v1',
+    'personal-record-history-v1'
+);
 
 -- One-shot repair of sessions saved by the "1970" bug: a save read a zeroed workoutStartTime,
 -- so timestamp = 0 and duration = the save time in epoch ms. Only that signature is touched
@@ -4332,7 +4569,7 @@ UPDATE Routine SET serverId = ? WHERE id = ?;
 -- Custom exercises are global (no profile_id column) - intentionally unscoped
 selectCustomExercisesModifiedSince:
 SELECT * FROM Exercise
-WHERE isCustom = 1 AND (updatedAt > ? OR updatedAt IS NULL) AND deletedAt IS NULL;
+WHERE isCustom = 1 AND (updatedAt > ? OR updatedAt IS NULL);
 
 -- Badges scoped to active profile for sync push
 selectBadgesModifiedSince:
@@ -4423,6 +4660,7 @@ LEFT JOIN Exercise e ON ws.exerciseId = e.id
 WHERE ws.exerciseId IS NOT NULL
   AND ws.timestamp > ?
   AND ws.profile_id = :profileId
+  AND ws.deletedAt IS NULL
 ORDER BY ws.timestamp DESC;
 
 -- Exercise last-performed dates (for neglect detection)
@@ -4431,8 +4669,9 @@ SELECT e.id AS exerciseId, e.name AS exerciseName, e.muscleGroup,
        MAX(ws.timestamp) AS lastPerformed
 FROM Exercise e
 INNER JOIN WorkoutSession ws ON ws.exerciseId = e.id
-WHERE e.archived = 0
+WHERE e.archived = 0 AND e.deletedAt IS NULL
   AND ws.profile_id = :profileId
+  AND ws.deletedAt IS NULL
 GROUP BY e.id;
 
 -- Per-exercise weight history (for plateau detection)
@@ -4456,6 +4695,7 @@ SELECT ws.exerciseId,
 FROM WorkoutSession ws
 WHERE ws.exerciseId IS NOT NULL
   AND ws.profile_id = :profileId
+  AND ws.deletedAt IS NULL
   AND ws.totalReps > 0
   AND (ws.mode NOT LIKE '%Echo%'
        OR (ws.heaviestLiftKg > 0
@@ -5204,4 +5444,9 @@ SELECT * FROM SessionNotes;
 insertSessionNotesIgnore:
 INSERT OR IGNORE INTO SessionNotes(routineSessionId, notes, updatedAt)
 VALUES (?, ?, ?);
+
+countLiveWorkoutSessionsForPortalParent:
+SELECT COUNT(*) FROM WorkoutSession
+WHERE deletedAt IS NULL
+  AND COALESCE(NULLIF(routineSessionId, ''), id) = :portalSessionId;
 

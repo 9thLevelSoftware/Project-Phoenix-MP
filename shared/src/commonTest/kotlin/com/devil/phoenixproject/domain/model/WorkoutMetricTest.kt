@@ -408,19 +408,27 @@ class HapticEventTest {
     }
 
     @Test
-    fun `singleton haptic events are equal`() {
-        assertEquals(HapticEvent.REP_COMPLETED, HapticEvent.REP_COMPLETED)
-        assertEquals(HapticEvent.FINAL_REP, HapticEvent.FINAL_REP)
-        assertEquals(HapticEvent.WARMUP_COMPLETE, HapticEvent.WARMUP_COMPLETE)
-        assertEquals(HapticEvent.WORKOUT_COMPLETE, HapticEvent.WORKOUT_COMPLETE)
-        assertEquals(HapticEvent.WORKOUT_START, HapticEvent.WORKOUT_START)
-        assertEquals(HapticEvent.WORKOUT_END, HapticEvent.WORKOUT_END)
-        assertEquals(HapticEvent.REST_ENDING, HapticEvent.REST_ENDING)
-        assertEquals(HapticEvent.ERROR, HapticEvent.ERROR)
-        assertEquals(HapticEvent.DISCO_MODE_UNLOCKED, HapticEvent.DISCO_MODE_UNLOCKED)
-        assertEquals(HapticEvent.BADGE_EARNED, HapticEvent.BADGE_EARNED)
-        assertEquals(HapticEvent.PERSONAL_RECORD, HapticEvent.PERSONAL_RECORD)
-        assertEquals(HapticEvent.WARMUP_TO_WORKING, HapticEvent.WARMUP_TO_WORKING)
+    fun `singleton haptic events are distinct and usable as map keys`() {
+        val events: List<HapticEvent> = listOf(
+            HapticEvent.REP_COMPLETED,
+            HapticEvent.FINAL_REP,
+            HapticEvent.WARMUP_COMPLETE,
+            HapticEvent.WORKOUT_COMPLETE,
+            HapticEvent.WORKOUT_START,
+            HapticEvent.WORKOUT_END,
+            HapticEvent.REST_ENDING,
+            HapticEvent.ERROR,
+            HapticEvent.DISCO_MODE_UNLOCKED,
+            HapticEvent.BADGE_EARNED,
+            HapticEvent.PERSONAL_RECORD,
+            HapticEvent.WARMUP_TO_WORKING,
+        )
+        assertEquals(events.size, events.toSet().size)
+        val keyedByEvent = events.mapIndexed { index, event -> event to index }.toMap()
+        events.forEachIndexed { index, event ->
+            assertEquals(index, keyedByEvent[event])
+        }
+        assertNotEquals(HapticEvent.REP_COMPLETED as HapticEvent, HapticEvent.FINAL_REP as HapticEvent)
     }
 
     @Test

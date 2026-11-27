@@ -7,6 +7,7 @@ import com.devil.phoenixproject.data.repository.MachineSafetyLoadResult
 /** In-memory durable safety hazard store, one row per trainer address (mirrors the SQL table's key). */
 class InMemoryMachineSafetyHazardRepository : MachineSafetyHazardRepository {
     val rows = linkedMapOf<String, MachineSafetyHazardDocument>()
+    val rejectedRows = linkedMapOf<String, MachineSafetyLoadResult.Rejected>()
 
     /** Optional suspension point before a conditional delete, to model a slow durable store. */
     var beforeDelete: (suspend () -> Unit)? = null
@@ -14,11 +15,15 @@ class InMemoryMachineSafetyHazardRepository : MachineSafetyHazardRepository {
     var deleteFailure: Throwable? = null
 
     override suspend fun load(trainerAddress: String): MachineSafetyLoadResult =
-        rows[trainerAddress]?.let(MachineSafetyLoadResult::Loaded) ?: MachineSafetyLoadResult.Missing
+        rejectedRows[trainerAddress]
+            ?: rows[trainerAddress]?.let(MachineSafetyLoadResult::Loaded)
+            ?: MachineSafetyLoadResult.Missing
 
-    override suspend fun loadAll(): List<MachineSafetyLoadResult> = rows.values.map(MachineSafetyLoadResult::Loaded)
+    override suspend fun loadAll(): List<MachineSafetyLoadResult> =
+        rejectedRows.values.toList() + rows.values.map(MachineSafetyLoadResult::Loaded)
 
     override suspend fun replace(document: MachineSafetyHazardDocument) {
+        rejectedRows.remove(document.trainerAddress)
         rows[document.trainerAddress] = document
     }
 
@@ -26,5 +31,13 @@ class InMemoryMachineSafetyHazardRepository : MachineSafetyHazardRepository {
         beforeDelete?.invoke()
         deleteFailure?.let { throw it }
         return rows[trainerAddress]?.generation == generation && rows.remove(trainerAddress) != null
+    }
+
+    override suspend fun deleteRejectedIfMatches(rawTrainerAddress: String, generation: Long?): Boolean {
+        beforeDelete?.invoke()
+        deleteFailure?.let { throw it }
+        val rejected = rejectedRows[rawTrainerAddress] ?: return false
+        if (generation != null && rejected.storedGeneration != generation) return false
+        return rejectedRows.remove(rawTrainerAddress) != null
     }
 }

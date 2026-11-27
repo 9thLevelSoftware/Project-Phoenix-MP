@@ -21,9 +21,11 @@ by the release workflows (`workflow_call`). None runs on pull requests or on pus
 | Release All Platforms | `.github/workflows/release-all.yml` | Creates the `v<version>` tag and runs the Play Store, APK, IPA and TestFlight workflows |
 | Release All (Existing) | `.github/workflows/release-all-existing.yml` | Re-runs the Play Store, APK, IPA and TestFlight workflows for an existing release tag |
 
-**iOS is not built on pull requests.** On PRs, `ci-tests.yml` only compiles the
-shared Kotlin module for the iOS target on Linux (`ios-target-tests-compile`). It
-never runs `xcodebuild` or produces an .ipa, and it doesn't run the iOS tests.
+**iOS signed .ipa builds do not run on pull requests.** On PRs, `ci-tests.yml`
+compiles the shared Kotlin module for the iOS target on Linux
+(`ios-target-tests-compile`) and runs the blocking `:shared:iosSimulatorArm64Test`
+suite on macOS (`ios-simulator-tests`). Signed `xcodebuild archive` / `.ipa`
+builds remain manual/release-only.
 
 ## Required GitHub Secrets
 

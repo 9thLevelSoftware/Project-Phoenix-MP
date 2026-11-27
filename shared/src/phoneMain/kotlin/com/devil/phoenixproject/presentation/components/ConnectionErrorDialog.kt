@@ -44,17 +44,17 @@ fun ConnectionErrorDialog(message: String, onDismiss: () -> Unit, onRetry: (() -
                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
                 Text(
-                    text = "Troubleshooting tips:",
+                    text = stringResource(Res.string.connection_troubleshooting_tips),
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary,
                 )
 
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    TroubleshootingItem("• Ensure the machine is powered on")
-                    TroubleshootingItem("• Try turning Bluetooth off and on")
-                    TroubleshootingItem("• Move closer to the machine")
-                    TroubleshootingItem("• Check that no other device is connected")
+                    TroubleshootingItem(stringResource(Res.string.connection_tip_powered_on))
+                    TroubleshootingItem(stringResource(Res.string.connection_tip_bluetooth))
+                    TroubleshootingItem(stringResource(Res.string.connection_tip_move_closer))
+                    TroubleshootingItem(stringResource(Res.string.connection_tip_no_other_device))
                 }
             }
         },

@@ -102,7 +102,11 @@ fun SupersetHeader(
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     Text(
-                        text = "${superset.exerciseCount} exercise${if (superset.exerciseCount != 1) "s" else ""}",
+                        text = if (superset.exerciseCount == 1) {
+                            stringResource(Res.string.superset_exercise_count_one)
+                        } else {
+                            stringResource(Res.string.exercise_count_other, superset.exerciseCount)
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -126,7 +130,7 @@ fun SupersetHeader(
                                     modifier = Modifier.size(12.dp),
                                 )
                                 Text(
-                                    text = "${superset.restBetweenSeconds}s rest",
+                                    text = stringResource(Res.string.superset_rest_short, superset.restBetweenSeconds),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = color,
                                     fontWeight = FontWeight.Medium,

@@ -52,6 +52,7 @@ data class Routine(
      * Get all items (supersets + standalone exercises) in display order.
      */
     fun getItems(): List<RoutineItem> {
+        val validSupersetIds = supersets.mapTo(mutableSetOf()) { it.id }
         val supersetItems = supersets.map { superset ->
             RoutineItem.SupersetItem(
                 superset.copy(
@@ -62,7 +63,7 @@ data class Routine(
         }
 
         val standaloneItems = exercises
-            .filter { it.supersetId == null }
+            .filter { it.supersetId == null || it.supersetId !in validSupersetIds }
             .map { RoutineItem.Single(it) }
 
         return (supersetItems + standaloneItems).sortedBy { it.orderIndex }

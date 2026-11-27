@@ -1,9 +1,12 @@
 package com.devil.phoenixproject.presentation.components
 
+import com.devil.phoenixproject.data.repository.RoutineRecoveryExercisePreview
 import com.devil.phoenixproject.data.repository.RoutineRecoveryItem
+import com.devil.phoenixproject.data.repository.RoutineRecoverySetPreview
 import com.devil.phoenixproject.data.sync.GoTrueAuthResponse
 import com.devil.phoenixproject.data.sync.GoTrueUser
 import com.devil.phoenixproject.data.sync.PortalTokenStorage
+import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.devil.phoenixproject.testutil.FakeWorkoutRepository
 import com.russhwolf.settings.MapSettings
@@ -15,6 +18,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -64,12 +68,13 @@ class RoutineRecoveryHostScopeTest {
         }
     }
 
-    private fun mount(harness: Harness) {
+    private fun mount(harness: Harness, weightUnit: WeightUnit = WeightUnit.KG) {
         rule.setContent {
             RoutineRecoveryHost(
                 workoutRepository = harness.workoutRepository,
                 profileRepository = harness.profiles,
                 portalTokenStorage = harness.tokenStorage,
+                weightUnit = weightUnit,
             )
         }
     }
@@ -162,6 +167,41 @@ class RoutineRecoveryHostScopeTest {
             "explicit entry must revalidate the list (resubscribe), was $subscriptions",
             subscriptions >= 2,
         )
+    }
+
+    @Test
+    fun weightUnitLbFormatsTargetWeightInPounds() {
+        val harness = Harness()
+        harness.scopeAItems.value = listOf(
+            RoutineRecoveryItem(
+                recoveryId = "rec-lb",
+                graphIndex = 0,
+                reason = "alias_coalesce",
+                routineName = "Upper Push",
+                exercises = listOf(
+                    RoutineRecoveryExercisePreview(
+                        exerciseName = "Bench Press",
+                        setReps = "10",
+                        plannedSets = listOf(
+                            RoutineRecoverySetPreview(
+                                setNumber = 1L,
+                                setType = "STANDARD",
+                                targetReps = 10L,
+                                targetWeightKg = 20.0,
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        mount(harness, weightUnit = WeightUnit.LB)
+        rule.waitForIdle()
+
+        rule.onNodeWithText("Recover deleted routines (1)").performClick()
+        rule.waitForIdle()
+        rule.onNodeWithText("Preview").performClick()
+        rule.waitForIdle()
+        rule.onNodeWithText("44.1 lbs", substring = true).performScrollTo().assertIsDisplayed()
     }
 }
 

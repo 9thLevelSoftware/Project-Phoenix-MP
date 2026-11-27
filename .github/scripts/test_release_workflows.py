@@ -1,5 +1,9 @@
+import base64
+import importlib.util
 import itertools
+import json
 import os
+import plistlib
 import re
 import shlex
 import shutil
@@ -8,6 +12,7 @@ import sys
 import tempfile
 import textwrap
 import unittest
+import uuid
 from pathlib import Path
 
 
@@ -529,7 +534,7 @@ class ReleaseWorkflowContracts(unittest.TestCase):
         )
         self.assertEqual(on_block.count(sealed_paths), 2)
 
-    def test_ci_ios_simulator_tests_are_non_blocking_and_skip_prs(self) -> None:
+    def test_ci_ios_simulator_tests_are_blocking_and_run_on_prs(self) -> None:
         text = workflow("ci-tests.yml")
         self.assertNotIn("verifyCommonMainPhoenixDatabaseMigration", text)
         job = re.search(
@@ -537,18 +542,260 @@ class ReleaseWorkflowContracts(unittest.TestCase):
         )
         self.assertIsNotNone(job)
         body = job.group("body")
-        self.assertIn("continue-on-error: true", body)
+        self.assertNotIn("continue-on-error", body)
         self.assertIn(":shared:iosSimulatorArm64Test", body)
         self.assertIn("runs-on: macos-latest", body)
         self.assertIn("-Xmx4g", body)
         self.assertIn("uses: mikepenz/action-junit-report@", body)
-        self.assertIn("fail_on_failure: false", body)
-        self.assertNotIn("fail_on_failure: true", body)
-        self.assertIn(
-            "if: github.event_name == 'workflow_dispatch' || "
-            "(github.event_name == 'push' && github.ref == 'refs/heads/main')",
-            body,
+        self.assertIn("fail_on_failure: true", body)
+        self.assertNotIn("fail_on_failure: false", body)
+        self.assertNotIn("github.event_name == 'workflow_dispatch'", body)
+        self.assertIn(":shared:iosSimulatorArm64Test", workflow("release-tests.yml"))
+
+        android_it = self.job(text, "android-instrumentation-tests")
+        self.assertIn(":androidApp:connectedDebugAndroidTest", android_it)
+
+    def test_ios_release_workflows_validate_supabase_config_and_archived_plist(self) -> None:
+        script_path = ROOT / ".github" / "scripts" / "ios_supabase_config.py"
+        self.assertTrue(script_path.is_file(), "ios_supabase_config.py helper is missing")
+        spec = importlib.util.spec_from_file_location("ios_supabase_config", script_path)
+        assert spec is not None and spec.loader is not None
+        helper = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(helper)
+
+        for name in (
+            "ios-release-ipa.yml",
+            "ios-testflight.yml",
+            "ios-testflight-internal.yml",
+        ):
+            with self.subTest(workflow=name):
+                text = workflow(name)
+                write_idx = text.index(" write-xcconfig")
+                archive_idx = text.index("- name: Archive app")
+                verify_idx = text.index(" verify-plist")
+                export_idx = text.index("- name: Export .ipa")
+                self.assertLess(write_idx, archive_idx)
+                self.assertLess(archive_idx, verify_idx)
+                self.assertLess(verify_idx, export_idx)
+                self.assertIn(
+                    "PhoenixApp.xcarchive/Products/Applications/PhoenixApp.app/Info.plist",
+                    text[verify_idx:export_idx],
+                )
+                self.assertNotIn("sed 's|//|/$()/|g'", text)
+
+        anon_payload = (
+            base64.urlsafe_b64encode(json.dumps({"role": "anon"}).encode())
+            .decode()
+            .rstrip("=")
         )
+        service_payload = (
+            base64.urlsafe_b64encode(json.dumps({"role": "service_role"}).encode())
+            .decode()
+            .rstrip("=")
+        )
+        list_payload = (
+            base64.urlsafe_b64encode(json.dumps([1, 2, 3]).encode())
+            .decode()
+            .rstrip("=")
+        )
+        valid_anon_jwt = f"eyJhbGciOiJIUzI1NiJ9.{anon_payload}.sig"
+        invalid_service_jwt = f"eyJhbGciOiJIUzI1NiJ9.{service_payload}.sig"
+        invalid_list_jwt = f"eyJhbGciOiJIUzI1NiJ9.{list_payload}.sig"
+        valid_env = {
+            "SUPABASE_URL": "https://fixture.supabase.co",
+            "SUPABASE_ANON_KEY": valid_anon_jwt,
+        }
+
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            xcconfig = root / "Supabase.xcconfig"
+            helper.write_supabase_xcconfig(xcconfig, env=valid_env)
+            written = xcconfig.read_text(encoding="utf-8")
+            self.assertIn("SUPABASE_URL = https:/$()/fixture.supabase.co", written)
+            self.assertIn(f"SUPABASE_ANON_KEY = {valid_anon_jwt}", written)
+
+            publishable_env = {
+                "SUPABASE_URL": "https://fixture.supabase.co",
+                "SUPABASE_ANON_KEY": "sb_publishable_fixture123",
+            }
+            helper.write_supabase_xcconfig(xcconfig, env=publishable_env)
+            self.assertIn("sb_publishable_fixture123", xcconfig.read_text(encoding="utf-8"))
+
+            plist = root / "Info.plist"
+            plist.write_bytes(plistlib.dumps(valid_env))
+            helper.verify_archived_info_plist(plist, env=valid_env)
+
+            for bad_env in (
+                {"SUPABASE_URL": "", "SUPABASE_ANON_KEY": valid_anon_jwt},
+                {"SUPABASE_URL": "https://fixture.supabase.co", "SUPABASE_ANON_KEY": ""},
+                {"SUPABASE_URL": "http://fixture.supabase.co", "SUPABASE_ANON_KEY": valid_anon_jwt},
+                {"SUPABASE_URL": "https://$(HOST)", "SUPABASE_ANON_KEY": valid_anon_jwt},
+                {"SUPABASE_URL": "https://fixture.supabase.co", "SUPABASE_ANON_KEY": "sb_secret_" + uuid.uuid4().hex},
+                {"SUPABASE_URL": "https://fixture.supabase.co", "SUPABASE_ANON_KEY": invalid_service_jwt},
+                {"SUPABASE_URL": "https://fixture.supabase.co", "SUPABASE_ANON_KEY": invalid_list_jwt},
+                {"SUPABASE_URL": "https://fixture.supabase.co", "SUPABASE_ANON_KEY": "placeholder"},
+                {"SUPABASE_URL": "https://fixture.supabase.co", "SUPABASE_ANON_KEY": "$(SUPABASE_ANON_KEY)"},
+            ):
+                with self.subTest(bad_env=bad_env):
+                    with self.assertRaises(ValueError):
+                        helper.write_supabase_xcconfig(root / "bad.xcconfig", env=bad_env)
+
+            for bad_plist in (
+                {},
+                {"SUPABASE_URL": "https:", "SUPABASE_ANON_KEY": valid_anon_jwt},
+                {"SUPABASE_URL": "$(SUPABASE_URL)", "SUPABASE_ANON_KEY": valid_anon_jwt},
+                {"SUPABASE_URL": "https://fixture.supabase.co", "SUPABASE_ANON_KEY": ""},
+            ):
+                with self.subTest(bad_plist=bad_plist):
+                    plist.write_bytes(plistlib.dumps(bad_plist))
+                    with self.assertRaises(ValueError):
+                        helper.verify_archived_info_plist(plist, env=valid_env)
+
+            # Verify CLI entrypoint fails closed with exit code 1 when env is missing/invalid.
+            saved_url = os.environ.pop("SUPABASE_URL", None)
+            saved_key = os.environ.pop("SUPABASE_ANON_KEY", None)
+            try:
+                self.assertEqual(helper.main(["write-xcconfig", "--output", str(xcconfig)]), 1)
+                os.environ["SUPABASE_URL"] = valid_env["SUPABASE_URL"]
+                os.environ["SUPABASE_ANON_KEY"] = invalid_list_jwt
+                import contextlib
+                import io
+                stderr_buf = io.StringIO()
+                with contextlib.redirect_stderr(stderr_buf):
+                    self.assertEqual(helper.main(["write-xcconfig", "--output", str(xcconfig)]), 1)
+                self.assertIn("ERROR:", stderr_buf.getvalue())
+                os.environ["SUPABASE_ANON_KEY"] = valid_env["SUPABASE_ANON_KEY"]
+                plist.write_bytes(plistlib.dumps(valid_env))
+                self.assertEqual(helper.main(["write-xcconfig", "--output", str(xcconfig)]), 0)
+                self.assertEqual(helper.main(["verify-plist", "--plist", str(plist)]), 0)
+            finally:
+                if saved_url is not None:
+                    os.environ["SUPABASE_URL"] = saved_url
+                else:
+                    os.environ.pop("SUPABASE_URL", None)
+                if saved_key is not None:
+                    os.environ["SUPABASE_ANON_KEY"] = saved_key
+                else:
+                    os.environ.pop("SUPABASE_ANON_KEY", None)
+
+    def test_workflows_do_not_run_repo_scripts_before_checkout_and_ipa_uses_pinned_ios_release(self) -> None:
+        for path in sorted(WORKFLOWS.glob("*.yml")):
+            text = path.read_text(encoding="utf-8")
+            jobs = re.findall(
+                r"(?ms)^  ([a-z][a-z0-9-]*):\n(.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)",
+                text,
+            )
+            self.assertTrue(jobs, f"No jobs parsed in {path.name}")
+            for job_name, job_body in jobs:
+                if "steps:" not in job_body:
+                    continue
+                pre_checkout = (
+                    job_body.split("actions/checkout@", 1)[0]
+                    if "actions/checkout@" in job_body
+                    else job_body
+                )
+                with self.subTest(workflow=path.name, job=job_name):
+                    self.assertNotIn(".github/scripts/", pre_checkout)
+                    self.assertNotIn("./.github/", pre_checkout)
+
+        ipa = workflow("ios-release-ipa.yml")
+        checkout_idx = ipa.index("uses: actions/checkout@")
+        fetch_idx = ipa.index("/${{ github.workflow_sha }}/.github/scripts/$script")
+        bump_idx = ipa.index('python3 "$RUNNER_TEMP/ios-release.py" bump-build-number')
+        legacy_idx = ipa.index('python3 "$RUNNER_TEMP/ios-release.py" install-legacy-framework')
+        signing_idx = ipa.index('python3 "$RUNNER_TEMP/ios-release.py" install-signing')
+        self.assertLess(checkout_idx, fetch_idx)
+        self.assertLess(fetch_idx, bump_idx)
+        self.assertLess(bump_idx, legacy_idx)
+        self.assertLess(legacy_idx, signing_idx)
+        # Every other reference to ios-release.py in ios-release-ipa.yml must go through
+        # $RUNNER_TEMP/ios-release.py so historical source_ref checkouts cannot fail.
+        self.assertNotIn(".github/scripts/ios-release.py", ipa)
+
+    def test_pinned_ios_helpers_execute_without_helpers_in_the_source_checkout(self) -> None:
+        bash = shutil.which("bash")
+        if os.name == "nt":
+            bash = str(Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "Git/bin/bash.exe")
+        if not bash or not Path(bash).is_file():
+            self.skipTest("Bash is required for the historical source-ref regression")
+
+        revision = "a" * 40
+        helper_names = ("ios-release.py", "ios_supabase_config.py", "tvos-release.py")
+        for name, job_name in (
+            ("ios-release-ipa.yml", "build-and-attach"),
+            ("ios-testflight.yml", "build"),
+            ("ios-testflight.yml", "upload-and-distribute"),
+        ):
+            with self.subTest(workflow=name, job=job_name), tempfile.TemporaryDirectory() as raw:
+                fixture = Path(raw)
+                checkout = fixture / "historical-source"
+                checkout.mkdir()
+                tools_dir = fixture / "runner-temp"
+                tools_dir.mkdir()
+                authoritative = fixture / "workflow-revision"
+                authoritative.mkdir()
+                for script_name in helper_names:
+                    shutil.copyfile(ROOT / ".github/scripts" / script_name, authoritative / script_name)
+
+                # The source checkout deliberately has no .github/scripts directory.
+                # curl serves only the immutable workflow revision, without network access.
+                fake_curl = fixture / "fake_curl.py"
+                fake_curl.write_text(
+                    "import os, shutil, sys\n"
+                    "from pathlib import Path\n"
+                    "args = sys.argv[1:]\n"
+                    "url = next(arg for arg in args if arg.startswith('https://'))\n"
+                    "expected = 'https://raw.githubusercontent.com/example/phoenix/' + os.environ['WORKFLOW_REVISION'] + '/.github/scripts/'\n"
+                    "assert url.startswith(expected), url\n"
+                    "name = url[len(expected):]\n"
+                    "assert '/' not in name\n"
+                    "destination = args[args.index('--output') + 1]\n"
+                    "shutil.copyfile(Path(os.environ['AUTHORITATIVE_HELPERS']) / name, destination)\n"
+                    "with open(os.environ['FETCH_LOG'], 'a') as log: log.write(url + '\\n')\n",
+                    encoding="utf-8",
+                )
+                body = self.job(workflow(name), job_name)
+                fetch = body.split("      - name: Fetch pinned iOS release helpers\n", 1)[1]
+                fetch = fetch.split("      - name:", 1)[0]
+                script = textwrap.dedent(fetch.split("        run: |\n", 1)[1])
+                script = script.replace("${{ github.repository }}", "example/phoenix")
+                script = script.replace("${{ github.workflow_sha }}", revision)
+                prefix = "python3() { " + shlex.quote(Path(sys.executable).as_posix()) + ' "$@"; }\n'
+                prefix += "curl() { python3 " + shlex.quote(fake_curl.as_posix()) + ' "$@"; }\n'
+                result = subprocess.run(
+                    [bash, "-eo", "pipefail", "-c", prefix + script], cwd=checkout,
+                    env=os.environ | {
+                        "RUNNER_TEMP": tools_dir.as_posix(), "GH_TOKEN": "fixture-token",
+                        "AUTHORITATIVE_HELPERS": authoritative.as_posix(),
+                        "WORKFLOW_REVISION": revision, "FETCH_LOG": str(fixture / "fetch.log"),
+                    },
+                    capture_output=True, text=True, check=False,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                urls = (fixture / "fetch.log").read_text().splitlines()
+                self.assertEqual([url.rsplit("/", 1)[1] for url in urls], list(helper_names))
+                self.assertNotIn("python3 .github/scripts/ios", body)
+                self.assertIn('python3 "$RUNNER_TEMP/ios-release.py"', body)
+
+                config_env = os.environ | {
+                    "SUPABASE_URL": "https://fixture.supabase.co",
+                    "SUPABASE_ANON_KEY": "sb_publishable_fixture",
+                }
+                config_helper = tools_dir / "ios_supabase_config.py"
+                config = checkout / "Supabase.xcconfig"
+                plist = checkout / "Info.plist"
+                plist.write_bytes(plistlib.dumps({key: config_env[key] for key in ("SUPABASE_URL", "SUPABASE_ANON_KEY")}))
+                for command in (
+                    [str(tools_dir / "ios-release.py"), "--help"],
+                    [str(config_helper), "write-xcconfig", "--output", str(config)],
+                    [str(config_helper), "verify-plist", "--plist", str(plist)],
+                ):
+                    result = subprocess.run(
+                        [sys.executable, *command], cwd=checkout, env=config_env,
+                        capture_output=True, text=True, check=False,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("https:/$()/fixture.supabase.co", config.read_text())
 
 
 if __name__ == "__main__":

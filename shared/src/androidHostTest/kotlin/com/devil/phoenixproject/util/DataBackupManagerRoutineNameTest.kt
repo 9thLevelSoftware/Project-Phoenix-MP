@@ -214,7 +214,7 @@ class DataBackupManagerRoutineNameTest {
     }
 
     @Test
-    fun `full backup excludes soft-deleted personal records`() = runTest {
+    fun `full backup preserves soft-deleted personal records with deletedAt`() = runTest {
         fun insertPersonalRecord(exerciseId: String, uuid: String) {
             database.phoenixDatabaseQueries.insertRecord(
                 exerciseId = exerciseId,
@@ -248,8 +248,14 @@ class DataBackupManagerRoutineNameTest {
         val legacyBackup = backupManager.exportAllData()
         val streamedBackup = testJson.decodeFromString<BackupData>(backupManager.exportToJson())
 
-        assertEquals(listOf("active-pr"), legacyBackup.data.personalRecords.map { it.exerciseId })
-        assertEquals(listOf("active-pr"), streamedBackup.data.personalRecords.map { it.exerciseId })
+        for (backup in listOf(legacyBackup, streamedBackup)) {
+            val active = backup.data.personalRecords.single()
+            assertEquals("active-pr", active.exerciseId)
+            assertNull(active.deletedAt)
+            val deletedRecord = backup.data.personalRecordTombstones.single()
+            assertEquals("deleted-pr", deletedRecord.exerciseId)
+            assertEquals(1_700_000_123_000L, deletedRecord.deletedAt)
+        }
     }
 
     @Test
@@ -284,6 +290,142 @@ class DataBackupManagerRoutineNameTest {
         val backup = backupManager.exportAllData()
         val exportedSession = backup.data.workoutSessions.first { it.id == "session-legacy-2" }
         assertNull(exportedSession.routineName)
+    }
+
+    @Test
+    fun `backfillAndBackupExport_isolateProfiles_andPreserveCleanPortalOriginGenerations`() = runTest {
+        val queries = database.phoenixDatabaseQueries
+        queries.insertUserProfileIgnore("default", "Default", 0L, 1L, 1L)
+        queries.insertUserProfileIgnore("profile-b", "Profile B", 1L, 2L, 0L)
+        queries.insertDefaultProfilePreferences("default", 1L)
+        queries.insertDefaultProfilePreferences("profile-b", 1L)
+
+        workoutRepository.saveRoutine(
+            buildRoutine(
+                routineId = "routine-b",
+                routineName = "B Push",
+                exerciseId = "exercise-bench-shared",
+                exerciseName = "Bench Press",
+            ).copy(profileId = "profile-b"),
+        )
+        workoutRepository.saveSession(
+            WorkoutSession(
+                id = "session-a-placeholder",
+                exerciseId = "exercise-bench-shared",
+                exerciseName = "Bench Press",
+                routineName = "Bench Press",
+                totalReps = 8,
+                workingReps = 8,
+                profileId = "default",
+            ),
+        )
+        workoutRepository.saveSession(
+            WorkoutSession(
+                id = "session-b-placeholder",
+                exerciseId = "exercise-bench-shared",
+                exerciseName = "Bench Press",
+                routineName = "Bench Press",
+                totalReps = 8,
+                workingReps = 8,
+                profileId = "profile-b",
+            ),
+        )
+
+        val buffered = backupManager.exportAllData()
+        val streamedPath = backupManager.exportToCachePublic()
+        val streamed = testJson.decodeFromString<BackupData>(File(streamedPath).readText())
+        File(streamedPath).delete()
+
+        listOf(buffered, streamed).forEach { exported ->
+            assertNull(
+                exported.data.workoutSessions.first { it.id == "session-a-placeholder" }.routineName,
+                "Profile B routine must not leak into Profile A export",
+            )
+            assertEquals(
+                "B Push",
+                exported.data.workoutSessions.first { it.id == "session-b-placeholder" }.routineName,
+                "Profile B export must resolve Profile B routine",
+            )
+        }
+
+        // Verify streaming import also isolates inferRoutineName by profileId.
+        val targetDb = createTestDatabase()
+        val targetManager = TestDataBackupManager(targetDb)
+        val payload = BackupData(
+            version = CURRENT_BACKUP_VERSION,
+            exportedAt = "2026-11-26T00:00:00Z",
+            appVersion = "test",
+            data = BackupContent(
+                userProfiles = listOf(
+                    UserProfileBackup("default", "Default", 0, 1L, isActive = true),
+                    UserProfileBackup("profile-b", "Profile B", 1, 2L, isActive = false),
+                ),
+                routines = listOf(
+                    RoutineBackup("routine-b", "B Push", createdAt = 1L, profileId = "profile-b"),
+                ),
+                routineExercises = listOf(
+                    RoutineExerciseBackup(
+                        id = "re-b",
+                        routineId = "routine-b",
+                        exerciseName = "Bench Press",
+                        exerciseMuscleGroup = "Chest",
+                        exerciseDefaultCableConfig = "DOUBLE",
+                        exerciseId = "exercise-bench-shared",
+                        cableConfig = "DOUBLE",
+                        orderIndex = 0,
+                        setReps = "10",
+                        weightPerCableKg = 40f,
+                    ),
+                ),
+                workoutSessions = listOf(
+                    WorkoutSessionBackup(
+                        id = "import-a",
+                        timestamp = 1L,
+                        mode = "Old School",
+                        targetReps = 10,
+                        weightPerCableKg = 40f,
+                        progressionKg = 0f,
+                        duration = 10_000L,
+                        totalReps = 10,
+                        warmupReps = 0,
+                        workingReps = 10,
+                        isJustLift = false,
+                        stopAtTop = false,
+                        exerciseId = "exercise-bench-shared",
+                        exerciseName = "Bench Press",
+                        routineName = "Bench Press",
+                        profileId = "default",
+                    ),
+                    WorkoutSessionBackup(
+                        id = "import-b",
+                        timestamp = 2L,
+                        mode = "Old School",
+                        targetReps = 10,
+                        weightPerCableKg = 40f,
+                        progressionKg = 0f,
+                        duration = 10_000L,
+                        totalReps = 10,
+                        warmupReps = 0,
+                        workingReps = 10,
+                        isJustLift = false,
+                        stopAtTop = false,
+                        exerciseId = "exercise-bench-shared",
+                        exerciseName = "Bench Press",
+                        routineName = "Bench Press",
+                        profileId = "profile-b",
+                    ),
+                ),
+            ),
+        )
+        assertTrue(targetManager.importFromStringStreaming(testJson.encodeToString(payload)).isSuccess)
+        assertNull(
+            targetDb.phoenixDatabaseQueries.selectSessionById("import-a").executeAsOne().routineName,
+            "Streaming import must not infer Profile B routine for Profile A session",
+        )
+        assertEquals(
+            "B Push",
+            targetDb.phoenixDatabaseQueries.selectSessionById("import-b").executeAsOne().routineName,
+        )
     }
 
     @Test
@@ -2253,6 +2395,15 @@ class DataBackupManagerRoutineNameTest {
     @Test
     fun `v2 round-trip preserves SessionNotes data`() = runTest {
         val queries = database.phoenixDatabaseQueries
+        workoutRepository.saveSession(
+            WorkoutSession(
+                id = "session-notes-1",
+                routineSessionId = "rs-notes-1",
+                exerciseName = "Triceps",
+                totalReps = 10,
+                workingReps = 10,
+            ),
+        )
         queries.upsertSessionNotes(
             routineSessionId = "rs-notes-1",
             notes = "felt strong today; DOMS in triceps",
@@ -2274,6 +2425,24 @@ class DataBackupManagerRoutineNameTest {
     @Test
     fun `restore preserves newer session notes and timestamped clears`() = runTest {
         val queries = database.phoenixDatabaseQueries
+        workoutRepository.saveSession(
+            WorkoutSession(
+                id = "session-newer-note",
+                routineSessionId = "newer-note",
+                exerciseName = "Bench Press",
+                totalReps = 8,
+                workingReps = 8,
+            ),
+        )
+        workoutRepository.saveSession(
+            WorkoutSession(
+                id = "session-intentional-clear",
+                routineSessionId = "intentional-clear",
+                exerciseName = "Squat",
+                totalReps = 8,
+                workingReps = 8,
+            ),
+        )
         queries.upsertSessionNotes("newer-note", "local edit", 20L)
         queries.upsertSessionNotes("intentional-clear", null, 30L)
         val payload = BackupData(

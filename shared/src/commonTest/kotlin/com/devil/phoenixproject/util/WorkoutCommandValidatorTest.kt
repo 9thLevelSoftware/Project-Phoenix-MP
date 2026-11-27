@@ -5,6 +5,7 @@ import com.devil.phoenixproject.domain.model.PhoenixModel
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class WorkoutCommandValidatorTest {
@@ -265,6 +266,62 @@ class WorkoutCommandValidatorTest {
         }
         assertFailureContains(validateProgram(atProgression(Float.NaN)), "finite")
         assertFailureContains(validateProgram(atProgression(Float.POSITIVE_INFINITY)), "finite")
+    }
+
+    @Test
+    fun `validateFrame validates 0x04 0x4E 0x11 0x0A and rejects malformed or over-limit frames`() {
+        val validProgram = BlePacketFactory.createProgramParams(
+            WorkoutParameters(ProgramMode.OldSchool, reps = 8, weightPerCableKg = 100f),
+            CommandLimits.V_FORM_MAX_WEIGHT_PER_CABLE_KG,
+        )
+        assertTrue(WorkoutCommandValidator.validateFrame(validProgram, CommandLimits.V_FORM_MAX_WEIGHT_PER_CABLE_KG).isSuccess)
+
+        val trainerPlusFrame = BlePacketFactory.createProgramParams(
+            WorkoutParameters(ProgramMode.OldSchool, reps = 8, weightPerCableKg = 110f),
+            CommandLimits.TRAINER_PLUS_MAX_WEIGHT_PER_CABLE_KG,
+        )
+        assertFailureContains(
+            WorkoutCommandValidator.validateFrame(trainerPlusFrame, CommandLimits.V_FORM_MAX_WEIGHT_PER_CABLE_KG),
+            "targetWeight",
+        )
+
+        val validEcho = BlePacketFactory.createEchoControl(
+            level = EchoLevel.HARD,
+            warmupReps = 2,
+            targetReps = 8,
+            eccentricPct = 150,
+        )
+        assertTrue(WorkoutCommandValidator.validateFrame(validEcho, CommandLimits.V_FORM_MAX_WEIGHT_PER_CABLE_KG).isSuccess)
+
+        val overEcho = validEcho.copyOf().also { frame ->
+            frame[0x08] = 200.toByte()
+            frame[0x09] = 0
+        }
+        assertFailureContains(
+            WorkoutCommandValidator.validateFrame(overEcho, CommandLimits.V_FORM_MAX_WEIGHT_PER_CABLE_KG),
+            "eccentricOverload",
+        )
+
+        val validColor = BlePacketFactory.createColorSchemeCommand(0)
+        assertTrue(WorkoutCommandValidator.validateFrame(validColor, CommandLimits.V_FORM_MAX_WEIGHT_PER_CABLE_KG).isSuccess)
+        assertTrue(WorkoutCommandValidator.validateFrame(BlePacketFactory.createResetCommand(), CommandLimits.V_FORM_MAX_WEIGHT_PER_CABLE_KG).isSuccess)
+
+        assertFailureContains(
+            WorkoutCommandValidator.validateFrame(byteArrayOf(0x04, 0, 0), CommandLimits.V_FORM_MAX_WEIGHT_PER_CABLE_KG),
+            "at least 4 bytes",
+        )
+        assertFailureContains(
+            WorkoutCommandValidator.validateFrame(byteArrayOf(0x7F, 0, 0, 0), CommandLimits.V_FORM_MAX_WEIGHT_PER_CABLE_KG),
+            "Unsupported",
+        )
+    }
+
+    @Test
+    fun `HEARTBEAT_NO_OP returns a defensive copy on every access`() {
+        val first = BleConstants.HEARTBEAT_NO_OP
+        first[0] = 0x7F.toByte()
+        val second = BleConstants.HEARTBEAT_NO_OP
+        assertEquals(0x00.toByte(), second[0])
     }
 
     private fun validColors(): List<RGBColor> = listOf(

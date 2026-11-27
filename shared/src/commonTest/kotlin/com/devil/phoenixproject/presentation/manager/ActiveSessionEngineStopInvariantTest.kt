@@ -55,6 +55,7 @@ class ActiveSessionEngineStopInvariantTest {
     fun finiteRepSetRetainsItsTargetAndPerCableWeight() = runTest {
         val harness = DWSMTestHarness(this)
         try {
+            harness.setActiveSummaryCountdownSeconds(0)
             val lease = startSet(harness, isJustLift = false, reps = 8)
             harness.dwsm.stopWorkout()
             advanceUntilIdle()

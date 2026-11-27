@@ -2,6 +2,7 @@ package com.devil.phoenixproject.di
 
 import android.content.SharedPreferences
 import com.google.common.truth.Truth.assertThat
+import com.russhwolf.settings.SharedPreferencesSettings
 import org.junit.Test
 
 /**
@@ -11,6 +12,29 @@ import org.junit.Test
  * needs an instrumented test, and iOS KeychainSettings needs macOS.
  */
 class SecureTokenStorageTest {
+
+    @Test
+    fun direct111UpgradePurgesRetiredSecretsFromTheAndroidSecureStore() {
+        val encrypted = InMemorySharedPreferences().apply {
+            edit()
+                .putString("intervals.installationId", "old-installation")
+                .putString("intervals.apiKey.profile-a.1", "old-secret")
+                .putString("intervals.apiKey.profile-b.2", "rotated-secret")
+                .putString("portal_auth_token", "current-auth")
+                .putString("portal_refresh_token", "current-refresh")
+                .putBoolean("portal_user_is_premium", true)
+                .commit()
+        }
+
+        SharedPreferencesSettings(encrypted).also(::purgeRetiredDirectExportSecrets)
+
+        assertThat(encrypted.all.keys).containsExactly(
+            "portal_auth_token", "portal_refresh_token", "portal_user_is_premium",
+        )
+        assertThat(encrypted.getString("portal_auth_token", null)).isEqualTo("current-auth")
+        assertThat(encrypted.getString("portal_refresh_token", null)).isEqualTo("current-refresh")
+        assertThat(encrypted.getBoolean("portal_user_is_premium", false)).isTrue()
+    }
 
     @Test
     fun portalKeysMoveToEncryptedStorageAndLeavePlaintext() {

@@ -581,4 +581,30 @@ class MonitorDataProcessorTest {
         assertEquals(500.0f, result.positionA, "lastGoodPosA should be preserved across reset")
         assertEquals(600.0f, result.positionB, "lastGoodPosB should be preserved across reset")
     }
+
+    @Test
+    fun `rejected glitched sample does not fire status callbacks or poison deload debounce`() {
+        val processor = createProcessor()
+        fakeTime = 5000L
+
+        val rejected = processor.process(
+            packet(
+                loadA = 250.0f,
+                status = SampleStatus.DELOAD_OCCURRED or SampleStatus.ROM_OUTSIDE_HIGH,
+            ),
+        )
+        assertNull(rejected, "Over-limit load sample must be rejected")
+        assertEquals(0, deloadCallCount, "Rejected sample must not fire onDeloadOccurred")
+        assertTrue(romViolations.isEmpty(), "Rejected sample must not fire onRomViolation")
+
+        fakeTime = 5020L
+        val valid = processor.process(
+            packet(
+                loadA = 10.0f,
+                status = SampleStatus.DELOAD_OCCURRED,
+            ),
+        )
+        assertNotNull(valid)
+        assertEquals(1, deloadCallCount, "Debounce window must not have been consumed by rejected sample")
+    }
 }

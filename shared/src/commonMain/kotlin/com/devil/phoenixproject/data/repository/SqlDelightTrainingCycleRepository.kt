@@ -4,6 +4,7 @@ import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import app.cash.sqldelight.coroutines.mapToOneOrNull
 import com.devil.phoenixproject.database.PhoenixDatabase
+import com.devil.phoenixproject.database.PhoenixDatabaseQueries
 import com.devil.phoenixproject.domain.model.CycleDay
 import com.devil.phoenixproject.domain.model.CycleItem
 import com.devil.phoenixproject.domain.model.CycleProgress
@@ -34,37 +35,37 @@ internal data class PersistedCycleDraftPayload(
     val progression: CycleProgressionBackup? = null,
 )
 
+private fun PhoenixDatabaseQueries.nextEditTimestamp(cycleId: String, proposed: Long = currentTimeMillis()): Long {
+    val stored = selectTrainingCycleById(cycleId).executeAsOneOrNull()?.updatedAt ?: Long.MIN_VALUE
+    return maxOf(proposed, if (stored == Long.MAX_VALUE) stored else stored + 1)
+}
+
+private fun PhoenixDatabaseQueries.ensureCycleSyncState(cycleId: String, profileId: String, accountId: String? = null) {
+    insertCycleSyncStateIfAbsent(
+        cycleId = cycleId,
+        profileId = profileId,
+        accountId = accountId,
+        dirtyGeneration = 0L,
+        acknowledgedGeneration = 0L,
+        pendingDeleteUpdatedAt = null,
+        pendingDeleteGeneration = null,
+    )
+}
+
+internal fun PhoenixDatabaseQueries.markCycleEdited(cycleId: String, profileId: String, timestamp: Long = nextEditTimestamp(cycleId)) {
+    touchTrainingCycleUpdatedAt(updatedAt = timestamp, cycleId = cycleId)
+    ensureCycleSyncState(cycleId, profileId)
+    markCycleDirty(profileId = profileId, cycleId = cycleId)
+}
+
 class SqlDelightTrainingCycleRepository(private val db: PhoenixDatabase) : TrainingCycleRepository {
 
     private val queries = db.phoenixDatabaseQueries
     private val json = Json { ignoreUnknownKeys = true }
 
-    private fun nextEditTimestamp(cycleId: String, proposed: Long = currentTimeMillis()): Long {
-        val stored = queries.selectTrainingCycleById(cycleId).executeAsOneOrNull()?.updatedAt ?: Long.MIN_VALUE
-        return maxOf(proposed, if (stored == Long.MAX_VALUE) stored else stored + 1)
-    }
-
-    private fun ensureCycleSyncState(cycleId: String, profileId: String, accountId: String? = null) {
-        queries.insertCycleSyncStateIfAbsent(
-            cycleId = cycleId,
-            profileId = profileId,
-            accountId = accountId,
-            dirtyGeneration = 0L,
-            acknowledgedGeneration = 0L,
-            pendingDeleteUpdatedAt = null,
-            pendingDeleteGeneration = null,
-        )
-    }
-
-    private fun markCycleEdited(cycleId: String, profileId: String, timestamp: Long = nextEditTimestamp(cycleId)) {
-        queries.touchTrainingCycleUpdatedAt(updatedAt = timestamp, cycleId = cycleId)
-        ensureCycleSyncState(cycleId, profileId)
-        queries.markCycleDirty(profileId = profileId, cycleId = cycleId)
-    }
-
     private fun markStoredCycleEdited(cycleId: String) {
         val cycle = queries.selectTrainingCycleById(cycleId).executeAsOneOrNull() ?: return
-        markCycleEdited(cycleId, cycle.profile_id)
+        queries.markCycleEdited(cycleId, cycle.profile_id)
     }
 
     // ==================== Mapping Functions ====================
@@ -539,7 +540,7 @@ class SqlDelightTrainingCycleRepository(private val db: PhoenixDatabase) : Train
                         .executeAsList()
                         .filter { it.id != cycle.id && it.is_active == 1L }
                     queries.setActiveTrainingCycle(cycle.id, profileId = cycle.profileId)
-                    previouslyActive.forEach { markCycleEdited(it.id, cycle.profileId) }
+                    previouslyActive.forEach { queries.markCycleEdited(it.id, cycle.profileId) }
                     // Initialize progress if it doesn't exist (uses INSERT OR IGNORE to prevent UNIQUE constraint violations)
                     val now = currentTimeMillis()
                     val progressId = generateUUID()
@@ -562,7 +563,7 @@ class SqlDelightTrainingCycleRepository(private val db: PhoenixDatabase) : Train
     override suspend fun updateCycle(cycle: TrainingCycle) {
         withContext(Dispatchers.IO) {
             db.transaction {
-                val editTimestamp = nextEditTimestamp(cycle.id, cycle.updatedAt ?: currentTimeMillis())
+                val editTimestamp = queries.nextEditTimestamp(cycle.id, cycle.updatedAt ?: currentTimeMillis())
                 // Update the training cycle
                 queries.updateTrainingCycle(
                     name = cycle.name,
@@ -600,9 +601,9 @@ class SqlDelightTrainingCycleRepository(private val db: PhoenixDatabase) : Train
                         .executeAsList()
                         .filter { it.id != cycle.id && it.is_active == 1L }
                     queries.setActiveTrainingCycle(cycle.id, profileId = cycle.profileId)
-                    previouslyActive.forEach { markCycleEdited(it.id, cycle.profileId) }
+                    previouslyActive.forEach { queries.markCycleEdited(it.id, cycle.profileId) }
                 }
-                ensureCycleSyncState(cycle.id, cycle.profileId)
+                queries.ensureCycleSyncState(cycle.id, cycle.profileId)
                 queries.markCycleDirty(profileId = cycle.profileId, cycleId = cycle.id)
             }
         }
@@ -614,10 +615,10 @@ class SqlDelightTrainingCycleRepository(private val db: PhoenixDatabase) : Train
                 val cycle = queries.selectTrainingCycleById(cycleId).executeAsOneOrNull() ?: return@transaction
                 queries.updateTrainingCycleWeekNumber(
                     week_number = weekNumber.toLong(),
-                    updatedAt = nextEditTimestamp(cycleId),
+                    updatedAt = queries.nextEditTimestamp(cycleId),
                     id = cycleId,
                 )
-                ensureCycleSyncState(cycleId, cycle.profile_id)
+                queries.ensureCycleSyncState(cycleId, cycle.profile_id)
                 queries.markCycleDirty(profileId = cycle.profile_id, cycleId = cycleId)
             }
         }
@@ -634,7 +635,7 @@ class SqlDelightTrainingCycleRepository(private val db: PhoenixDatabase) : Train
                 // Set this cycle as active and all others as inactive
                 queries.setActiveTrainingCycle(cycleId, profileId = profileId)
                 before.filter { (it.id == cycleId) != (it.is_active == 1L) }.forEach { changed ->
-                    markCycleEdited(changed.id, profileId)
+                    queries.markCycleEdited(changed.id, profileId)
                 }
 
                 // Initialize progress if it doesn't exist (uses INSERT OR IGNORE to prevent race conditions)
@@ -666,7 +667,7 @@ class SqlDelightTrainingCycleRepository(private val db: PhoenixDatabase) : Train
             db.transaction {
                 val active = queries.selectTrainingCyclesByProfile(profileId).executeAsList().filter { it.is_active == 1L }
                 queries.deactivateAllCycles(profileId = profileId)
-                active.forEach { markCycleEdited(it.id, profileId) }
+                active.forEach { queries.markCycleEdited(it.id, profileId) }
             }
         }
     }
@@ -676,11 +677,11 @@ class SqlDelightTrainingCycleRepository(private val db: PhoenixDatabase) : Train
             db.transaction {
                 val cycle = queries.selectTrainingCycleById(cycleId).executeAsOneOrNull() ?: return@transaction
                 if (cycle.deletedAt != null) return@transaction
-                val deletedAt = nextEditTimestamp(cycleId)
+                val deletedAt = queries.nextEditTimestamp(cycleId)
                 val accountId = queries.getProfileById(cycle.profile_id).executeAsOneOrNull()?.supabase_user_id
                 // Capture the immutable owner at the local delete boundary. A later login
                 // cannot bind a legacy NULL deletion for upload.
-                ensureCycleSyncState(cycleId, cycle.profile_id)
+                queries.ensureCycleSyncState(cycleId, cycle.profile_id)
                 queries.softDeleteTrainingCycle(deletedAt = deletedAt, updatedAt = deletedAt, id = cycleId)
                 queries.markCycleDeletionPending(
                     profileId = cycle.profile_id,
@@ -697,7 +698,7 @@ class SqlDelightTrainingCycleRepository(private val db: PhoenixDatabase) : Train
             db.transaction {
                 val cycle = queries.selectTrainingCycleById(cycleId).executeAsOneOrNull() ?: return@transaction
                 if (cycle.deletedAt == null) return@transaction
-                val deletedAt = nextEditTimestamp(cycleId, at)
+                val deletedAt = queries.nextEditTimestamp(cycleId, at)
                 queries.softDeleteTrainingCycle(deletedAt = deletedAt, updatedAt = deletedAt, id = cycleId)
                 queries.markCycleDeletionPending(
                     profileId = cycle.profile_id,
@@ -733,7 +734,7 @@ class SqlDelightTrainingCycleRepository(private val db: PhoenixDatabase) : Train
                     rest_time_override_seconds = day.restTimeOverrideSeconds?.toLong(),
                 )
                 val cycle = queries.selectTrainingCycleById(day.cycleId).executeAsOne()
-                markCycleEdited(day.cycleId, cycle.profile_id)
+                queries.markCycleEdited(day.cycleId, cycle.profile_id)
             }
         }
     }
@@ -754,7 +755,7 @@ class SqlDelightTrainingCycleRepository(private val db: PhoenixDatabase) : Train
                     id = day.id,
                 )
                 val cycle = queries.selectTrainingCycleById(day.cycleId).executeAsOne()
-                markCycleEdited(day.cycleId, cycle.profile_id)
+                queries.markCycleEdited(day.cycleId, cycle.profile_id)
             }
         }
     }

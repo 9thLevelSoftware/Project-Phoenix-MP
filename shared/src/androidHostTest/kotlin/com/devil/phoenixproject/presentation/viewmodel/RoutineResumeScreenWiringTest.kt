@@ -1,7 +1,6 @@
 package com.devil.phoenixproject.presentation.viewmodel
 
-import java.nio.file.Files
-import java.nio.file.Path
+import com.devil.phoenixproject.testutil.findProjectRoot
 import kotlin.io.path.readText
 import kotlin.test.Test
 import kotlin.test.assertFalse
@@ -10,7 +9,7 @@ import kotlin.test.assertTrue
 class RoutineResumeScreenWiringTest {
     @Test
     fun `all resume entry screens delegate to the shared dialog host without direct BLE or mutable-id loading`() {
-        val screenRoot = findWorkspaceRoot().resolve(
+        val screenRoot = findProjectRoot().toPath().resolve(
             "shared/src/phoneMain/kotlin/com/devil/phoenixproject/presentation/screen",
         )
         val host = screenRoot.resolve("RoutineResumeDialogHost.kt").readText()
@@ -88,14 +87,5 @@ class RoutineResumeScreenWiringTest {
                 "Res.string.cycles_missing_routine_message" in cycles,
         )
         assertFalse("launchDailyRoutine(" in cycles)
-    }
-
-    private fun findWorkspaceRoot(): Path {
-        var current = Path.of(System.getProperty("user.dir")).toAbsolutePath()
-        repeat(8) {
-            if (Files.isDirectory(current.resolve("shared/src/phoneMain"))) return current
-            current = current.parent ?: return@repeat
-        }
-        error("Could not locate workspace root from ${System.getProperty("user.dir")}")
     }
 }

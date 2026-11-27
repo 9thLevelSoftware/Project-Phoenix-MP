@@ -1,8 +1,32 @@
 package com.devil.phoenixproject.presentation.tv
 
+import com.devil.phoenixproject.data.sync.PortalUser
+import com.devil.phoenixproject.data.sync.SyncState
+import com.devil.phoenixproject.data.sync.SyncTriggerManager
+import com.devil.phoenixproject.data.sync.SyncTriggerTarget
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import org.koin.core.Koin
+
+/** Avoid constructing Keychain-backed cloud services in a build with cloud sync disabled. */
+internal object CloudUnavailableSyncTarget : SyncTriggerTarget {
+    override val isAuthenticated: StateFlow<Boolean> = MutableStateFlow(false)
+    override val syncState: StateFlow<SyncState> = MutableStateFlow(SyncState.NotAuthenticated)
+    override val currentUser: StateFlow<PortalUser?> = MutableStateFlow(null)
+    override val lastSyncTime: StateFlow<Long> = MutableStateFlow(0L)
+
+    override suspend fun sync(): Result<Long> = Result.failure(
+        IllegalStateException("Cloud Sync is unavailable because this build has no server configuration."),
+    )
+
+    override suspend fun refreshPremiumStatusFromServer() = Unit
+    override fun markPausedNotPremium() = Unit
+}
+
+internal fun offlineSyncTriggerManager(): SyncTriggerManager =
+    SyncTriggerManager(syncManager = CloudUnavailableSyncTarget, isOnline = { false })
 
 /**
  * Same shared core as the phone. Only this workout consumer receives the manual-start
@@ -13,7 +37,7 @@ import org.koin.core.Koin
 internal fun createTvMainViewModel(
     koin: Koin,
     scope: CoroutineScope,
-    syncTrigger: com.devil.phoenixproject.data.sync.SyncTriggerManager = koin.get(),
+    syncTrigger: SyncTriggerManager = koin.get(),
 ): MainViewModel = MainViewModel(
     bleRepository = koin.get(),
     workoutRepository = koin.get(),

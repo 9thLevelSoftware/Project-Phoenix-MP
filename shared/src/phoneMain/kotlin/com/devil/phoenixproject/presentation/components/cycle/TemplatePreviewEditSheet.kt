@@ -55,6 +55,25 @@ import com.devil.phoenixproject.domain.model.defaultPercentOfOneRmForReps
 import com.devil.phoenixproject.presentation.components.MiniExercisePickerDialog
 import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
 import com.devil.phoenixproject.ui.theme.Spacing
+import org.jetbrains.compose.resources.stringResource
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.action_back
+import projectphoenix.shared.generated.resources.action_continue
+import projectphoenix.shared.generated.resources.add_exercise
+import projectphoenix.shared.generated.resources.insights_col_sets
+import projectphoenix.shared.generated.resources.label_reps
+import projectphoenix.shared.generated.resources.template_preview_cd_adjust_minus_one
+import projectphoenix.shared.generated.resources.template_preview_cd_adjust_plus_one
+import projectphoenix.shared.generated.resources.template_preview_cd_move_down
+import projectphoenix.shared.generated.resources.template_preview_cd_move_up
+import projectphoenix.shared.generated.resources.template_preview_cd_remove_exercise
+import projectphoenix.shared.generated.resources.template_preview_day_rest
+import projectphoenix.shared.generated.resources.template_preview_day_title
+import projectphoenix.shared.generated.resources.template_preview_no_exercises
+import projectphoenix.shared.generated.resources.template_preview_sets_reps
+import projectphoenix.shared.generated.resources.template_preview_subtitle
+import projectphoenix.shared.generated.resources.template_preview_timed_lower
+import projectphoenix.shared.generated.resources.template_preview_weekly_scheme
 
 /**
  * Editable preview of a cycle template shown between template selection and the
@@ -124,8 +143,7 @@ fun TemplatePreviewEditSheet(
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = "Customize the exercises below, or continue with the defaults. " +
-                        "Weights are set automatically from your 1RM and PR data.",
+                    text = stringResource(Res.string.template_preview_subtitle),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -210,13 +228,13 @@ fun TemplatePreviewEditSheet(
                         onClick = onCancel,
                         modifier = Modifier.weight(1f).heightIn(min = 56.dp),
                     ) {
-                        Text("Back", maxLines = 2)
+                        Text(stringResource(Res.string.action_back), maxLines = 2)
                     }
                     Button(
                         onClick = { onContinue(template.copy(days = editedDays)) },
                         modifier = Modifier.weight(1f).heightIn(min = 56.dp),
                     ) {
-                        Text("Continue", maxLines = 2)
+                        Text(stringResource(Res.string.action_continue), maxLines = 2)
                     }
                 }
             }
@@ -272,7 +290,7 @@ private fun RestDayRow(day: CycleDayTemplate) {
         )
         Spacer(Modifier.width(8.dp))
         Text(
-            "Day ${day.dayNumber} — Rest",
+            stringResource(Res.string.template_preview_day_rest, day.dayNumber),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -299,7 +317,7 @@ private fun TrainingDayCard(
     ) {
         Column(modifier = Modifier.padding(Spacing.medium)) {
             Text(
-                "Day ${day.dayNumber} — ${day.name}",
+                stringResource(Res.string.template_preview_day_title, day.dayNumber, day.name),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
@@ -326,7 +344,7 @@ private fun TrainingDayCard(
 
             if (exercises.isEmpty()) {
                 Text(
-                    "No exercises",
+                    stringResource(Res.string.template_preview_no_exercises),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -336,7 +354,7 @@ private fun TrainingDayCard(
             TextButton(onClick = onAddExercise) {
                 Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(4.dp))
-                Text("Add exercise")
+                Text(stringResource(Res.string.add_exercise))
             }
         }
     }
@@ -382,9 +400,13 @@ private fun ExerciseEditRow(
                 }
                 Text(
                     if (exercise.isPercentageBased) {
-                        "Sets from weekly % scheme"
+                        stringResource(Res.string.template_preview_weekly_scheme)
                     } else {
-                        "${exercise.sets} sets × ${exercise.reps?.toString() ?: "timed"}"
+                        stringResource(
+                            Res.string.template_preview_sets_reps,
+                            exercise.sets,
+                            exercise.reps?.toString() ?: stringResource(Res.string.template_preview_timed_lower),
+                        )
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -392,15 +414,21 @@ private fun ExerciseEditRow(
             }
 
             IconButton(onClick = onMoveUp, enabled = canMoveUp) {
-                Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Move up")
+                Icon(
+                    Icons.Default.KeyboardArrowUp,
+                    contentDescription = stringResource(Res.string.template_preview_cd_move_up),
+                )
             }
             IconButton(onClick = onMoveDown, enabled = canMoveDown) {
-                Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Move down")
+                Icon(
+                    Icons.Default.KeyboardArrowDown,
+                    contentDescription = stringResource(Res.string.template_preview_cd_move_down),
+                )
             }
             IconButton(onClick = onRemove) {
                 Icon(
                     Icons.Default.Close,
-                    contentDescription = "Remove exercise",
+                    contentDescription = stringResource(Res.string.template_preview_cd_remove_exercise),
                     tint = MaterialTheme.colorScheme.error,
                 )
             }
@@ -413,14 +441,14 @@ private fun ExerciseEditRow(
                 horizontalArrangement = Arrangement.spacedBy(Spacing.small),
             ) {
                 StepperControl(
-                    label = "Sets",
+                    label = stringResource(Res.string.insights_col_sets),
                     value = exercise.sets.toString(),
                     onDecrement = { onAdjustSets(-1) },
                     onIncrement = { onAdjustSets(+1) },
                 )
                 if (exercise.reps != null) {
                     StepperControl(
-                        label = "Reps",
+                        label = stringResource(Res.string.label_reps),
                         value = exercise.reps.toString(),
                         onDecrement = { onAdjustReps(-1) },
                         onIncrement = { onAdjustReps(+1) },
@@ -448,7 +476,11 @@ private fun StepperControl(
             onClick = onDecrement,
             modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
         ) {
-            Icon(Icons.Default.Remove, contentDescription = "$label -1", modifier = Modifier.size(18.dp))
+            Icon(
+                Icons.Default.Remove,
+                contentDescription = stringResource(Res.string.template_preview_cd_adjust_minus_one, label),
+                modifier = Modifier.size(18.dp),
+            )
         }
         Text(
             value,
@@ -459,7 +491,11 @@ private fun StepperControl(
             onClick = onIncrement,
             modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
         ) {
-            Icon(Icons.Default.Add, contentDescription = "$label +1", modifier = Modifier.size(18.dp))
+            Icon(
+                Icons.Default.Add,
+                contentDescription = stringResource(Res.string.template_preview_cd_adjust_plus_one, label),
+                modifier = Modifier.size(18.dp),
+            )
         }
     }
 }

@@ -222,7 +222,7 @@ class Issue1366JustLiftExitNavigationTest {
 
     @Test
     @Config(qualifiers = "w402dp-h874dp-xxhdpi")
-    fun `stop exit retains Echo level, eccentric load and per-cable weight across repeated cycles`() {
+    fun `stop exit retains Echo level and eccentric load and per-cable weight across repeated cycles`() {
         val fx = driveJustLiftActiveSession(
             WorkoutParameters(
                 programMode = ProgramMode.Echo,

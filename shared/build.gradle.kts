@@ -220,6 +220,7 @@ kotlin {
             dependsOn(phoneMain)
             iosArm64Main.dependsOn(this)
             iosSimulatorArm64Main.dependsOn(this)
+            kotlin.srcDir("src/appleDarwinMain/kotlin")
 
             dependencies {
                 // SQLDelight Native Driver
@@ -246,12 +247,12 @@ kotlin {
         }
     }
 
-    // Upstream Kable 0.45 renamed the marker. Configure the native test compiler
-    // directly: an opt-in on the intermediate iosTest source set is not propagated.
+    // Apply Kable ExperimentalApi opt-in to native test compilations directly:
+    // an opt-in on the intermediate iosTest source set is not propagated.
     targets.withType<org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget>().configureEach {
         compilations.named("test") {
             compileTaskProvider.configure {
-                compilerOptions.optIn.add("com.juul.kable.ExperimentalKableApi")
+                compilerOptions.optIn.add("com.juul.kable.ExperimentalApi")
             }
         }
     }

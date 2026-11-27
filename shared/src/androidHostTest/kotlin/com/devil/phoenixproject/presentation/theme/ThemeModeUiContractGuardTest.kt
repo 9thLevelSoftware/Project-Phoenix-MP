@@ -1,21 +1,14 @@
 package com.devil.phoenixproject.presentation.theme
 
-import java.io.File
+import com.devil.phoenixproject.testutil.readProjectFile
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class ThemeModeUiContractGuardTest {
 
-    private val projectRoot: File by lazy {
-        var dir = File(System.getProperty("user.dir") ?: ".")
-        while (!File(dir, "shared/src/commonMain").exists()) {
-            dir = dir.parentFile ?: break
-        }
-        dir
-    }
-
-    private fun read(relativePath: String): String = File(projectRoot, relativePath).readText()
+    private fun read(relativePath: String): String =
+        requireNotNull(readProjectFile(relativePath)) { "Missing $relativePath" }
 
     @Test
     fun settingsTab_editsThemeModeInsteadOfBooleanDarkMode() {

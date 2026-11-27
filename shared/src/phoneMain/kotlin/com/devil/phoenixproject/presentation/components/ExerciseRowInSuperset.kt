@@ -32,6 +32,9 @@ import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
 import com.devil.phoenixproject.ui.theme.ExpressiveMotion
+import org.jetbrains.compose.resources.stringResource
+import projectphoenix.shared.generated.resources.*
+import projectphoenix.shared.generated.resources.Res
 
 /**
  * Simplified exercise row for display inside a superset container.
@@ -134,7 +137,7 @@ fun ExerciseRowInSuperset(
                     contentAlignment = Alignment.CenterStart,
                 ) {
                     Text(
-                        "${supersetRestSeconds}s rest (superset)",
+                        stringResource(Res.string.superset_rest_label, supersetRestSeconds),
                         style = MaterialTheme.typography.bodySmall,
                         color = if (onRestClick != null) {
                             MaterialTheme.colorScheme.primary

@@ -203,7 +203,6 @@ class BiomechanicsEngine(velocityLossThresholdPercent: Float = 20f) {
     }
 
     // =========================================================================
-    // Stub computation methods - implemented in Plans 02-04
     // Marked as internal so they can be replaced/tested within the same module
     // =========================================================================
 

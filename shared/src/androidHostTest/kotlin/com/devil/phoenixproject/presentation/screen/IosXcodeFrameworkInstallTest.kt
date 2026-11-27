@@ -13,11 +13,9 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlin.test.fail
 import org.junit.Assume
-import org.junit.Before
 
 class IosXcodeFrameworkInstallTest {
-    @Before
-    fun requirePosixShell() {
+    private fun requirePosixShell() {
         Assume.assumeTrue("/bin/sh not available on this host", File("/bin/sh").canExecute())
     }
 
@@ -64,6 +62,7 @@ class IosXcodeFrameworkInstallTest {
 
     @Test
     fun installCopiesDebugBinaryToTheXcodePath() {
+        requirePosixShell()
         val fixture = Files.createTempDirectory("ios-xcode-framework")
         try {
             writeFramework(fixture, "debug", "debug-binary")
@@ -81,6 +80,7 @@ class IosXcodeFrameworkInstallTest {
 
     @Test
     fun releaseInstallReplacesAPreviousDebugCopy() {
+        requirePosixShell()
         val fixture = Files.createTempDirectory("ios-xcode-framework-replace")
         try {
             writeFramework(fixture, "debug", "debug-binary")
@@ -100,6 +100,7 @@ class IosXcodeFrameworkInstallTest {
 
     @Test
     fun installDereferencesASymlinkedSourceBundle() {
+        requirePosixShell()
         val fixture = Files.createTempDirectory("ios-xcode-framework-symlink")
         try {
             writeFramework(fixture, "release-real", "release-binary")
@@ -123,6 +124,7 @@ class IosXcodeFrameworkInstallTest {
 
     @Test
     fun installFailsWhenTheFrameworkBinaryIsMissing() {
+        requirePosixShell()
         val fixture = Files.createTempDirectory("ios-xcode-framework-missing")
         try {
             val result = install(fixture, "release")

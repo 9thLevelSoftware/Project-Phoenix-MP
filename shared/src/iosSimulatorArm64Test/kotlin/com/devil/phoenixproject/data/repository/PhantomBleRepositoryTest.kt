@@ -1741,6 +1741,7 @@ class PhantomBleRepositoryTest {
 
         try {
             assertTrue(repository.scanAndConnect().isSuccess)
+            repository.stopPolling()
             val injectOnDiagnosticsClear = async(Dispatchers.Unconfined) {
                 repository.diagnostics.first { packet ->
                     if (packet == null) {

@@ -1456,7 +1456,7 @@ class SchemaParityTest {
     // ==================== HELPERS ====================
 
     companion object {
-        private const val EXPECTED_SCHEMA_VERSION = 68L
+        private const val EXPECTED_SCHEMA_VERSION = 71L
 
         /**
          * A database built the way every existing user gets it: minimal v1 schema, each
@@ -1512,175 +1512,6 @@ class SchemaParityTest {
     }
 
     private fun isTransientTable(name: String): Boolean = TRANSIENT_SUFFIXES.any { name.endsWith(it, ignoreCase = true) }
-
-    /**
-     * Build the original v1 schema -- the 7 tables that existed before any
-     * migrations. No foreign keys on RoutineExercise (those came in migration 3).
-     */
-    private fun buildMinimalV1Schema(driver: SqlDriver) {
-        driver.execute(
-            null,
-            """
-            CREATE TABLE Exercise (
-                id TEXT NOT NULL PRIMARY KEY,
-                name TEXT NOT NULL,
-                description TEXT NOT NULL DEFAULT '',
-                created INTEGER NOT NULL DEFAULT 0,
-                muscleGroup TEXT NOT NULL DEFAULT '',
-                muscleGroups TEXT NOT NULL DEFAULT '[]',
-                muscles TEXT NOT NULL DEFAULT '[]',
-                equipment TEXT NOT NULL DEFAULT '',
-                movement TEXT NOT NULL DEFAULT '',
-                sidedness TEXT NOT NULL DEFAULT '',
-                grip TEXT NOT NULL DEFAULT '',
-                gripWidth TEXT NOT NULL DEFAULT '',
-                minRepRange INTEGER NOT NULL DEFAULT 1,
-                popularity INTEGER NOT NULL DEFAULT 0,
-                archived INTEGER NOT NULL DEFAULT 0,
-                isFavorite INTEGER NOT NULL DEFAULT 0,
-                isCustom INTEGER NOT NULL DEFAULT 0,
-                timesPerformed INTEGER NOT NULL DEFAULT 0,
-                lastPerformed INTEGER,
-                aliases TEXT NOT NULL DEFAULT '[]',
-                defaultCableConfig TEXT NOT NULL DEFAULT 'DOUBLE'
-            )
-            """.trimIndent(),
-            0,
-        )
-
-        driver.execute(
-            null,
-            """
-            CREATE TABLE ExerciseVideo (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                exerciseId TEXT NOT NULL,
-                angle TEXT NOT NULL DEFAULT '',
-                videoUrl TEXT NOT NULL DEFAULT '',
-                thumbnailUrl TEXT NOT NULL DEFAULT '',
-                isTutorial INTEGER NOT NULL DEFAULT 0,
-                FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE CASCADE
-            )
-            """.trimIndent(),
-            0,
-        )
-
-        driver.execute(
-            null,
-            """
-            CREATE TABLE WorkoutSession (
-                id TEXT NOT NULL PRIMARY KEY,
-                timestamp INTEGER NOT NULL,
-                mode TEXT NOT NULL,
-                targetReps INTEGER NOT NULL,
-                weightPerCableKg REAL NOT NULL,
-                progressionKg REAL NOT NULL DEFAULT 0.0,
-                duration INTEGER NOT NULL DEFAULT 0,
-                totalReps INTEGER NOT NULL DEFAULT 0,
-                warmupReps INTEGER NOT NULL DEFAULT 0,
-                workingReps INTEGER NOT NULL DEFAULT 0,
-                isJustLift INTEGER NOT NULL DEFAULT 0,
-                stopAtTop INTEGER NOT NULL DEFAULT 0,
-                eccentricLoad INTEGER NOT NULL DEFAULT 100,
-                echoLevel INTEGER NOT NULL DEFAULT 1,
-                exerciseId TEXT,
-                exerciseName TEXT,
-                routineSessionId TEXT,
-                routineName TEXT,
-                routineId TEXT
-            )
-            """.trimIndent(),
-            0,
-        )
-
-        driver.execute(
-            null,
-            """
-            CREATE TABLE MetricSample (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                sessionId TEXT NOT NULL,
-                timestamp INTEGER NOT NULL,
-                position REAL,
-                positionB REAL,
-                velocity REAL,
-                velocityB REAL,
-                load REAL,
-                loadB REAL,
-                power REAL,
-                status INTEGER NOT NULL DEFAULT 0,
-                FOREIGN KEY (sessionId) REFERENCES WorkoutSession(id) ON DELETE CASCADE
-            )
-            """.trimIndent(),
-            0,
-        )
-
-        driver.execute(
-            null,
-            """
-            CREATE TABLE PersonalRecord (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                exerciseId TEXT NOT NULL,
-                exerciseName TEXT NOT NULL DEFAULT '',
-                weight REAL NOT NULL DEFAULT 0.0,
-                reps INTEGER NOT NULL DEFAULT 0,
-                oneRepMax REAL NOT NULL DEFAULT 0.0,
-                achievedAt INTEGER NOT NULL DEFAULT 0,
-                workoutMode TEXT NOT NULL DEFAULT '',
-                prType TEXT NOT NULL DEFAULT 'MAX_WEIGHT',
-                volume REAL
-            )
-            """.trimIndent(),
-            0,
-        )
-
-        driver.execute(
-            null,
-            """
-            CREATE TABLE Routine (
-                id TEXT NOT NULL PRIMARY KEY,
-                name TEXT NOT NULL,
-                description TEXT NOT NULL DEFAULT '',
-                createdAt INTEGER NOT NULL DEFAULT 0,
-                lastUsed INTEGER,
-                useCount INTEGER NOT NULL DEFAULT 0
-            )
-            """.trimIndent(),
-            0,
-        )
-
-        // No foreign keys in v1 RoutineExercise
-        driver.execute(
-            null,
-            """
-            CREATE TABLE RoutineExercise (
-                id TEXT NOT NULL PRIMARY KEY,
-                routineId TEXT NOT NULL,
-                exerciseName TEXT NOT NULL,
-                exerciseMuscleGroup TEXT NOT NULL DEFAULT '',
-                exerciseEquipment TEXT NOT NULL DEFAULT '',
-                exerciseDefaultCableConfig TEXT NOT NULL DEFAULT 'DOUBLE',
-                exerciseId TEXT,
-                cableConfig TEXT NOT NULL DEFAULT 'DOUBLE',
-                orderIndex INTEGER NOT NULL,
-                setReps TEXT NOT NULL DEFAULT '10,10,10',
-                weightPerCableKg REAL NOT NULL DEFAULT 0.0,
-                setWeights TEXT NOT NULL DEFAULT '',
-                mode TEXT NOT NULL DEFAULT 'OldSchool',
-                eccentricLoad INTEGER NOT NULL DEFAULT 100,
-                echoLevel INTEGER NOT NULL DEFAULT 1,
-                progressionKg REAL NOT NULL DEFAULT 0.0,
-                restSeconds INTEGER NOT NULL DEFAULT 60,
-                duration INTEGER,
-                setRestSeconds TEXT NOT NULL DEFAULT '[]',
-                perSetRestTime INTEGER NOT NULL DEFAULT 0,
-                isAMRAP INTEGER NOT NULL DEFAULT 0
-            )
-            """.trimIndent(),
-            0,
-        )
-
-        // Set user_version = 1
-        driver.execute(null, "PRAGMA user_version = 1", 0)
-    }
 
     /**
      * Build the schema at a specific version by starting at v1 and migrating
@@ -1988,4 +1819,249 @@ class SchemaParityTest {
         )
         return count
     }
+
+    @Test
+    fun `migration 68 deduplicates RpgAttributes and creates unique profile index across generated and fallback paths`() {
+        listOf(false, true).forEach { fallback ->
+            val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+            buildSchemaAtVersion(driver, 68L)
+            reconcileFullSchema(driver)
+            driver.execute(null, "DROP INDEX IF EXISTS idx_rpg_attributes_profile", 0)
+            driver.execute(null, "CREATE INDEX idx_rpg_attributes_profile ON RpgAttributes(profile_id)", 0)
+            driver.execute(
+                null,
+                """
+                INSERT INTO RpgAttributes(id, strength, lastComputed, profile_id)
+                VALUES
+                    (1, 10, 100, 'p1'),
+                    (2, 20, 200, 'p1'),
+                    (3, 30, 200, 'p2')
+                """.trimIndent(),
+                0,
+            )
+
+            if (fallback) {
+                val results = applyMigrationResilient(driver, 68)
+                assertEquals(true, results.all { it.success }, "fallback migration 68")
+            } else {
+                PhoenixDatabase.Schema.migrate(driver, 68, 69)
+            }
+
+            assertEquals("1", queryScalar(driver, "SELECT CAST(COUNT(*) AS TEXT) FROM RpgAttributes WHERE profile_id = 'p1'"))
+            assertEquals("2", queryScalar(driver, "SELECT CAST(id AS TEXT) FROM RpgAttributes WHERE profile_id = 'p1'"))
+            assertEquals("3", queryScalar(driver, "SELECT CAST(id AS TEXT) FROM RpgAttributes WHERE profile_id = 'p2'"))
+            assertEquals(true, indexHasCanonicalShape(driver, manifestIndexes.first { it.name == "idx_rpg_attributes_profile" }))
+        }
+    }
+
+    @Test
+    fun `MigrationStatements 10 fallback preserves RoutineExercise FK parity and drops legacy v3 superset columns`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        buildSchemaAtVersion(driver, 10L)
+        // Re-apply step 10 via resilient fallback directly over a pre-10 schema.
+        val fallbackDriver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        buildMinimalV1Schema(fallbackDriver)
+        migrateWithResilience(fallbackDriver, 1L, 10L)
+        val results = applyMigrationResilient(fallbackDriver, 10)
+        assertEquals(
+            emptyList(),
+            results.filter { !it.success && !it.recoverable },
+            "Migration 10 fallback should have zero non-recoverable failures: $results",
+        )
+        for (v in 11L until EXPECTED_SCHEMA_VERSION) {
+            migrateWithResilience(fallbackDriver, v, v + 1)
+        }
+        reconcileFullSchema(fallbackDriver)
+
+        val columns = getColumns(fallbackDriver, "RoutineExercise").keys
+        assertEquals(false, columns.contains("supersetGroupId"))
+        assertEquals(false, columns.contains("supersetOrder"))
+        assertEquals(false, columns.contains("supersetRestSeconds"))
+
+        val fkTables = mutableSetOf<String>()
+        fallbackDriver.executeQuery(
+            null,
+            "PRAGMA foreign_key_list(RoutineExercise)",
+            { cursor ->
+                while (cursor.next().value) {
+                    fkTables += cursor.getString(2).orEmpty()
+                }
+                QueryResult.Value(Unit)
+            },
+            0,
+        )
+        assertEquals(setOf("Routine", "Exercise", "Superset"), fkTables)
+    }
+}
+
+/**
+ * Build the original v1 schema -- the 7 tables that existed before any
+ * migrations. No foreign keys on RoutineExercise (those came in migration 3).
+ */
+internal fun buildMinimalV1Schema(
+    driver: SqlDriver,
+    includeWorkoutSessionRoutineId: Boolean = true,
+) {
+    driver.execute(
+        null,
+        """
+        CREATE TABLE Exercise (
+            id TEXT NOT NULL PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            created INTEGER NOT NULL DEFAULT 0,
+            muscleGroup TEXT NOT NULL DEFAULT '',
+            muscleGroups TEXT NOT NULL DEFAULT '[]',
+            muscles TEXT NOT NULL DEFAULT '[]',
+            equipment TEXT NOT NULL DEFAULT '',
+            movement TEXT NOT NULL DEFAULT '',
+            sidedness TEXT NOT NULL DEFAULT '',
+            grip TEXT NOT NULL DEFAULT '',
+            gripWidth TEXT NOT NULL DEFAULT '',
+            minRepRange INTEGER NOT NULL DEFAULT 1,
+            popularity INTEGER NOT NULL DEFAULT 0,
+            archived INTEGER NOT NULL DEFAULT 0,
+            isFavorite INTEGER NOT NULL DEFAULT 0,
+            isCustom INTEGER NOT NULL DEFAULT 0,
+            timesPerformed INTEGER NOT NULL DEFAULT 0,
+            lastPerformed INTEGER,
+            aliases TEXT NOT NULL DEFAULT '[]',
+            defaultCableConfig TEXT NOT NULL DEFAULT 'DOUBLE'
+        )
+        """.trimIndent(),
+        0,
+    )
+
+    driver.execute(
+        null,
+        """
+        CREATE TABLE ExerciseVideo (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            exerciseId TEXT NOT NULL,
+            angle TEXT NOT NULL DEFAULT '',
+            videoUrl TEXT NOT NULL DEFAULT '',
+            thumbnailUrl TEXT NOT NULL DEFAULT '',
+            isTutorial INTEGER NOT NULL DEFAULT 0,
+            FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE CASCADE
+        )
+        """.trimIndent(),
+        0,
+    )
+
+    val routineIdColumn = if (includeWorkoutSessionRoutineId) ",\n            routineId TEXT" else ""
+    driver.execute(
+        null,
+        """
+        CREATE TABLE WorkoutSession (
+            id TEXT NOT NULL PRIMARY KEY,
+            timestamp INTEGER NOT NULL,
+            mode TEXT NOT NULL,
+            targetReps INTEGER NOT NULL,
+            weightPerCableKg REAL NOT NULL,
+            progressionKg REAL NOT NULL DEFAULT 0.0,
+            duration INTEGER NOT NULL DEFAULT 0,
+            totalReps INTEGER NOT NULL DEFAULT 0,
+            warmupReps INTEGER NOT NULL DEFAULT 0,
+            workingReps INTEGER NOT NULL DEFAULT 0,
+            isJustLift INTEGER NOT NULL DEFAULT 0,
+            stopAtTop INTEGER NOT NULL DEFAULT 0,
+            eccentricLoad INTEGER NOT NULL DEFAULT 100,
+            echoLevel INTEGER NOT NULL DEFAULT 1,
+            exerciseId TEXT,
+            exerciseName TEXT,
+            routineSessionId TEXT,
+            routineName TEXT$routineIdColumn
+        )
+        """.trimIndent(),
+        0,
+    )
+
+    driver.execute(
+        null,
+        """
+        CREATE TABLE MetricSample (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sessionId TEXT NOT NULL,
+            timestamp INTEGER NOT NULL,
+            position REAL,
+            positionB REAL,
+            velocity REAL,
+            velocityB REAL,
+            load REAL,
+            loadB REAL,
+            power REAL,
+            status INTEGER NOT NULL DEFAULT 0,
+            FOREIGN KEY (sessionId) REFERENCES WorkoutSession(id) ON DELETE CASCADE
+        )
+        """.trimIndent(),
+        0,
+    )
+
+    driver.execute(
+        null,
+        """
+        CREATE TABLE PersonalRecord (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            exerciseId TEXT NOT NULL,
+            exerciseName TEXT NOT NULL DEFAULT '',
+            weight REAL NOT NULL DEFAULT 0.0,
+            reps INTEGER NOT NULL DEFAULT 0,
+            oneRepMax REAL NOT NULL DEFAULT 0.0,
+            achievedAt INTEGER NOT NULL DEFAULT 0,
+            workoutMode TEXT NOT NULL DEFAULT '',
+            prType TEXT NOT NULL DEFAULT 'MAX_WEIGHT',
+            volume REAL
+        )
+        """.trimIndent(),
+        0,
+    )
+
+    driver.execute(
+        null,
+        """
+        CREATE TABLE Routine (
+            id TEXT NOT NULL PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            createdAt INTEGER NOT NULL DEFAULT 0,
+            lastUsed INTEGER,
+            useCount INTEGER NOT NULL DEFAULT 0
+        )
+        """.trimIndent(),
+        0,
+    )
+
+    // No foreign keys in v1 RoutineExercise
+    driver.execute(
+        null,
+        """
+        CREATE TABLE RoutineExercise (
+            id TEXT NOT NULL PRIMARY KEY,
+            routineId TEXT NOT NULL,
+            exerciseName TEXT NOT NULL,
+            exerciseMuscleGroup TEXT NOT NULL DEFAULT '',
+            exerciseEquipment TEXT NOT NULL DEFAULT '',
+            exerciseDefaultCableConfig TEXT NOT NULL DEFAULT 'DOUBLE',
+            exerciseId TEXT,
+            cableConfig TEXT NOT NULL DEFAULT 'DOUBLE',
+            orderIndex INTEGER NOT NULL,
+            setReps TEXT NOT NULL DEFAULT '10,10,10',
+            weightPerCableKg REAL NOT NULL DEFAULT 0.0,
+            setWeights TEXT NOT NULL DEFAULT '',
+            mode TEXT NOT NULL DEFAULT 'OldSchool',
+            eccentricLoad INTEGER NOT NULL DEFAULT 100,
+            echoLevel INTEGER NOT NULL DEFAULT 1,
+            progressionKg REAL NOT NULL DEFAULT 0.0,
+            restSeconds INTEGER NOT NULL DEFAULT 60,
+            duration INTEGER,
+            setRestSeconds TEXT NOT NULL DEFAULT '[]',
+            perSetRestTime INTEGER NOT NULL DEFAULT 0,
+            isAMRAP INTEGER NOT NULL DEFAULT 0
+        )
+        """.trimIndent(),
+        0,
+    )
+
+    // Set user_version = 1
+    driver.execute(null, "PRAGMA user_version = 1", 0)
 }

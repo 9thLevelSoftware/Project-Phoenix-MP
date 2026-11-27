@@ -11,6 +11,7 @@ import com.devil.phoenixproject.domain.model.CycleProgression
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.generateUUID
+import com.devil.phoenixproject.util.rethrowIfCancellation
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -127,6 +128,7 @@ class CycleEditorViewModel(
                     }
                 }
             } catch (e: Exception) {
+                e.rethrowIfCancellation()
                 Logger.e(e) { "Failed to initialize cycle editor" }
                 _uiState.update { it.copy(isLoading = false, saveError = e.message) }
             }
@@ -165,6 +167,7 @@ class CycleEditorViewModel(
                 routineId = routine.id,
                 routineName = routine.name,
                 exerciseCount = routine.exercises.size,
+                exerciseNames = routine.exercises.map { it.exercise.name },
             )
             val recentIds = (listOf(routine.id) + state.recentRoutineIds).distinct().take(3)
             state.copy(
@@ -286,6 +289,7 @@ class CycleEditorViewModel(
                     routineId = routine.id,
                     routineName = routine.name,
                     exerciseCount = routine.exercises.size,
+                    exerciseNames = routine.exercises.map { it.exercise.name },
                 )
                 val newList = state.items.toMutableList().apply { set(index, updated) }
                 state.copy(items = newList, editingItemIndex = null)
@@ -304,22 +308,32 @@ class CycleEditorViewModel(
      * When editing existing cycles, the original profile ownership is preserved.
      */
     suspend fun saveCycle(): String? {
-        if (_uiState.value.isSaving) return null
-        val state = _uiState.value
+        var claimedState: CycleEditorUiState? = null
+        _uiState.update { current ->
+            if (current.isSaving) {
+                claimedState = null
+                current
+            } else {
+                val next = current.copy(isSaving = true, saveError = null)
+                claimedState = next
+                next
+            }
+        }
+        val state = claimedState ?: return null
         val isNewCycle = state.cycleId == "new"
-        val existingCycle = if (isNewCycle) null else repository.getCycleById(state.cycleId)
-        // For new cycles: use active profile; for edits: preserve original ownership
-        val profileIdToUse = if (isNewCycle) {
-            userProfileRepository.activeProfile.value?.id ?: "default"
-        } else {
-            existingCycle?.profileId ?: state.originalProfileId ?: "default"
-        }
-        Logger.d {
-            "CycleEditorVM: saveCycle called, cycleId=${state.cycleId}, items=${state.items.size}, profileId=$profileIdToUse, isNew=$isNewCycle"
-        }
-        _uiState.update { it.copy(isSaving = true, saveError = null) }
 
         return try {
+            val existingCycle = if (isNewCycle) null else repository.getCycleById(state.cycleId)
+            // For new cycles: use active profile; for edits: preserve original ownership
+            val profileIdToUse = if (isNewCycle) {
+                userProfileRepository.activeProfile.value?.id ?: "default"
+            } else {
+                existingCycle?.profileId ?: state.originalProfileId ?: "default"
+            }
+            Logger.d {
+                "CycleEditorVM: saveCycle called, cycleId=${state.cycleId}, items=${state.items.size}, profileId=$profileIdToUse, isNew=$isNewCycle"
+            }
+
             val cycleIdToUse = if (isNewCycle) generateUUID() else state.cycleId
             Logger.d { "CycleEditorVM: Using cycleId=$cycleIdToUse" }
 
@@ -372,9 +386,12 @@ class CycleEditorViewModel(
             Logger.d { "CycleEditorVM: Returning cycleId=$cycleIdToUse" }
             cycleIdToUse
         } catch (e: Exception) {
+            e.rethrowIfCancellation()
             Logger.e(e) { "Failed to save training cycle" }
             _uiState.update { it.copy(isSaving = false, saveError = e.message) }
             null
+        } finally {
+            _uiState.update { if (it.isSaving) it.copy(isSaving = false) else it }
         }
     }
 

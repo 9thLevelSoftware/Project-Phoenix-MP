@@ -81,34 +81,48 @@ sealed class BulkAdjustMode {
  *
  * @return A new list with adjusted weights. List size and element IDs are identical to [exercises].
  */
-fun applyBulkAdjust(
+internal data class BulkAdjustPreviewEntry(
+    val adjusted: RoutineExercise,
+    val wasClamped: Boolean,
+)
+
+internal fun applyBulkAdjustWithClampInfo(
     exercises: List<RoutineExercise>,
     mode: BulkAdjustMode,
-): List<RoutineExercise> = exercises.map { ex ->
-    if (ex.usePercentOfPR) return@map ex
+): List<BulkAdjustPreviewEntry> = exercises.map { ex ->
+    if (ex.usePercentOfPR) return@map BulkAdjustPreviewEntry(ex, wasClamped = false)
 
-    fun adjust(weight: Float): Float {
-        val raw = when (mode) {
-            is BulkAdjustMode.Percentage -> weight * (1f + mode.percent / 100f)
-            is BulkAdjustMode.Absolute -> weight + mode.deltaKg
-        }
-        return UnitConverter.roundToMachineIncrement(
-            raw.coerceIn(Constants.MIN_WEIGHT_KG, Constants.MAX_WEIGHT_PER_CABLE_KG),
-        )
+    fun rawAdjusted(weight: Float): Float = when (mode) {
+        is BulkAdjustMode.Percentage -> weight * (1f + mode.percent / 100f)
+        is BulkAdjustMode.Absolute -> weight + mode.deltaKg
     }
 
-    val newWeight = adjust(ex.weightPerCableKg)
+    fun clampAndRound(raw: Float): Float = UnitConverter.roundToMachineIncrement(
+        raw.coerceIn(Constants.MIN_WEIGHT_KG, Constants.MAX_WEIGHT_PER_CABLE_KG),
+    )
+
+    val rawPrimary = rawAdjusted(ex.weightPerCableKg)
+    val wasClamped = rawPrimary < Constants.MIN_WEIGHT_KG || rawPrimary > Constants.MAX_WEIGHT_PER_CABLE_KG
+    val newWeight = clampAndRound(rawPrimary)
     val newSetWeights = if (ex.setWeightsPerCableKg.isNotEmpty()) {
-        ex.setWeightsPerCableKg.map { adjust(it) }
+        ex.setWeightsPerCableKg.map { clampAndRound(rawAdjusted(it)) }
     } else {
         emptyList()
     }
 
-    ex.copy(
-        weightPerCableKg = newWeight,
-        setWeightsPerCableKg = newSetWeights,
+    BulkAdjustPreviewEntry(
+        adjusted = ex.copy(
+            weightPerCableKg = newWeight,
+            setWeightsPerCableKg = newSetWeights,
+        ),
+        wasClamped = wasClamped,
     )
 }
+
+fun applyBulkAdjust(
+    exercises: List<RoutineExercise>,
+    mode: BulkAdjustMode,
+): List<RoutineExercise> = applyBulkAdjustWithClampInfo(exercises, mode).map { it.adjusted }
 
 // ── Composable ──────────────────────────────────────────────────────
 
@@ -171,19 +185,19 @@ fun BulkWeightAdjustDialog(
         }
     }
 
-    // Compute preview
-    val preview by remember(currentMode, exercises) {
+    // Compute preview with pre-clamp indicators
+    val previewEntries by remember(currentMode, exercises) {
         derivedStateOf {
-            currentMode?.let { mode -> applyBulkAdjust(exercises, mode) }
+            currentMode?.let { mode -> applyBulkAdjustWithClampInfo(exercises, mode) }
         }
     }
 
     // Count adjustable exercises that actually changed
-    val changeCount by remember(preview, exercises) {
+    val changeCount by remember(previewEntries, exercises) {
         derivedStateOf {
-            if (preview == null) return@derivedStateOf 0
-            exercises.zip(preview!!).count { (old, new) ->
-                !old.usePercentOfPR && old.weightPerCableKg != new.weightPerCableKg
+            val entries = previewEntries ?: return@derivedStateOf 0
+            exercises.zip(entries).count { (old, entry) ->
+                !old.usePercentOfPR && old.weightPerCableKg != entry.adjusted.weightPerCableKg
             }
         }
     }
@@ -196,7 +210,7 @@ fun BulkWeightAdjustDialog(
         } else {
             stringResource(Res.string.action_apply)
         },
-        onConfirm = { preview?.let { onApply(it) } },
+        onConfirm = { previewEntries?.let { entries -> onApply(entries.map { it.adjusted }) } },
         dismissLabel = stringResource(Res.string.action_cancel),
         confirmEnabled = changeCount > 0,
     ) {
@@ -279,10 +293,11 @@ fun BulkWeightAdjustDialog(
             ) {
                 items(exercises.indices.toList()) { index ->
                     val original = exercises[index]
-                    val adjusted = preview?.getOrNull(index)
+                    val entry = previewEntries?.getOrNull(index)
                     PreviewRow(
                         exercise = original,
-                        newWeight = adjusted?.weightPerCableKg,
+                        newWeight = entry?.adjusted?.weightPerCableKg,
+                        wasClamped = entry?.wasClamped == true,
                         weightUnit = weightUnit,
                         formatWeight = formatWeight,
                     )
@@ -385,14 +400,13 @@ private fun AbsoluteModeContent(
 private fun PreviewRow(
     exercise: RoutineExercise,
     newWeight: Float?,
+    wasClamped: Boolean,
     weightUnit: WeightUnit,
     formatWeight: (Float, WeightUnit) -> String,
 ) {
     val isPRScaled = exercise.usePercentOfPR
     val currentFormatted = formatWeight(exercise.weightPerCableKg, weightUnit)
-    val isClamped = newWeight != null && (
-        newWeight <= Constants.MIN_WEIGHT_KG || newWeight > Constants.MAX_WEIGHT_PER_CABLE_KG
-        )
+    val isClamped = newWeight != null && wasClamped
     val hasChanged = newWeight != null && newWeight != exercise.weightPerCableKg
 
     Column(

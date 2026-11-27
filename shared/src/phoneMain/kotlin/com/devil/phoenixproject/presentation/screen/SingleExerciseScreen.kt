@@ -19,6 +19,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.window.DialogProperties
 import androidx.navigation.NavController
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.preferences.SingleExerciseDefaults
@@ -30,7 +31,6 @@ import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.generateUUID
-import com.devil.phoenixproject.presentation.components.ConnectionErrorDialog
 import com.devil.phoenixproject.presentation.components.CreateExerciseDialog
 import com.devil.phoenixproject.presentation.components.ExerciseMediaSaveCoordinator
 import com.devil.phoenixproject.presentation.components.ExercisePickerContent
@@ -53,6 +53,7 @@ import org.jetbrains.compose.resources.stringResource
 import projectphoenix.shared.generated.resources.Res
 import projectphoenix.shared.generated.resources.media_cleanup_pending
 import projectphoenix.shared.generated.resources.single_exercise_unavailable
+import projectphoenix.shared.generated.resources.start_workout
 import projectphoenix.shared.generated.resources.workout_teardown_finishing
 
 /**
@@ -66,6 +67,7 @@ fun SingleExerciseScreen(
     viewModel: MainViewModel,
     exerciseRepository: ExerciseRepository,
     initialExerciseId: String? = null,
+    createDialogProperties: DialogProperties = DialogProperties(),
 ) {
     val weightUnit by viewModel.weightUnit.collectAsState()
     val enableVideoPlayback by viewModel.enableVideoPlayback.collectAsState()
@@ -79,8 +81,6 @@ fun SingleExerciseScreen(
         completedExerciseIdsState.profileId == activeProfileId
     } ?: emptySet()
 
-    val connectionError by viewModel.connectionError.collectAsState()
-
     var exerciseToConfig by remember { mutableStateOf<RoutineExercise?>(null) }
     val startGate = machineTeardownState.toStartGatePresentation(
         requiresMachine = exerciseToConfig?.exercise?.isBodyweight != true,
@@ -88,7 +88,7 @@ fun SingleExerciseScreen(
     val startButtonText = if (startGate.label == StartGateLabel.FINISHING_PREVIOUS_WORKOUT) {
         stringResource(Res.string.workout_teardown_finishing)
     } else {
-        "Start Workout"
+        stringResource(Res.string.start_workout)
     }
     var isLoadingDefaults by remember { mutableStateOf(false) }
     var missingInitialExerciseMessage by remember { mutableStateOf<String?>(null) }
@@ -247,6 +247,7 @@ fun SingleExerciseScreen(
             mediaCoordinator = mediaCoordinator,
             savedImages = mediaSavedImages,
             enablePhotoAttach = enableVideoPlayback,
+            dialogProperties = createDialogProperties,
             onSave = { exercise, _delta ->
                 // Issue #1358 (SD9): media is committed by the shared
                 // coordinator before this runs; re-query so rows and in-use
@@ -280,6 +281,7 @@ fun SingleExerciseScreen(
                 val historyId = exerciseToEdit?.id?.takeIf { it.isNotBlank() }
                 showCreateDialog = false
                 exerciseToEdit = null
+                mediaCoordinator.discardAll()
                 if (historyId != null) {
                     navController.navigate(NavigationRoutes.ExerciseDetail.createRoute(historyId))
                 }
@@ -461,14 +463,6 @@ fun SingleExerciseScreen(
                     )
                 }
             }
-        }
-
-        // Connection error dialog
-        connectionError?.let { error ->
-            ConnectionErrorDialog(
-                message = error,
-                onDismiss = { viewModel.clearConnectionError() },
-            )
         }
     }
 }
