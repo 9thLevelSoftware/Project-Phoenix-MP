@@ -5,6 +5,9 @@ import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.RepEvent
 import com.devil.phoenixproject.domain.model.RepPhase
 import com.devil.phoenixproject.domain.model.RepType
+import kotlin.concurrent.Volatile
+import kotlinx.atomicfu.locks.reentrantLock
+import kotlinx.atomicfu.locks.withLock
 
 /**
  * Handles rep counting based on notifications emitted by the Phoenix machine.
@@ -34,12 +37,19 @@ class RepCounterFromMachine {
 
     private val log = Logger.withTag("RepCounterFromMachine")
 
+    // Lock discipline (strictly non-nested leaf locks — NEVER nest any pair of locks and NEVER
+    // hold any lock while invoking onRepEvent):
+    // - countLock: rep counts, targets, mode flags, pending/carryover flags, directional baselines
+    // - phaseLock: animated rep phase, progress, and direction-smoothing window
+    // - rangeLock: ROM averaging position lists, min/max bounds, and ghost last-rep positions
+    private val countLock = reentrantLock()
     private var warmupReps = 0
     private var workingReps = 0
     private var warmupTarget = 3
     private var workingTarget = 0
     private var isJustLift = false
     private var stopAtTop = false
+    @Volatile
     private var shouldStop = false
     private var isAMRAP = false
 
@@ -51,7 +61,9 @@ class RepCounterFromMachine {
     // Pending rep state - true when at TOP, waiting for machine confirm
     private var hasPendingRep = false
 
-    // Issue #163: Phase tracking for animated rep counter
+    // Issue #163: Phase tracking for animated rep counter (guarded by phaseLock for concurrent
+    // updatePhaseFromPosition calls from handleMonitorMetric and handleRepNotification)
+    private val phaseLock = reentrantLock()
     private var activePhase: RepPhase = RepPhase.IDLE
     private var phaseProgress: Float = 0f // 0.0 at phase start, 1.0 at phase end
     private var lastTrackedPosition: Float = 0f // For direction detection
@@ -66,6 +78,9 @@ class RepCounterFromMachine {
     // calculates delta = (first_count - 0) = first_count, not skipped for baseline
     private var lastTopCounter: Int = 0
     private var lastCompleteCounter: Int = 0
+
+    // Leaf lock for ROM boundaries, sliding-window position lists, and ghost positions
+    private val rangeLock = reentrantLock()
 
     // Position tracking lists - now in mm (Float)
     private val topPositionsA = mutableListOf<Float>()
@@ -85,6 +100,7 @@ class RepCounterFromMachine {
     private var lastRepBottomA: Float? = null
     private var lastRepBottomB: Float? = null
 
+    @Volatile
     var onRepEvent: ((RepEvent) -> Unit)? = null
 
     fun configure(
@@ -94,11 +110,13 @@ class RepCounterFromMachine {
         stopAtTop: Boolean,
         isAMRAP: Boolean = false,
     ) {
-        this.warmupTarget = warmupTarget
-        this.workingTarget = workingTarget
-        this.isJustLift = isJustLift
-        this.stopAtTop = stopAtTop
-        this.isAMRAP = isAMRAP
+        countLock.withLock {
+            this.warmupTarget = warmupTarget
+            this.workingTarget = workingTarget
+            this.isJustLift = isJustLift
+            this.stopAtTop = stopAtTop
+            this.isAMRAP = isAMRAP
+        }
 
         // Log RepCounter configuration
         logDebug("RepCounter.configure() called:")
@@ -110,33 +128,39 @@ class RepCounterFromMachine {
     }
 
     fun reset() {
-        warmupReps = 0
-        workingReps = 0
-        shouldStop = false
-        carryoverChecked = false
-        hasPendingRep = false
+        countLock.withLock {
+            warmupReps = 0
+            workingReps = 0
+            shouldStop = false
+            carryoverChecked = false
+            hasPendingRep = false
+            lastTopCounter = 0
+            lastCompleteCounter = 0
+        }
         // Issue #163: Reset phase tracking
-        activePhase = RepPhase.IDLE
-        phaseProgress = 0f
-        lastTrackedPosition = 0f
-        phaseStartPosition = 0f
-        phasePeakPosition = 0f
-        positionHistoryForDirection.clear()
-        lastTopCounter = 0
-        lastCompleteCounter = 0
-        topPositionsA.clear()
-        topPositionsB.clear()
-        bottomPositionsA.clear()
-        bottomPositionsB.clear()
-        maxRepPosA = null
-        minRepPosA = null
-        maxRepPosB = null
-        minRepPosB = null
-        // Clear last rep ghost positions
-        lastRepTopA = null
-        lastRepTopB = null
-        lastRepBottomA = null
-        lastRepBottomB = null
+        phaseLock.withLock {
+            activePhase = RepPhase.IDLE
+            phaseProgress = 0f
+            lastTrackedPosition = 0f
+            phaseStartPosition = 0f
+            phasePeakPosition = 0f
+            positionHistoryForDirection.clear()
+        }
+        rangeLock.withLock {
+            topPositionsA.clear()
+            topPositionsB.clear()
+            bottomPositionsA.clear()
+            bottomPositionsB.clear()
+            maxRepPosA = null
+            minRepPosA = null
+            maxRepPosB = null
+            minRepPosB = null
+            // Clear last rep ghost positions
+            lastRepTopA = null
+            lastRepTopB = null
+            lastRepBottomA = null
+            lastRepBottomB = null
+        }
     }
 
     /**
@@ -147,16 +171,20 @@ class RepCounterFromMachine {
      * the position ranges we built up, making hasMeaningfulRange() return false.
      */
     fun resetCountsOnly() {
-        warmupReps = 0
-        workingReps = 0
-        shouldStop = false
-        carryoverChecked = false
-        hasPendingRep = false
+        countLock.withLock {
+            warmupReps = 0
+            workingReps = 0
+            shouldStop = false
+            carryoverChecked = false
+            hasPendingRep = false
+            lastTopCounter = 0
+            lastCompleteCounter = 0
+        }
         // Issue #163: Reset phase tracking (but keep position history for direction detection)
-        activePhase = RepPhase.IDLE
-        phaseProgress = 0f
-        lastTopCounter = 0
-        lastCompleteCounter = 0
+        phaseLock.withLock {
+            activePhase = RepPhase.IDLE
+            phaseProgress = 0f
+        }
         // NOTE: Do NOT clear position tracking lists or min/max ranges!
         // This preserves hasMeaningfulRange() for auto-stop detection
     }
@@ -169,8 +197,10 @@ class RepCounterFromMachine {
      * delta from zero.
      */
     internal fun establishLegacyCounterBaseline(topCounter: Int, completeCounter: Int) {
-        lastTopCounter = topCounter
-        lastCompleteCounter = completeCounter
+        countLock.withLock {
+            lastTopCounter = topCounter
+            lastCompleteCounter = completeCounter
+        }
     }
 
     /**
@@ -181,12 +211,15 @@ class RepCounterFromMachine {
      * The baseline will be refined as reps are performed through the sliding window calibration.
      */
     fun setInitialBaseline(posA: Float, posB: Float) {
-        // Only set initial baseline if positions are valid and not already calibrated
-        if (posA > 0f && minRepPosA == null) {
-            minRepPosA = posA
-        }
-        if (posB > 0f && minRepPosB == null) {
-            minRepPosB = posB
+        if (posA <= 0f && posB <= 0f) return
+        rangeLock.withLock {
+            // Only set initial baseline if positions are valid and not already calibrated
+            if (posA > 0f && minRepPosA == null) {
+                minRepPosA = posA
+            }
+            if (posB > 0f && minRepPosB == null) {
+                minRepPosB = posB
+            }
         }
     }
 
@@ -199,18 +232,20 @@ class RepCounterFromMachine {
         if (rangeTop <= 0f || rangeBottom < 0f) return
         if (rangeTop == 3000.0f && rangeBottom == 0.0f) return // Default/unset values (3 m rope in mm)
 
-        // Only seed if not already calibrated from actual reps
-        if (maxRepPosA == null && topPositionsA.isEmpty()) {
-            maxRepPosA = rangeTop
-        }
-        if (maxRepPosB == null && topPositionsB.isEmpty()) {
-            maxRepPosB = rangeTop
-        }
-        if (minRepPosA == null && bottomPositionsA.isEmpty()) {
-            minRepPosA = rangeBottom
-        }
-        if (minRepPosB == null && bottomPositionsB.isEmpty()) {
-            minRepPosB = rangeBottom
+        rangeLock.withLock {
+            // Only seed if not already calibrated from actual reps
+            if (maxRepPosA == null && topPositionsA.isEmpty()) {
+                maxRepPosA = rangeTop
+            }
+            if (maxRepPosB == null && topPositionsB.isEmpty()) {
+                maxRepPosB = rangeTop
+            }
+            if (minRepPosA == null && bottomPositionsA.isEmpty()) {
+                minRepPosA = rangeBottom
+            }
+            if (minRepPosB == null && bottomPositionsB.isEmpty()) {
+                minRepPosB = rangeBottom
+            }
         }
         logDebug("ROM seeded from machine: top=${rangeTop}mm, bottom=${rangeBottom}mm")
     }
@@ -226,23 +261,29 @@ class RepCounterFromMachine {
     fun updatePositionRangesContinuously(posA: Float, posB: Float) {
         if (posA <= 0f && posB <= 0f) return
 
-        // Track minimum positions (cable at rest / bottom of movement)
-        if (posA > 0f) {
-            if (minRepPosA == null || posA < minRepPosA!!) {
-                minRepPosA = posA
+        rangeLock.withLock {
+            // Track minimum positions (cable at rest / bottom of movement)
+            if (posA > 0f) {
+                val curMinA = minRepPosA
+                if (curMinA == null || posA < curMinA) {
+                    minRepPosA = posA
+                }
+                // Track maximum positions (cable extended / top of movement)
+                val curMaxA = maxRepPosA
+                if (curMaxA == null || posA > curMaxA) {
+                    maxRepPosA = posA
+                }
             }
-            // Track maximum positions (cable extended / top of movement)
-            if (maxRepPosA == null || posA > maxRepPosA!!) {
-                maxRepPosA = posA
-            }
-        }
 
-        if (posB > 0f) {
-            if (minRepPosB == null || posB < minRepPosB!!) {
-                minRepPosB = posB
-            }
-            if (maxRepPosB == null || posB > maxRepPosB!!) {
-                maxRepPosB = posB
+            if (posB > 0f) {
+                val curMinB = minRepPosB
+                if (curMinB == null || posB < curMinB) {
+                    minRepPosB = posB
+                }
+                val curMaxB = maxRepPosB
+                if (curMaxB == null || posB > curMaxB) {
+                    maxRepPosB = posB
+                }
             }
         }
     }
@@ -278,6 +319,13 @@ class RepCounterFromMachine {
      * @param posB Position B for range calibration
      * @param isLegacyFormat True if using the 6..23 effective-byte legacy packet format (Issue #187)
      */
+    private class PendingProcessEffects(
+        val topWindow: Int? = null,
+        val bottomWindow: Int? = null,
+        val resetPhase: Boolean = false,
+        val events: List<RepEvent> = emptyList(),
+    )
+
     fun process(
         repsRomCount: Int,
         repsRomTotal: Int = 0, // Issue #210: Machine's warmup target
@@ -289,44 +337,64 @@ class RepCounterFromMachine {
         posB: Float = 0f,
         isLegacyFormat: Boolean = false,
     ) {
-        // Issue #210: Sync warmupTarget with machine's repsRomTotal if provided and different
-        // This ensures our warmup tracking matches the machine's expectation
-        if (!isLegacyFormat && warmupTarget > 0 && repsRomTotal > 0 && repsRomTotal != warmupTarget) {
-            logDebug("⚠️ WARMUP SYNC: Machine's repsRomTotal=$repsRomTotal differs from our warmupTarget=$warmupTarget - syncing")
-            warmupTarget = repsRomTotal
+        val effects = countLock.withLock {
+            // Issue #210: Sync warmupTarget with machine's repsRomTotal if provided and different
+            // This ensures our warmup tracking matches the machine's expectation
+            if (!isLegacyFormat && warmupTarget > 0 && repsRomTotal > 0 && repsRomTotal != warmupTarget) {
+                logDebug("⚠️ WARMUP SYNC: Machine's repsRomTotal=$repsRomTotal differs from our warmupTarget=$warmupTarget - syncing")
+                warmupTarget = repsRomTotal
+            }
+
+            // DIAGNOSTIC: Log full state for debugging rep counting issues
+            val warmupGateOpen = warmupReps >= warmupTarget
+            logDebug("Rep process: ROM=$repsRomCount/$repsRomTotal, Set=$repsSetCount/$repsSetTotal, up=$up, down=$down, pending=$hasPendingRep, legacy=$isLegacyFormat")
+            logDebug("  Warmup gate: warmupReps=$warmupReps, warmupTarget=$warmupTarget, gate=${if (warmupGateOpen) "OPEN" else "BLOCKED"}")
+            logDebug("  Working: workingReps=$workingReps, workingTarget=$workingTarget")
+
+            if (isLegacyFormat) {
+                // LEGACY MODE: Count reps based on topCounter increments (Beta 4 method)
+                // This is the proven method that works with Samsung devices and older firmware
+                processLegacyLocked(up, down)
+            } else {
+                // MODERN MODE: Use machine-provided repsRomCount/repsSetCount
+                processModernLocked(repsRomCount, repsSetCount, up, down)
+            }
         }
 
-        // DIAGNOSTIC: Log full state for debugging rep counting issues
-        val warmupGateOpen = warmupReps >= warmupTarget
-        logDebug("Rep process: ROM=$repsRomCount/$repsRomTotal, Set=$repsSetCount/$repsSetTotal, up=$up, down=$down, pending=$hasPendingRep, legacy=$isLegacyFormat")
-        logDebug("  Warmup gate: warmupReps=$warmupReps, warmupTarget=$warmupTarget, gate=${if (warmupGateOpen) "OPEN" else "BLOCKED"}")
-        logDebug("  Working: workingReps=$workingReps, workingTarget=$workingTarget")
-
-        if (isLegacyFormat) {
-            // LEGACY MODE: Count reps based on topCounter increments (Beta 4 method)
-            // This is the proven method that works with Samsung devices and older firmware
-            processLegacy(up, down, posA, posB)
-        } else {
-            // MODERN MODE: Use machine-provided repsRomCount/repsSetCount
-            processModern(repsRomCount, repsSetCount, up, down, posA, posB)
+        effects.topWindow?.let { recordTopPosition(posA, posB, it) }
+        effects.bottomWindow?.let { recordBottomPosition(posA, posB, it) }
+        if (effects.resetPhase) {
+            phaseLock.withLock {
+                activePhase = RepPhase.IDLE
+                phaseProgress = 0f
+            }
+        }
+        val callback = onRepEvent
+        if (callback != null) {
+            effects.events.forEach { callback(it) }
         }
     }
 
     /**
      * LEGACY rep counting (Beta 4 method) - counts reps when topCounter increments.
      * Used when machine sends 6..23 effective-byte packets without repsRomCount/repsSetCount fields.
+     * Must be called with [countLock] held.
      */
-    private fun processLegacy(up: Int, down: Int, posA: Float, posB: Float) {
+    private fun processLegacyLocked(up: Int, down: Int): PendingProcessEffects {
+        val events = mutableListOf<RepEvent>()
+        var topWindow: Int? = null
+        var bottomWindow: Int? = null
+
         val topDelta = calculateDelta(lastTopCounter, up)
         if (topDelta > 0) {
-            recordTopPosition(posA, posB)
+            topWindow = getWindowSizeLocked()
 
             repeat(topDelta) {
                 val totalReps = warmupReps + workingReps + 1
                 if (totalReps <= warmupTarget) {
                     warmupReps++
                     logDebug("📈 LEGACY: Warmup rep $warmupReps (top counter increment)")
-                    onRepEvent?.invoke(
+                    events.add(
                         RepEvent(
                             type = RepType.WARMUP_COMPLETED,
                             warmupCount = warmupReps,
@@ -334,7 +402,7 @@ class RepCounterFromMachine {
                         ),
                     )
                     if (warmupReps == warmupTarget) {
-                        onRepEvent?.invoke(
+                        events.add(
                             RepEvent(
                                 type = RepType.WARMUP_COMPLETE,
                                 warmupCount = warmupReps,
@@ -345,7 +413,7 @@ class RepCounterFromMachine {
                 } else {
                     workingReps++
                     logDebug("💪 LEGACY: Working rep $workingReps (top counter increment)")
-                    onRepEvent?.invoke(
+                    events.add(
                         RepEvent(
                             type = RepType.WORKING_COMPLETED,
                             warmupCount = warmupReps,
@@ -356,7 +424,7 @@ class RepCounterFromMachine {
                     if (!isJustLift && !isAMRAP && workingTarget > 0 && workingReps >= workingTarget) {
                         logDebug("⚠️ LEGACY: shouldStop set to TRUE (target reached)")
                         shouldStop = true
-                        onRepEvent?.invoke(
+                        events.add(
                             RepEvent(
                                 type = RepType.WORKOUT_COMPLETE,
                                 warmupCount = warmupReps,
@@ -370,11 +438,16 @@ class RepCounterFromMachine {
 
         val downDelta = calculateDelta(lastCompleteCounter, down)
         if (downDelta > 0) {
-            recordBottomPosition(posA, posB)
+            bottomWindow = getWindowSizeLocked()
         }
 
         lastTopCounter = up
         lastCompleteCounter = down
+        return PendingProcessEffects(
+            topWindow = topWindow,
+            bottomWindow = bottomWindow,
+            events = events,
+        )
     }
 
     /**
@@ -392,8 +465,10 @@ class RepCounterFromMachine {
      * - UP counter: pending (grey) preview at the top, after warmup. `stopAtTop` can
      *   treat that preview as the final working rep.
      * - DOWN counter: clears the pending preview at the bottom.
+     *
+     * Must be called with [countLock] held.
      */
-    private fun processModern(repsRomCount: Int, repsSetCount: Int, up: Int, down: Int, posA: Float, posB: Float) {
+    private fun processModernLocked(repsRomCount: Int, repsSetCount: Int, up: Int, down: Int): PendingProcessEffects {
         // Issue #531 (symptom 1, heuristic): suppress a phantom warmup chirp caused by the
         // machine's free-running directional counters carrying over from the prior set. On the
         // first modern packet of a set, if BOTH up and down are already past the warmup target
@@ -416,22 +491,27 @@ class RepCounterFromMachine {
                 logDebug("🩹 Issue #531: directional carryover (up=$up, down=$down) — re-baselining, suppressing phantom warmup")
                 lastTopCounter = up
                 lastCompleteCounter = down
-                return
+                return PendingProcessEffects()
             }
         }
+
+        val events = mutableListOf<RepEvent>()
+        var topWindow: Int? = null
+        var bottomWindow: Int? = null
+        var resetPhase = false
 
         // Track UP movement - for working reps, show PENDING (grey) at TOP
         // Issue #210 FIX: No null check needed - lastTopCounter initialized to 0
         val upDelta = calculateDelta(lastTopCounter, up)
         if (upDelta > 0) {
-            recordTopPosition(posA, posB)
+            topWindow = getWindowSizeLocked()
 
             // Only show pending for WORKING reps (after warmup complete)
             if (warmupReps >= warmupTarget && !hasPendingRep) {
                 hasPendingRep = true
                 logDebug("📈 TOP - WORKING_PENDING: showing grey rep ${workingReps + 1}")
 
-                onRepEvent?.invoke(
+                events.add(
                     RepEvent(
                         type = RepType.WORKING_PENDING,
                         warmupCount = warmupReps,
@@ -449,13 +529,12 @@ class RepCounterFromMachine {
                 ) {
                     workingReps = maxOf(workingReps, workingTarget)
                     hasPendingRep = false
-                    activePhase = RepPhase.IDLE
-                    phaseProgress = 0f
+                    resetPhase = true
 
                     if (!shouldStop) {
                         logDebug("🛑 STOP_AT_TOP: target reached at TOP, completing set")
                         shouldStop = true
-                        onRepEvent?.invoke(
+                        events.add(
                             RepEvent(
                                 type = RepType.WORKOUT_COMPLETE,
                                 warmupCount = warmupReps,
@@ -471,7 +550,7 @@ class RepCounterFromMachine {
         // Issue #210 FIX: No null check needed - lastCompleteCounter initialized to 0
         val downDelta = calculateDelta(lastCompleteCounter, down)
         if (downDelta > 0) {
-            recordBottomPosition(posA, posB)
+            bottomWindow = getWindowSizeLocked()
 
             // Clear pending state when we reach bottom
             if (hasPendingRep) {
@@ -491,7 +570,7 @@ class RepCounterFromMachine {
             val warmupRepTarget = repsRomCount.coerceAtMost(warmupTarget)
             while (warmupReps < warmupRepTarget) {
                 warmupReps++
-                onRepEvent?.invoke(
+                events.add(
                     RepEvent(
                         type = RepType.WARMUP_COMPLETED,
                         warmupCount = warmupReps,
@@ -501,7 +580,7 @@ class RepCounterFromMachine {
             }
 
             if (warmupReps >= warmupTarget) {
-                onRepEvent?.invoke(
+                events.add(
                     RepEvent(
                         type = RepType.WARMUP_COMPLETE,
                         warmupCount = warmupReps,
@@ -525,7 +604,7 @@ class RepCounterFromMachine {
             while (warmupReps < warmupRepTarget) {
                 warmupReps++
                 logDebug("📈 MODERN FALLBACK: Warmup rep $warmupReps (from up counter, repsRomCount=0)")
-                onRepEvent?.invoke(
+                events.add(
                     RepEvent(
                         type = RepType.WARMUP_COMPLETED,
                         warmupCount = warmupReps,
@@ -535,7 +614,7 @@ class RepCounterFromMachine {
             }
 
             if (warmupReps >= warmupTarget) {
-                onRepEvent?.invoke(
+                events.add(
                     RepEvent(
                         type = RepType.WARMUP_COMPLETE,
                         warmupCount = warmupReps,
@@ -554,7 +633,7 @@ class RepCounterFromMachine {
             if (warmupReps < warmupTarget) {
                 logDebug("Machine reports working reps (repsSetCount=$repsSetCount) - warmup must be complete")
                 warmupReps = warmupTarget
-                onRepEvent?.invoke(
+                events.add(
                     RepEvent(
                         type = RepType.WARMUP_COMPLETE,
                         warmupCount = warmupReps,
@@ -566,12 +645,11 @@ class RepCounterFromMachine {
 
             // Clear pending/phase state when rep confirmed
             hasPendingRep = false
-            activePhase = RepPhase.IDLE
-            phaseProgress = 0f
+            resetPhase = true
 
             logDebug("WORKING_COMPLETED: rep $workingReps confirmed at eccentric valley")
 
-            onRepEvent?.invoke(
+            events.add(
                 RepEvent(
                     type = RepType.WORKING_COMPLETED,
                     warmupCount = warmupReps,
@@ -584,7 +662,7 @@ class RepCounterFromMachine {
                 logDebug("shouldStop set to TRUE (target reached)")
                 logDebug("  workingTarget=$workingTarget, workingReps=$workingReps")
                 shouldStop = true
-                onRepEvent?.invoke(
+                events.add(
                     RepEvent(
                         type = RepType.WORKOUT_COMPLETE,
                         warmupCount = warmupReps,
@@ -593,6 +671,13 @@ class RepCounterFromMachine {
                 )
             }
         }
+
+        return PendingProcessEffects(
+            topWindow = topWindow,
+            bottomWindow = bottomWindow,
+            resetPhase = resetPhase,
+            events = events,
+        )
     }
 
     private fun calculateDelta(last: Int, current: Int): Int = if (current >= last) {
@@ -616,47 +701,49 @@ class RepCounterFromMachine {
         }
     }
 
-    private fun recordTopPosition(posA: Float, posB: Float) {
+    private fun recordTopPosition(posA: Float, posB: Float, window: Int) {
         if (posA <= 0f && posB <= 0f) return
 
-        val window = getWindowSize()
-        if (posA > 0f) {
-            // Capture raw value for ghost indicator before adding to averaging list
-            lastRepTopA = posA
-            topPositionsA.add(posA)
-            if (topPositionsA.size > window) topPositionsA.removeAt(0)
-        }
-        if (posB > 0f) {
-            // Capture raw value for ghost indicator before adding to averaging list
-            lastRepTopB = posB
-            topPositionsB.add(posB)
-            if (topPositionsB.size > window) topPositionsB.removeAt(0)
-        }
+        rangeLock.withLock {
+            if (posA > 0f) {
+                // Capture raw value for ghost indicator before adding to averaging list
+                lastRepTopA = posA
+                topPositionsA.add(posA)
+                if (topPositionsA.size > window) topPositionsA.removeAt(0)
+            }
+            if (posB > 0f) {
+                // Capture raw value for ghost indicator before adding to averaging list
+                lastRepTopB = posB
+                topPositionsB.add(posB)
+                if (topPositionsB.size > window) topPositionsB.removeAt(0)
+            }
 
-        updateRepRanges()
+            updateRepRangesLocked()
+        }
     }
 
-    private fun recordBottomPosition(posA: Float, posB: Float) {
+    private fun recordBottomPosition(posA: Float, posB: Float, window: Int) {
         if (posA <= 0f && posB <= 0f) return
 
-        val window = getWindowSize()
-        if (posA > 0f) {
-            // Capture raw value for ghost indicator before adding to averaging list
-            lastRepBottomA = posA
-            bottomPositionsA.add(posA)
-            if (bottomPositionsA.size > window) bottomPositionsA.removeAt(0)
-        }
-        if (posB > 0f) {
-            // Capture raw value for ghost indicator before adding to averaging list
-            lastRepBottomB = posB
-            bottomPositionsB.add(posB)
-            if (bottomPositionsB.size > window) bottomPositionsB.removeAt(0)
-        }
+        rangeLock.withLock {
+            if (posA > 0f) {
+                // Capture raw value for ghost indicator before adding to averaging list
+                lastRepBottomA = posA
+                bottomPositionsA.add(posA)
+                if (bottomPositionsA.size > window) bottomPositionsA.removeAt(0)
+            }
+            if (posB > 0f) {
+                // Capture raw value for ghost indicator before adding to averaging list
+                lastRepBottomB = posB
+                bottomPositionsB.add(posB)
+                if (bottomPositionsB.size > window) bottomPositionsB.removeAt(0)
+            }
 
-        updateRepRanges()
+            updateRepRangesLocked()
+        }
     }
 
-    private fun updateRepRanges() {
+    private fun updateRepRangesLocked() {
         if (topPositionsA.isNotEmpty()) {
             maxRepPosA = topPositionsA.average().toFloat()
         }
@@ -671,22 +758,32 @@ class RepCounterFromMachine {
         }
     }
 
-    private fun getWindowSize(): Int {
+    private fun getWindowSizeLocked(): Int {
         val total = warmupReps + workingReps
         return if (total < warmupTarget) 2 else 3
     }
 
     fun getRepCount(): RepCount {
-        val total = workingReps // Exclude warm-up reps from total count
+        var warmup = 0
+        var working = 0
+        var target = 0
+        var pending = false
+        countLock.withLock {
+            warmup = warmupReps
+            working = workingReps
+            target = warmupTarget
+            pending = hasPendingRep
+        }
+        val (phase, progress) = phaseLock.withLock { activePhase to phaseProgress }
         return RepCount(
-            warmupReps = warmupReps,
-            workingReps = workingReps,
-            totalReps = total,
-            isWarmupComplete = warmupReps >= warmupTarget,
-            hasPendingRep = hasPendingRep,
+            warmupReps = warmup,
+            workingReps = working,
+            totalReps = working, // Exclude warm-up reps from total count
+            isWarmupComplete = warmup >= target,
+            hasPendingRep = pending,
             // Issue #163: Include phase tracking for animated counter
-            activeRepPhase = activePhase,
-            phaseProgress = phaseProgress,
+            activeRepPhase = phase,
+            phaseProgress = progress,
         )
     }
 
@@ -705,117 +802,131 @@ class RepCounterFromMachine {
         val currentPos = maxOf(posA, posB)
         if (currentPos <= 0f) return
 
-        // Only track phase after warmup is complete (during working reps)
-        if (warmupReps < warmupTarget) {
-            activePhase = RepPhase.IDLE
-            phaseProgress = 0f
+        // Snapshot counter & ROM bounds via sequential non-nested leaf locks before acquiring phaseLock.
+        val isWarmupComplete = countLock.withLock { warmupReps >= warmupTarget }
+        if (!isWarmupComplete) {
+            phaseLock.withLock {
+                activePhase = RepPhase.IDLE
+                phaseProgress = 0f
+            }
             return
         }
 
-        // Add to position history for smoothed direction detection
-        positionHistoryForDirection.add(currentPos)
-        if (positionHistoryForDirection.size > DIRECTION_WINDOW_SIZE) {
-            positionHistoryForDirection.removeAt(0)
+        var minA: Float? = null
+        var minB: Float? = null
+        rangeLock.withLock {
+            minA = minRepPosA
+            minB = minRepPosB
         }
 
-        // Need at least 2 positions to detect direction
-        if (positionHistoryForDirection.size < 2) {
-            lastTrackedPosition = currentPos
-            return
-        }
+        phaseLock.withLock {
+            // Add to position history for smoothed direction detection
+            positionHistoryForDirection.add(currentPos)
+            if (positionHistoryForDirection.size > DIRECTION_WINDOW_SIZE) {
+                positionHistoryForDirection.removeAt(0)
+            }
 
-        // Calculate smoothed direction from position history
-        val oldestPos = positionHistoryForDirection.first()
-        val newestPos = positionHistoryForDirection.last()
-        val positionDelta = newestPos - oldestPos
+            // Need at least 2 positions to detect direction
+            if (positionHistoryForDirection.size < 2) {
+                lastTrackedPosition = currentPos
+                return
+            }
 
-        // Determine phase from direction
-        val newPhase = when {
-            positionDelta > DIRECTION_THRESHOLD_MM -> RepPhase.CONCENTRIC
+            // Calculate smoothed direction from position history
+            val oldestPos = positionHistoryForDirection.first()
+            val newestPos = positionHistoryForDirection.last()
+            val positionDelta = newestPos - oldestPos
 
-            // Moving up
-            positionDelta < -DIRECTION_THRESHOLD_MM -> RepPhase.ECCENTRIC
+            // Determine phase from direction
+            val newPhase = when {
+                positionDelta > DIRECTION_THRESHOLD_MM -> RepPhase.CONCENTRIC
 
-            // Moving down
-            else -> activePhase // No significant movement, keep current phase
-        }
+                // Moving up
+                positionDelta < -DIRECTION_THRESHOLD_MM -> RepPhase.ECCENTRIC
 
-        // Handle phase transitions
-        if (newPhase != activePhase && newPhase != RepPhase.IDLE) {
-            when (newPhase) {
+                // Moving down
+                else -> activePhase // No significant movement, keep current phase
+            }
+
+            // Handle phase transitions
+            if (newPhase != activePhase && newPhase != RepPhase.IDLE) {
+                when (newPhase) {
+                    RepPhase.CONCENTRIC -> {
+                        // Starting concentric - record start position (bottom)
+                        phaseStartPosition = currentPos
+                        phasePeakPosition = currentPos
+                    }
+
+                    RepPhase.ECCENTRIC -> {
+                        // Starting eccentric - use current position as peak, keep start from concentric
+                        phasePeakPosition = currentPos
+                    }
+
+                    RepPhase.IDLE -> { /* No action needed */ }
+                }
+                activePhase = newPhase
+            }
+
+            // Calculate progress within phase (0.0 to 1.0)
+            when (activePhase) {
                 RepPhase.CONCENTRIC -> {
-                    // Starting concentric - record start position (bottom)
-                    phaseStartPosition = currentPos
-                    phasePeakPosition = currentPos
+                    // Track peak position as we go up
+                    if (currentPos > phasePeakPosition) {
+                        phasePeakPosition = currentPos
+                    }
+                    // Progress: 0.0 at bottom, 1.0 at top
+                    val range = phasePeakPosition - phaseStartPosition
+                    phaseProgress = if (range > 100f) {
+                        ((currentPos - phaseStartPosition) / range).coerceIn(0f, 1f)
+                    } else {
+                        0f
+                    }
                 }
 
                 RepPhase.ECCENTRIC -> {
-                    // Starting eccentric - use current position as peak, keep start from concentric
-                    phasePeakPosition = currentPos
+                    // Progress: 0.0 at top, 1.0 at bottom
+                    val minPos = minA ?: minB ?: phaseStartPosition
+                    val range = phasePeakPosition - minPos
+                    phaseProgress = if (range > 100f) {
+                        ((phasePeakPosition - currentPos) / range).coerceIn(0f, 1f)
+                    } else {
+                        0f
+                    }
                 }
 
-                RepPhase.IDLE -> { /* No action needed */ }
+                RepPhase.IDLE -> {
+                    phaseProgress = 0f
+                }
             }
-            activePhase = newPhase
+
+            lastTrackedPosition = currentPos
         }
-
-        // Calculate progress within phase (0.0 to 1.0)
-        when (activePhase) {
-            RepPhase.CONCENTRIC -> {
-                // Track peak position as we go up
-                if (currentPos > phasePeakPosition) {
-                    phasePeakPosition = currentPos
-                }
-                // Progress: 0.0 at bottom, 1.0 at top
-                val range = phasePeakPosition - phaseStartPosition
-                phaseProgress = if (range > 100f) {
-                    ((currentPos - phaseStartPosition) / range).coerceIn(0f, 1f)
-                } else {
-                    0f
-                }
-            }
-
-            RepPhase.ECCENTRIC -> {
-                // Progress: 0.0 at top, 1.0 at bottom
-                val minPos = minRepPosA ?: minRepPosB ?: phaseStartPosition
-                val range = phasePeakPosition - minPos
-                phaseProgress = if (range > 100f) {
-                    ((phasePeakPosition - currentPos) / range).coerceIn(0f, 1f)
-                } else {
-                    0f
-                }
-            }
-
-            RepPhase.IDLE -> {
-                phaseProgress = 0f
-            }
-        }
-
-        lastTrackedPosition = currentPos
     }
 
-    fun shouldStopWorkout(): Boolean = shouldStop
+    fun shouldStopWorkout(): Boolean = countLock.withLock { shouldStop }
 
-    fun getRepRanges(): RepRanges = RepRanges(
-        minPosA = minRepPosA,
-        maxPosA = maxRepPosA,
-        minPosB = minRepPosB,
-        maxPosB = maxRepPosB,
-        // Last rep's raw positions for ghost indicators
-        lastRepTopA = lastRepTopA,
-        lastRepTopB = lastRepTopB,
-        lastRepBottomA = lastRepBottomA,
-        lastRepBottomB = lastRepBottomB,
-    )
+    fun getRepRanges(): RepRanges = rangeLock.withLock {
+        RepRanges(
+            minPosA = minRepPosA,
+            maxPosA = maxRepPosA,
+            minPosB = minRepPosB,
+            maxPosB = maxRepPosB,
+            // Last rep's raw positions for ghost indicators
+            lastRepTopA = lastRepTopA,
+            lastRepTopB = lastRepTopB,
+            lastRepBottomA = lastRepBottomA,
+            lastRepBottomB = lastRepBottomB,
+        )
+    }
 
-    fun hasMeaningfulRange(minRangeThreshold: Float = 500f): Boolean {
+    fun hasMeaningfulRange(minRangeThreshold: Float = 500f): Boolean = rangeLock.withLock {
         val minA = minRepPosA
         val maxA = maxRepPosA
         val minB = minRepPosB
         val maxB = maxRepPosB
         val rangeA = if (minA != null && maxA != null) maxA - minA else 0f
         val rangeB = if (minB != null && maxB != null) maxB - minB else 0f
-        return rangeA > minRangeThreshold || rangeB > minRangeThreshold
+        rangeA > minRangeThreshold || rangeB > minRangeThreshold
     }
 
     private fun logDebug(message: String) {

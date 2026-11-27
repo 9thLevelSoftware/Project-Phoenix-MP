@@ -57,7 +57,7 @@ val domainModule = module {
 
     // Assessment
     single { AssessmentEngine() }
-    single { ResolveCurrentOneRepMaxUseCase(get(), get(), get()) }
+    single { ResolveCurrentOneRepMaxUseCase(get(), get(), get(), get()) }
 
     // Velocity-based 1RM (issue #517)
     single { MvtProvider() }

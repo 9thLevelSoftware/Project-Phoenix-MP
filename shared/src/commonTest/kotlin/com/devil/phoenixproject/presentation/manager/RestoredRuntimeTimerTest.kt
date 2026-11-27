@@ -6,6 +6,7 @@ import com.devil.phoenixproject.data.repository.RestoredRetrySourceAuthoritySnap
 import com.devil.phoenixproject.data.repository.RestoredTeardownSeedSnapshot
 import com.devil.phoenixproject.data.repository.RestoredWorkoutCommandTemplateSnapshot
 import com.devil.phoenixproject.domain.model.CompletedSet
+import com.devil.phoenixproject.domain.model.CycleDay
 import com.devil.phoenixproject.domain.model.DropPercentage
 import com.devil.phoenixproject.domain.model.DropSetCandidate
 import com.devil.phoenixproject.domain.model.DropSetConfiguration
@@ -17,9 +18,11 @@ import com.devil.phoenixproject.domain.model.RackItem
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExecutionIdentity
 import com.devil.phoenixproject.domain.model.RoutineExercise
+import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.domain.model.RoutineLaunchOrigin
 import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.SetType
+import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.usecase.DropSetCandidateResolver
@@ -834,6 +837,72 @@ class RestoredRuntimeTimerTest {
             harness.dwsm.toggleRestPause()
             runCurrent()
             assertTrue(harness.coordinator.isRestPaused.value)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `restoredRestCompletion_onFinalStep_updatesCycleProgressAndClearsRoutineContext`() = runTest {
+        val wallClockEpochMs = DWSMTestHarness.TEST_WALL_CLOCK_EPOCH_MS
+        val harness = DWSMTestHarness(this, wallClockMillisProvider = { wallClockEpochMs })
+        try {
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            val routine = WorkoutStateFixtures.createTestRoutine(
+                exerciseCount = 1,
+                setsPerExercise = 1,
+                weightKg = 25f,
+            ).copy(id = "cycle_routine_aud030_restored")
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.fakeWorkoutRepo.saveRoutine(routine)
+            harness.fakeTrainingCycleRepo.addCycle(
+                TrainingCycle.create(
+                    id = "cycle-aud030-restored",
+                    name = "Restored Cycle",
+                    profileId = "default",
+                    days = listOf(
+                        CycleDay.create(
+                            id = "d1",
+                            cycleId = "cycle-aud030-restored",
+                            dayNumber = 1,
+                            routineId = routine.id,
+                        ),
+                    ),
+                    isActive = true,
+                ),
+            )
+            harness.fakeTrainingCycleRepo.initializeProgress("cycle-aud030-restored")
+            runCurrent()
+
+            val baseInstalled = installTimerRuntime(
+                harness = harness,
+                routineSessionId = "restored-final-cycle",
+                restDeadlineEpochMs = wallClockEpochMs + 30_000L,
+                routineOverride = routine,
+            )
+            val cycleHandle = baseInstalled.handle.copy(
+                launchOrigin = RoutineLaunchOrigin.TRAINING_CYCLES,
+                cycleId = "cycle-aud030-restored",
+                cycleDayNumber = 1,
+            )
+            assertIs<ActiveWorkoutRuntimeResumeResult.RestoredRest>(
+                harness.dwsm.resumeRoutine(cycleHandle),
+            )
+            runCurrent()
+
+            harness.dwsm.skipRest()
+            runCurrent()
+
+            assertIs<RoutineFlowState.Complete>(harness.coordinator.routineFlowState.value)
+            assertIs<WorkoutState.Idle>(harness.coordinator.workoutState.value)
+            assertNull(harness.coordinator.activeCycleId)
+            assertNull(harness.coordinator.activeCycleDayNumber)
+            assertNull(harness.coordinator.currentRoutineSessionId)
+            assertEquals(0, harness.coordinator.currentSetIndex.value)
+            assertEquals(0, harness.coordinator.currentExerciseIndex.value)
+            assertTrue(harness.coordinator._completedRoutineSetKeys.value.isEmpty())
+            assertEquals(setOf(1), harness.fakeTrainingCycleRepo.getCycleProgress("cycle-aud030-restored")?.completedDays)
+            assertNotNull(harness.coordinator.cycleDayCompletionEvent.value)
         } finally {
             harness.cleanup()
         }

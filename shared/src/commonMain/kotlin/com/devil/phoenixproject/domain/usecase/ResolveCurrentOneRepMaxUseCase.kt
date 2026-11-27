@@ -1,10 +1,12 @@
 package com.devil.phoenixproject.domain.usecase
 
 import com.devil.phoenixproject.data.repository.AssessmentRepository
+import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.MAX_RECENT_EXERCISE_SESSIONS
 import com.devil.phoenixproject.data.repository.VelocityOneRepMaxRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.domain.model.assessmentLoadToPerCableKg
 import com.devil.phoenixproject.domain.model.displayHeaviestKgPerCable
 import com.devil.phoenixproject.util.OneRepMaxCalculator
 
@@ -36,6 +38,7 @@ class ResolveCurrentOneRepMaxUseCase(
     private val velocityRepository: VelocityOneRepMaxRepository,
     private val assessmentRepository: AssessmentRepository,
     private val workoutRepository: WorkoutRepository,
+    private val exerciseRepository: ExerciseRepository,
 ) {
     suspend operator fun invoke(
         exerciseId: String,
@@ -65,9 +68,12 @@ class ResolveCurrentOneRepMaxUseCase(
 
         assessmentRepository.getLatestAssessment(exerciseId, profileId)?.let { assessment ->
             if (assessment.exerciseId == exerciseId && assessment.profileId == profileId) {
-                val validTotalKg = assessment.userOverrideKg?.validPositiveOrNull()
+                val validInputKg = assessment.userOverrideKg?.validPositiveOrNull()
                     ?: assessment.estimatedOneRepMaxKg.validPositiveOrNull()
-                val perCableKg = validTotalKg?.div(2f)?.validPositiveOrNull()
+                val perCableKg = validInputKg?.let { inputKg ->
+                    val exercise = exerciseRepository.getExerciseById(exerciseId)
+                    exercise.assessmentLoadToPerCableKg(inputKg).validPositiveOrNull()
+                }
                 if (perCableKg != null) {
                     return CurrentOneRepMax(
                         perCableKg = perCableKg,

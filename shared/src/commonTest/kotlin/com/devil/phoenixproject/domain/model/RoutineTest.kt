@@ -63,6 +63,39 @@ class RoutineTest {
         assertTrue(items[1] is RoutineItem.Single)
     }
 
+    @Test
+    fun routine_getItems_and_normalizeRoutine_preserveOrphanedSupersetExerciseAsStandalone() {
+        val orphaned = createTestRoutineExercise(
+            id = "e-orphaned",
+            orderIndex = 0,
+            supersetId = "orphaned-ss",
+            orderInSuperset = 2,
+        )
+        val standalone = createTestRoutineExercise(
+            id = "e-standalone",
+            orderIndex = 1,
+        )
+        val routine = Routine(
+            id = "r-orphaned",
+            name = "Orphaned Superset",
+            exercises = listOf(orphaned, standalone),
+            supersets = emptyList(),
+        )
+
+        val items = routine.getItems()
+        assertEquals(2, items.size)
+        assertTrue(items[0] is RoutineItem.Single)
+        assertEquals("e-orphaned", (items[0] as RoutineItem.Single).exercise.id)
+        assertTrue(items[1] is RoutineItem.Single)
+        assertEquals("e-standalone", (items[1] as RoutineItem.Single).exercise.id)
+
+        val normalized = normalizeRoutine(routine)
+        assertEquals(2, normalized.exercises.size)
+        assertEquals(null, normalized.exercises[0].supersetId)
+        assertEquals(0, normalized.exercises[0].orderInSuperset)
+        assertEquals("e-standalone", normalized.exercises[1].id)
+    }
+
     // ===== resolveWeight / resolveSetWeights (Issue #357) =====
 
     @Test

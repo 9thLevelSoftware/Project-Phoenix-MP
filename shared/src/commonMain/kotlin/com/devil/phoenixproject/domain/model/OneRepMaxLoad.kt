@@ -8,6 +8,14 @@ fun Exercise.oneRepMaxInputToPerCableKg(inputKg: Float): Float? =
     displayMultiplier?.let { inputKg / it }
 
 /**
+ * Assessment UI and stored estimates use combined total only when the exercise is
+ * confirmed dual/unified (`displayMultiplier == 2`). All other cases (single-cable,
+ * independent dual handles, or unresolved cable metadata) already represent per-cable kg.
+ */
+fun Exercise?.assessmentLoadToPerCableKg(loadKg: Float): Float =
+    this?.oneRepMaxInputToPerCableKg(loadKg) ?: loadKg
+
+/**
  * Convert a canonical per-cable baseline back to the wizard's editable kilogram value.
  * Only resolved display metadata can safely determine the wizard input value.
  */

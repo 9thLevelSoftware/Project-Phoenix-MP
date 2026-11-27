@@ -7,6 +7,14 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlinx.atomicfu.locks.reentrantLock
+import kotlinx.atomicfu.locks.withLock
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 
 class RepCounterFromMachineTest {
 
@@ -907,6 +915,126 @@ class RepCounterFromMachineTest {
         )
         assertEquals(3, capturedEvents.count { it.type == RepType.WARMUP_COMPLETED })
         assertEquals(1, capturedEvents.count { it.type == RepType.WARMUP_COMPLETE })
+    }
+
+    @Test
+    fun `concurrent process updatePhaseFromPosition getRepRanges and reset never throws or deadlocks`() = runTest {
+        withContext(Dispatchers.Default) {
+            withTimeout(30_000L) {
+                val errorLock = reentrantLock()
+                val errors = mutableListOf<String>()
+
+                repeat(5) { trial ->
+                    val counter = RepCounterFromMachine()
+                    counter.configure(
+                        warmupTarget = 0,
+                        workingTarget = 100,
+                        isJustLift = false,
+                        stopAtTop = false,
+                    )
+                    // Verify onRepEvent never holds countLock/phaseLock/rangeLock by querying
+                    // counter state directly inside the callback under heavy contention.
+                    counter.onRepEvent = {
+                        counter.getRepCount()
+                        counter.getRepRanges()
+                    }
+
+                    coroutineScope {
+                        // 4 phase-tracking + rep-count readers (simulating metricsFlow collectors)
+                        repeat(4) { workerIndex ->
+                            launch {
+                                try {
+                                    for (i in 0 until 3_000) {
+                                        val pos = when (i % 4) {
+                                            0 -> 120f
+                                            1 -> 450f
+                                            2 -> 820f
+                                            else -> 380f
+                                        }
+                                        counter.updatePhaseFromPosition(pos, pos)
+                                        counter.getRepCount()
+                                        counter.shouldStopWorkout()
+                                    }
+                                } catch (t: Throwable) {
+                                    errorLock.withLock {
+                                        errors.add("trial=$trial phaseWorker=$workerIndex: ${t::class.simpleName}: ${t.message}")
+                                    }
+                                }
+                            }
+                        }
+
+                        // 2 rep-notification processors (modern + legacy) driving recordTop/BottomPosition -> updateRepRanges
+                        repeat(2) { workerIndex ->
+                            launch {
+                                try {
+                                    for (i in 1..3_000) {
+                                        val rep = (i % 100) + 1
+                                        val isLegacy = workerIndex == 1 && (i % 5 == 0)
+                                        counter.process(
+                                            repsRomCount = 0,
+                                            repsSetCount = rep,
+                                            up = i,
+                                            down = i,
+                                            posA = 750f + (i % 50),
+                                            posB = 740f + (i % 50),
+                                            isLegacyFormat = isLegacy,
+                                        )
+                                    }
+                                } catch (t: Throwable) {
+                                    errorLock.withLock {
+                                        errors.add("trial=$trial processWorker=$workerIndex: ${t::class.simpleName}: ${t.message}")
+                                    }
+                                }
+                            }
+                        }
+
+                        // 1 range reader/seeder/continuous-updater
+                        launch {
+                            try {
+                                for (i in 0 until 3_000) {
+                                    if (i % 10 == 0) {
+                                        counter.setInitialBaseline(100f, 100f)
+                                        counter.seedRomBoundaries(800f, 100f)
+                                    }
+                                    counter.updatePositionRangesContinuously(100f + (i % 700), 100f + (i % 700))
+                                    counter.getRepRanges()
+                                    counter.hasMeaningfulRange()
+                                }
+                            } catch (t: Throwable) {
+                                errorLock.withLock {
+                                    errors.add("trial=$trial rangeWorker: ${t::class.simpleName}: ${t.message}")
+                                }
+                            }
+                        }
+
+                        // 1 reset + configure mutator
+                        launch {
+                            try {
+                                for (i in 0 until 3_000) {
+                                    if (i % 15 == 0) {
+                                        counter.resetCountsOnly()
+                                    } else {
+                                        counter.reset()
+                                    }
+                                    counter.configure(
+                                        warmupTarget = 0,
+                                        workingTarget = 100,
+                                        isJustLift = i % 20 == 0,
+                                        stopAtTop = i % 17 == 0,
+                                    )
+                                }
+                            } catch (t: Throwable) {
+                                errorLock.withLock {
+                                    errors.add("trial=$trial resetWorker: ${t::class.simpleName}: ${t.message}")
+                                }
+                            }
+                        }
+                    }
+                }
+
+                assertTrue(errors.isEmpty(), "Expected 0 concurrency errors, got ${errors.size}: ${errors.take(5)}")
+            }
+        }
     }
 
 }

@@ -14,6 +14,7 @@ import com.devil.phoenixproject.domain.assessment.LoadCeiling
 import com.devil.phoenixproject.domain.assessment.LoadVelocityPoint
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.WorkoutMetric
+import com.devil.phoenixproject.domain.model.assessmentLoadToPerCableKg
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Job
@@ -97,6 +98,12 @@ class AssessmentViewModel(
     private var assessmentResult: AssessmentResult? = null
     private var velocityCaptureJob: Job? = null
     private val capturedVelocities = mutableListOf<Float>()
+
+    private val Exercise?.assessmentMultiplier: Int
+        get() = this?.displayMultiplier ?: 1
+
+    private val Exercise?.assessmentLoadCeiling: LoadCeiling
+        get() = if (assessmentMultiplier == 2) LoadCeiling.TOTAL else LoadCeiling.PER_CABLE
 
     init {
         loadExercises()
@@ -184,11 +191,11 @@ class AssessmentViewModel(
 
     private fun startAssessmentInternal() {
         assessmentStartTimeMs = currentTimeMillis()
-        if (selectedExercise == null) return
+        val exercise = selectedExercise ?: return
 
         _currentStep.value = AssessmentStep.ProgressiveLoading(
             currentSetNumber = 1,
-            suggestedWeightKg = SAFE_STARTING_LOAD_TOTAL_KG,
+            suggestedWeightKg = SAFE_STARTING_LOAD_PER_CABLE_KG * exercise.assessmentMultiplier,
             recordedSets = emptyList(),
             latestVelocity = null,
             shouldStop = false,
@@ -221,7 +228,10 @@ class AssessmentViewModel(
         if (shouldStop || updatedSets.size >= 5) {
             // Try to estimate 1RM
             val points = updatedSets.map { LoadVelocityPoint(it.loadKg, it.meanVelocityMs) }
-            val result = assessmentEngine.estimateOneRepMax(points, loadCeiling = LoadCeiling.TOTAL)
+            val result = assessmentEngine.estimateOneRepMax(
+                points,
+                loadCeiling = selectedExercise.assessmentLoadCeiling,
+            )
 
             if (result != null) {
                 assessmentResult = result
@@ -245,7 +255,7 @@ class AssessmentViewModel(
             val nextWeight = assessmentEngine.suggestNextWeight(
                 loadKg,
                 meanVelocityMs,
-                loadCeiling = LoadCeiling.TOTAL,
+                loadCeiling = selectedExercise.assessmentLoadCeiling,
             )
             _currentStep.value = AssessmentStep.ProgressiveLoading(
                 currentSetNumber = current.currentSetNumber + 1,
@@ -298,8 +308,8 @@ class AssessmentViewModel(
                 val durationMs = currentTimeMillis() - assessmentStartTimeMs
                 val avgWeight = current.loadVelocityPoints.map { it.loadKg }.average().toFloat()
 
-                // Convert from total weight (used throughout the wizard UI) to per-cable
-                // for DB storage. The DB stores per-cable values per project weight convention.
+                // Convert from wizard UI load (total for dual/unified, per-cable otherwise)
+                // to canonical per-cable kg for DB storage.
                 assessmentRepository.saveAssessmentSession(
                     exerciseId = exercise.id ?: exercise.name,
                     exerciseName = exercise.displayName,
@@ -314,7 +324,7 @@ class AssessmentViewModel(
                     },
                     totalReps = totalReps,
                     durationMs = durationMs,
-                    weightPerCableKg = avgWeight / 2f,
+                    weightPerCableKg = exercise.assessmentLoadToPerCableKg(avgWeight),
                     profileId = profileId,
                 )
 
@@ -336,7 +346,7 @@ class AssessmentViewModel(
     }
 
     private companion object {
-        const val SAFE_STARTING_LOAD_TOTAL_KG = 20f
+        const val SAFE_STARTING_LOAD_PER_CABLE_KG = 10f
     }
 
     /**

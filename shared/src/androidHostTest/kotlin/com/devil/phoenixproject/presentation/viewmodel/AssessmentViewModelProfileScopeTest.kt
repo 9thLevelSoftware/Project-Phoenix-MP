@@ -3,6 +3,7 @@ package com.devil.phoenixproject.presentation.viewmodel
 import app.cash.turbine.test
 import com.devil.phoenixproject.domain.assessment.AssessmentEngine
 import com.devil.phoenixproject.domain.model.Exercise
+import com.devil.phoenixproject.domain.model.ExerciseCableIntent
 import com.devil.phoenixproject.testutil.FakeAssessmentRepository
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.TestCoroutineRule
@@ -122,6 +123,45 @@ class AssessmentViewModelProfileScopeTest {
             )
         }
 
+    @Test
+    fun singleCableAssessment_usesPerCableStartLoadCeilingAndSavedWeight() = runTest {
+        val assessmentRepository = FakeAssessmentRepository()
+        val singleExercises = FakeExerciseRepository().apply {
+            addExercise(
+                Exercise(
+                    id = "single-curl",
+                    name = "Single Arm Curl",
+                    muscleGroup = "Arms",
+                    equipment = "HANDLES",
+                    cableIntent = ExerciseCableIntent.SINGLE,
+                ),
+            )
+        }
+        val viewModel = readyViewModel(assessmentRepository, singleExercises)
+        advanceUntilIdle()
+
+        viewModel.selectExerciseById("single-curl")
+        advanceUntilIdle()
+
+        val initial = assertIs<AssessmentStep.ProgressiveLoading>(viewModel.currentStep.value)
+        assertEquals(10f, initial.suggestedWeightKg)
+
+        // With LoadCeiling.PER_CABLE (110 kg), suggested next weight after 100 kg stays <= 110f (not 220f).
+        viewModel.recordSet(100f, 0.8f)
+        val next = assertIs<AssessmentStep.ProgressiveLoading>(viewModel.currentStep.value)
+        assertEquals(110f, next.suggestedWeightKg)
+
+        // Finish at high load -> acceptResult stores per-cable weight without halving.
+        viewModel.recordSet(110f, 0.25f)
+        assertIs<AssessmentStep.Results>(viewModel.currentStep.value)
+        viewModel.acceptResult(profileId = "athlete-a", overrideKg = 115f)
+        advanceUntilIdle()
+
+        val saved = assessmentRepository.savedSessions.single()
+        assertEquals(105f, saved.weightPerCableKg)
+        assertEquals(115f, saved.userOverrideTotalKg)
+    }
+
     private fun readyViewModel(
         assessmentRepository: FakeAssessmentRepository,
         exerciseRepository: FakeExerciseRepository = exerciseRepository(),
@@ -139,6 +179,7 @@ class AssessmentViewModelProfileScopeTest {
                     name = "Bench Press",
                     muscleGroup = "Chest",
                     equipment = "BAR",
+                    cableIntent = ExerciseCableIntent.DUAL,
                 ),
             )
         }

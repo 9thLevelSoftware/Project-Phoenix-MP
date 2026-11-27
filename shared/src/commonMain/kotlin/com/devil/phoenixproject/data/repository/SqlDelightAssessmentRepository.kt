@@ -5,6 +5,7 @@ import app.cash.sqldelight.coroutines.mapToList
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.domain.model.assessmentLoadToPerCableKg
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.generateUUID
 import kotlin.coroutines.cancellation.CancellationException
@@ -28,6 +29,7 @@ class SqlDelightAssessmentRepository(
     private val db: PhoenixDatabase,
     private val workoutRepository: WorkoutRepository,
     private val baselineRepository: ProfileExerciseBaselineRepository,
+    private val exerciseRepository: ExerciseRepository,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : AssessmentRepository {
 
@@ -124,8 +126,11 @@ class SqlDelightAssessmentRepository(
     ): String {
         require(profileId.isNotBlank()) { "Assessment profileId must not be blank" }
         return assessmentWriteMutex.withLock {
-            val finalOneRepMaxTotalKg = userOverrideKg ?: estimatedOneRepMaxKg
-            val attemptedOneRepMaxPerCableKg = finalOneRepMaxTotalKg / 2f
+            val finalOneRepMaxInputKg = userOverrideKg ?: estimatedOneRepMaxKg
+            val exercise = withContext(ioDispatcher) {
+                exerciseRepository.getExerciseById(exerciseId)
+            }
+            val attemptedOneRepMaxPerCableKg = exercise.assessmentLoadToPerCableKg(finalOneRepMaxInputKg)
             require(attemptedOneRepMaxPerCableKg.isFinite() && attemptedOneRepMaxPerCableKg > 0f) {
                 "Assessment one-rep max must be finite and positive"
             }

@@ -99,7 +99,9 @@ import com.devil.phoenixproject.util.DataBackupManager
 import kotlin.coroutines.resume
 import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -549,6 +551,7 @@ class MainViewModel(
     private val profileRecoveryActivityTracker: ProfileRecoveryActivityTracker? = null,
     private val recentJustLiftExerciseStore: RecentJustLiftExerciseStore? = null,
     val hrmBleManager: HrmBleManager? = null,
+    private val biomechanicsDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : ViewModel() {
 
     // Shared haptic events flow - created here, passed to both GamificationManager and WorkoutSessionManager
@@ -739,6 +742,7 @@ class MainViewModel(
         profileRecoveryActivityTracker = profileRecoveryActivityTracker,
         recentJustLiftExerciseStore = recentJustLiftExerciseStore,
         hrmBleManager = hrmBleManager,
+        biomechanicsDispatcher = biomechanicsDispatcher,
     )
 
     // === Phase 2a: BleConnectionManager (extracted from this class) ===
@@ -1041,8 +1045,6 @@ class MainViewModel(
 
     fun stopAndReturnToSetReady() = workoutSessionManager.stopAndReturnToSetReady()
     fun stopAndSkipCurrentExercise() = workoutSessionManager.stopAndSkipCurrentExercise()
-    fun pauseWorkout() = workoutSessionManager.pauseWorkout()
-    fun resumeWorkout() = workoutSessionManager.resumeWorkout()
     fun skipCountdown() = workoutSessionManager.skipCountdown()
     fun resetForNewWorkout() = workoutSessionManager.resetForNewWorkout()
     fun proceedFromSummary() = workoutSessionManager.proceedFromSummary()
@@ -1073,7 +1075,6 @@ class MainViewModel(
     // Phase 35C: Variable warm-up set state
     val currentWarmupSetIndex: StateFlow<Int> get() = workoutSessionManager.coordinator.currentWarmupSetIndex
     val weightAdjustmentRecommendation get() = workoutSessionManager.coordinator.weightAdjustmentRecommendation
-    fun startNextSet() = workoutSessionManager.startNextSet()
     fun logRpeForCurrentSet(rpe: Int) = workoutSessionManager.logRpeForCurrentSet(rpe)
 
     // ===== Routine Management Delegation =====

@@ -1945,6 +1945,35 @@ class ProfileViewModelTest {
         }
     }
 
+    @Test
+    fun `selectExercise forwards isBodyweight to ResolveCurrentOneRepMaxUseCase`() = runTest {
+        val pullup = Exercise(
+            id = "pullup",
+            name = "Pull Up",
+            muscleGroup = "Back",
+            isBodyweightOverride = true,
+        )
+        exercises.addExercise(pullup)
+        workouts.addSession(
+            session(
+                id = "bw-zero",
+                profileId = "a",
+                exerciseId = "pullup",
+                timestamp = 100L,
+                weightPerCableKg = 50f,
+                workingReps = 5,
+            ).copy(heaviestLiftKg = 0f, counterweightKg = 100f),
+        )
+        profiles.seedReadyProfileForTest("a")
+
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        viewModel.selectExercise(pullup)
+        advanceUntilIdle()
+
+        assertIs<ProfileLoadable.Empty>(viewModel.uiState.value.currentOneRepMax)
+    }
+
     private fun createViewModel() = ProfileViewModel(
         profiles = profiles,
         exercises = exercises,
@@ -1954,6 +1983,7 @@ class ProfileViewModelTest {
             velocityRepository = velocity,
             assessmentRepository = assessments,
             workoutRepository = workouts,
+            exerciseRepository = exercises,
         ),
         externalMeasurements = externalMeasurements,
     )
