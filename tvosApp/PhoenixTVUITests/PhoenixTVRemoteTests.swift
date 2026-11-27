@@ -224,6 +224,21 @@ final class PhoenixTVRemoteTests: XCTestCase {
         XCTAssertFalse(app.buttons["justlift.start"].exists)
     }
 
+    func testErrorWithRecoveryRequiredShowsSingleRecoveryButton() throws {
+        launchIsolatedFixture(extra: ["--phoenix-tv-stop-failure"])
+        connectFixture()
+        openHome("home.just-lift", row: 1)
+        selectFocusedButton("justlift.exercise.Ab_Crunch_Machine", direction: .right)
+        selectFocusedButton("justlift.start", direction: .down)
+        XCTAssertTrue(app.buttons["justlift.stop"].waitForExistence(timeout: 20))
+        selectFocusedButton("justlift.stop", direction: .down)
+
+        let recoveryPrompt = app.staticTexts["Trainer stop did not confirm. Retry recovery before ending your session."]
+        XCTAssertTrue(recoveryPrompt.waitForExistence(timeout: 15))
+        let recoveryButtons = app.buttons.matching(NSPredicate(format: "label == %@", "Retry safe stop recovery"))
+        XCTAssertEqual(recoveryButtons.count, 1, "Recovery required must render a single Retry safe stop recovery button")
+    }
+
     private func launchIsolatedFixture(extra: [String] = []) {
         // Every launch gets a new in-memory SQLDelight DB and unique settings suite.
         // No app uninstall, simulator erase, or dependence on another test's saved data.

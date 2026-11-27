@@ -109,6 +109,25 @@ is copied into `$(BUILT_PRODUCTS_DIR)/KotlinFrameworks`, matching the live
 project's framework search path. Never copy Debug into a Release archive or
 fall back to a stale framework after a compiler failure.
 
+## Signing a local Apple TV build in Xcode
+
+Open `tvosApp/PhoenixTV.xcodeproj` and select the `PhoenixTV` scheme and a
+physical Apple TV destination. The app and UI test targets default to the same
+Apple development team as the phone project (`BDJDR669ZV`), with automatic
+signing in Debug and Release. Xcode can manage a development profile after the
+Apple TV is paired and registered with that team. A phone provisioning profile
+cannot sign a tvOS app.
+
+The `local` helper above deliberately disables signing, including for device
+builds. Use Xcode's Product > Run or Product > Archive for a signed local build;
+select the team in Signing & Capabilities if building under another account.
+Ensure `JAVA_HOME` points to JDK 17 before starting the framework build.
+
+For TestFlight, use the signed archive/export workflow described below. It
+requires an Apple Distribution certificate and a tvOS App Store provisioning
+profile. A development certificate or a successful unsigned build does not
+satisfy those distribution requirements.
+
 ## Real telemetry versus deterministic simulator fixtures
 
 Device framework composition uses `KableBleRepository` and the vendored
@@ -144,9 +163,9 @@ The required-reason declarations are deliberately limited to:
 
 | Category / Apple reason | TV/shared usage and permitted purpose |
 | --- | --- |
-| UserDefaults / `CA92.1` | `PlatformModule.tvos.kt` binds `NSUserDefaultsSettings` to standard app defaults, migrates the app's legacy auth settings, and reads/writes its installation marker. `LocaleHelper.tvos.kt` writes the app-local language override. Apple permits reading/writing information accessible only to this app, not deliberate access to other apps' or system-owned defaults. |
-| FileTimestamp / `C617.1` | `IosDatabaseFileOperations.kt` in `tvosMain` reads `NSFileSize` through `attributesOfItemAtPath` for database/sidecar recovery and fingerprint checks inside the app container. Apple's reason explicitly covers timestamps, **size, or other metadata**, not just dates. `UriContentReader.tvos.kt` also contains bounded local-file size reads; this does not establish a TV document-picker feature. |
-| SystemBootTime / `35F9.1` | `PlatformUtils.tvos.kt` supplies elapsed time for shared workout/rest timers; `TvAppBridge.kt` uses `TimeSource.Monotonic` for elapsed watchdog intervals. This is conservative coverage of elapsed-event timing, not a claim that `NSDate` requires a reason or that the inspected Debug static library directly imports `mach_absolute_time`. Apple permits in-app elapsed intervals/timers; raw boot-time information must not be sent off-device. |
+| UserDefaults / `CA92.1` | `PlatformModule.tvos.kt` and `DarwinKeychainBootstrap.kt` bind `NSUserDefaultsSettings` to standard app defaults, migrate the app's legacy auth settings, and read/write its installation marker. `LocaleHelper.apple.kt` writes the app-local language override. Apple permits reading/writing information accessible only to this app, not deliberate access to other apps' or system-owned defaults. |
+| FileTimestamp / `C617.1` | `IosDatabaseFileOperations.kt` in `appleDarwinMain` reads `NSFileSize` through `attributesOfItemAtPath` for database/sidecar recovery and fingerprint checks inside the app container. Apple's reason explicitly covers timestamps, **size, or other metadata**, not just dates. `UriContentReader.apple.kt` also contains bounded local-file size reads; this does not establish a TV document-picker feature. |
+| SystemBootTime / `35F9.1` | `PlatformUtils.apple.kt` supplies elapsed time for shared workout/rest timers; `TvAppBridge.kt` uses `TimeSource.Monotonic` for elapsed watchdog intervals. This is conservative coverage of elapsed-event timing, not a claim that `NSDate` requires a reason or that the inspected Debug static library directly imports `mach_absolute_time`. Apple permits in-app elapsed intervals/timers; raw boot-time information must not be sent off-device. |
 
 No available-volume/disk-capacity API was found in the inspected TV/shared
 sources; file size and SQLite `freelist_count` are not free-disk-space queries.

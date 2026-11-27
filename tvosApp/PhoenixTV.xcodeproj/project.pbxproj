@@ -227,6 +227,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = BDJDR669ZV;
 				ENABLE_TESTING_SEARCH_PATHS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = com.devil.phoenixproject.projectphoenix.PhoenixTVUITests;
@@ -244,6 +245,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = BDJDR669ZV;
 				ENABLE_TESTING_SEARCH_PATHS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = com.devil.phoenixproject.projectphoenix.PhoenixTVUITests;
@@ -313,6 +315,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = PhoenixTV/PhoenixTV.entitlements;
 				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = BDJDR669ZV;
 				CURRENT_PROJECT_VERSION = 2025122901;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = PhoenixTV/Info.plist;
@@ -337,6 +340,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = PhoenixTV/PhoenixTV.entitlements;
 				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = BDJDR669ZV;
 				CURRENT_PROJECT_VERSION = 2025122901;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = PhoenixTV/Info.plist;

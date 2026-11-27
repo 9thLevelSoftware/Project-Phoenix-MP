@@ -4,6 +4,7 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.util.BlePacketFactory
 import com.devil.phoenixproject.util.rethrowIfCancellation
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,7 +22,7 @@ import kotlinx.coroutines.launch
  * @param scope Coroutine scope for launching the color cycling job
  * @param sendCommand Callback to send BLE commands (typically KableBleRepository::sendWorkoutCommand)
  */
-class DiscoMode(private val scope: CoroutineScope, private val sendCommand: suspend (ByteArray) -> Unit) {
+class DiscoMode(private val scope: CoroutineScope, private val sendCommand: suspend (ByteArray) -> Result<Unit>) {
     private val log = Logger.withTag("DiscoMode")
 
     private var discoJob: Job? = null
@@ -43,7 +44,8 @@ class DiscoMode(private val scope: CoroutineScope, private val sendCommand: susp
         log.i { "Starting DISCO MODE!" }
         _isActive.value = true
 
-        discoJob = scope.launch {
+        val launched = scope.launch(start = CoroutineStart.LAZY) {
+            val thisJob = coroutineContext[Job]
             var colorIndex = 0
             val colorCount = 7 // Schemes 0-6 (excluding "None" at 7)
             val intervalMs = 300L
@@ -52,7 +54,11 @@ class DiscoMode(private val scope: CoroutineScope, private val sendCommand: susp
                 while (isActive) {
                     try {
                         val command = BlePacketFactory.createColorSchemeCommand(colorIndex)
-                        sendCommand(command)
+                        val result = sendCommand(command)
+                        if (result.isFailure) {
+                            log.w { "Disco mode write failed: ${result.exceptionOrNull()?.message}" }
+                            break
+                        }
                         colorIndex = (colorIndex + 1) % colorCount
                         delay(intervalMs)
                     } catch (e: Exception) {
@@ -65,10 +71,17 @@ class DiscoMode(private val scope: CoroutineScope, private val sendCommand: susp
                 // F088: reflect reality if the cycling loop exits early (e.g. a
                 // sendCommand failure broke the loop) — otherwise isActive stays
                 // true and consumers show disco mode as running with no job.
-                _isActive.value = false
+                // Guard with job identity so a cancelled stop() job never clobbers
+                // _isActive of a newer start() session.
+                if (discoJob === thisJob) {
+                    discoJob = null
+                    _isActive.value = false
+                }
                 log.d { "Disco mode coroutine ended" }
             }
         }
+        discoJob = launched
+        launched.start()
     }
 
     /**
@@ -88,7 +101,10 @@ class DiscoMode(private val scope: CoroutineScope, private val sendCommand: susp
         scope.launch {
             try {
                 val command = BlePacketFactory.createColorSchemeCommand(lastColorSchemeIndex)
-                sendCommand(command)
+                val result = sendCommand(command)
+                if (result.isFailure) {
+                    log.w { "Failed to restore color scheme: ${result.exceptionOrNull()?.message}" }
+                }
             } catch (e: Exception) {
                 e.rethrowIfCancellation()
                 log.w { "Failed to restore color scheme: ${e.message}" }

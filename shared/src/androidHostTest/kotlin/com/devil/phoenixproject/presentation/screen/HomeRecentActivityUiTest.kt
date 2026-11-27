@@ -109,4 +109,56 @@ class HomeRecentActivityUiTest {
         ).assertIsDisplayed()
         assertEquals(listOf("squat"), clickedExercises)
     }
+
+    @Test
+    fun homeRecentActivityProjectsGroupedRoutineAsSingleSummaryInsteadOfRawSets() {
+        val rawSet1 = WorkoutSession(
+            id = "raw-1",
+            timestamp = 172_801_000L,
+            routineSessionId = "routine-abc",
+            routineName = "Upper A",
+            exerciseId = "bench",
+            exerciseName = "Bench Press",
+            totalReps = 8,
+            workingReps = 8,
+            weightPerCableKg = 25f,
+        )
+        val rawSet2 = WorkoutSession(
+            id = "raw-2",
+            timestamp = 172_802_000L,
+            routineSessionId = "routine-abc",
+            routineName = "Upper A",
+            exerciseId = "row",
+            exerciseName = "Cable Row",
+            totalReps = 10,
+            workingReps = 10,
+            weightPerCableKg = 30f,
+        )
+        val grouped = GroupedRoutineHistoryItem(
+            routineSessionId = "routine-abc",
+            routineName = "Upper A",
+            sessions = listOf(rawSet1, rawSet2),
+            totalDuration = 120_000L,
+            totalReps = 18,
+            exerciseCount = 2,
+            timestamp = 172_801_000L,
+        )
+        val projected = projectHomeRecentActivities(listOf(grouped))
+        assertEquals(1, projected.size)
+
+        rule.setContent {
+            MaterialTheme {
+                HomeRecentActivityContent(
+                    history = projected,
+                    weightUnit = WeightUnit.KG,
+                    onExerciseClick = {},
+                )
+            }
+        }
+
+        rule.onAllNodesWithText("Upper A").assertCountEquals(1)
+        rule.onNodeWithText("2 sets • 18 total reps").assertIsDisplayed()
+        rule.onNodeWithText("Bench Press").assertDoesNotExist()
+        rule.onNodeWithText("Cable Row").assertDoesNotExist()
+    }
 }

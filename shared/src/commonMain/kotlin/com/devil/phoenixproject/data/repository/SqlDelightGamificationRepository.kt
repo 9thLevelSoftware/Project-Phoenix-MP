@@ -13,6 +13,7 @@ import com.devil.phoenixproject.domain.model.GamificationStats
 import com.devil.phoenixproject.domain.model.RpgInput
 import com.devil.phoenixproject.domain.model.RpgProfile
 import com.devil.phoenixproject.domain.model.StreakInfo
+import com.devil.phoenixproject.util.rethrowIfCancellation
 import kotlin.time.Clock
 import kotlin.time.Instant
 import kotlinx.coroutines.Dispatchers
@@ -146,11 +147,7 @@ class SqlDelightGamificationRepository(db: PhoenixDatabase) : GamificationReposi
 
                 val now = Clock.System.now().toEpochMilliseconds()
 
-                // Use profileId hashCode as stable integer id for INSERT OR REPLACE
-                val stableId = profileId.hashCode().toLong()
-
                 queries.upsertGamificationStats(
-                    id = stableId,
                     totalWorkouts = totalWorkouts,
                     totalReps = totalReps,
                     totalVolumeKg = totalVolume.toLong(),
@@ -168,6 +165,7 @@ class SqlDelightGamificationRepository(db: PhoenixDatabase) : GamificationReposi
                     "Gamification stats updated (profile=$profileId): workouts=$totalWorkouts, reps=$totalReps, streak=$currentStreak"
                 }
             } catch (e: Exception) {
+                e.rethrowIfCancellation()
                 Logger.e(e) { "Error updating gamification stats" }
             }
         }
@@ -501,10 +499,7 @@ class SqlDelightGamificationRepository(db: PhoenixDatabase) : GamificationReposi
 
     override suspend fun saveRpgProfile(profile: RpgProfile, profileId: String) {
         withContext(Dispatchers.IO) {
-            // Use profileId hashCode as stable integer id for INSERT OR REPLACE
-            val stableId = profileId.hashCode().toLong()
             queries.upsertRpgAttributes(
-                id = stableId,
                 strength = profile.strength.toLong(),
                 power = profile.power.toLong(),
                 stamina = profile.stamina.toLong(),

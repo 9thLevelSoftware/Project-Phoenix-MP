@@ -1,8 +1,8 @@
 package com.devil.phoenixproject.presentation.screen
 
+import com.devil.phoenixproject.testutil.readProjectFile
 import kotlin.test.Test
 import kotlin.test.assertTrue
-import java.io.File
 
 /**
  * Regression guard for issue #520: after a user disables/revokes Health Connect,
@@ -11,23 +11,14 @@ import java.io.File
  * direct Health Connect app-permissions settings path instead of dead-ending.
  */
 class HealthConnectReenableGuardTest {
-    private val projectRoot: File = findProjectRoot()
-
-    private fun findProjectRoot(): File {
-        val startDir = requireNotNull(System.getProperty("user.dir")) { "user.dir is not set" }
-        var current = File(startDir)
-        while (!File(current, "settings.gradle.kts").exists()) {
-            current = current.parentFile ?: error("Project root not found from ${System.getProperty("user.dir")}")
-        }
-        return current
-    }
+    private fun read(relativePath: String): String =
+        requireNotNull(readProjectFile(relativePath)) { "Missing $relativePath" }
 
     @Test
     fun deniedHealthPermissions_emitSettingsRecoveryEvent() {
-        val viewModel = File(
-            projectRoot,
+        val viewModel = read(
             "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/viewmodel/IntegrationsViewModel.kt",
-        ).readText()
+        )
 
         assertTrue(
             viewModel.contains("OpenHealthPermissionSettings"),
@@ -37,10 +28,9 @@ class HealthConnectReenableGuardTest {
 
     @Test
     fun androidSettingsLauncher_targetsPhoenixHealthConnectPermissions() {
-        val launcher = File(
-            projectRoot,
+        val launcher = readProjectFile(
             "shared/src/androidMain/kotlin/com/devil/phoenixproject/util/HealthPermissionSettingsLauncher.android.kt",
-        ).takeIf { it.exists() }?.readText().orEmpty()
+        ).orEmpty()
 
         assertTrue(
             launcher.contains("android.health.connect.action.MANAGE_HEALTH_PERMISSIONS"),
@@ -54,10 +44,7 @@ class HealthConnectReenableGuardTest {
 
     @Test
     fun androidManifest_declaresHealthConnectSettingsDiscovery() {
-        val manifest = File(
-            projectRoot,
-            "androidApp/src/main/AndroidManifest.xml",
-        ).readText()
+        val manifest = read("androidApp/src/main/AndroidManifest.xml")
 
         assertTrue(
             manifest.contains("com.google.android.healthconnect.controller"),
@@ -79,10 +66,9 @@ class HealthConnectReenableGuardTest {
 
     @Test
     fun integrationsScreen_retriesAfterReturningFromHealthConnectSettings() {
-        val screen = File(
-            projectRoot,
+        val screen = read(
             "shared/src/phoneMain/kotlin/com/devil/phoenixproject/presentation/screen/IntegrationsScreen.kt",
-        ).readText()
+        )
 
         assertTrue(
             screen.contains("awaitingHealthPermissionSettingsReturn"),
@@ -96,10 +82,9 @@ class HealthConnectReenableGuardTest {
 
     @Test
     fun integrationsViewModel_rechecksPermissionsAfterSettingsReturn() {
-        val viewModel = File(
-            projectRoot,
+        val viewModel = read(
             "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/viewmodel/IntegrationsViewModel.kt",
-        ).readText()
+        )
 
         assertTrue(
             viewModel.contains("fun checkHealthPermissionsAfterSettingsReturn()"),

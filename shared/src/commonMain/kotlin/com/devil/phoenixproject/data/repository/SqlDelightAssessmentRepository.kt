@@ -124,8 +124,8 @@ class SqlDelightAssessmentRepository(
     ): String {
         require(profileId.isNotBlank()) { "Assessment profileId must not be blank" }
         return assessmentWriteMutex.withLock {
-            val finalOneRepMaxTotalKg = userOverrideKg ?: estimatedOneRepMaxKg
-            val attemptedOneRepMaxPerCableKg = finalOneRepMaxTotalKg / 2f
+            val finalOneRepMaxInputKg = userOverrideKg ?: estimatedOneRepMaxKg
+            val attemptedOneRepMaxPerCableKg = finalOneRepMaxInputKg / 2f
             require(attemptedOneRepMaxPerCableKg.isFinite() && attemptedOneRepMaxPerCableKg > 0f) {
                 "Assessment one-rep max must be finite and positive"
             }

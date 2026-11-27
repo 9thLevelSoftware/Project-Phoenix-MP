@@ -26,6 +26,7 @@ import com.devil.phoenixproject.presentation.util.ContentAwareFit
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.Spacing
 import kotlin.math.roundToInt
+import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 import projectphoenix.shared.generated.resources.*
 import projectphoenix.shared.generated.resources.Res
@@ -36,20 +37,20 @@ import projectphoenix.shared.generated.resources.Res
 private data class RpeInfo(
     val value: Int,
     val emoji: String,
-    val label: String,
+    val labelRes: StringResource,
     /** Reps in Reserve */
-    val riR: String,
+    val rirRes: StringResource,
 )
 
 /**
  * RPE scale from 6-10 with emoji representations.
  */
 private val rpeScale = listOf(
-    RpeInfo(6, "😊", "Easy", "4+ RiR"),
-    RpeInfo(7, "🙂", "Moderate", "3 RiR"),
-    RpeInfo(8, "😐", "Challenging", "2 RiR"),
-    RpeInfo(9, "😰", "Hard", "1 RiR"),
-    RpeInfo(10, "😵", "Max Effort", "0 RiR"),
+    RpeInfo(6, "😊", Res.string.rpe_label_easy, Res.string.rpe_rir_4_plus),
+    RpeInfo(7, "🙂", Res.string.rpe_label_moderate, Res.string.rpe_rir_3),
+    RpeInfo(8, "😐", Res.string.rpe_label_challenging, Res.string.rpe_rir_2),
+    RpeInfo(9, "😰", Res.string.rpe_label_hard, Res.string.rpe_rir_1),
+    RpeInfo(10, "😵", Res.string.rpe_label_max_effort, Res.string.rpe_rir_0),
 )
 
 /**
@@ -125,7 +126,7 @@ private fun RpeButton(currentRpe: Int?, onClick: () -> Unit) {
                     fontSize = 18.sp,
                 )
                 Text(
-                    text = "RPE $currentRpe",
+                    text = stringResource(Res.string.rpe_value_label, currentRpe),
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = getRpeColor(currentRpe),
@@ -146,7 +147,7 @@ private fun RpeButton(currentRpe: Int?, onClick: () -> Unit) {
             )
             Spacer(Modifier.width(4.dp))
             Text(
-                text = "Log RPE",
+                text = stringResource(Res.string.rpe_log_label),
                 style = MaterialTheme.typography.labelMedium,
             )
         }
@@ -185,13 +186,13 @@ private fun RpeSlider(selectedRpe: Int, onRpeSelected: (Int) -> Unit, onDismiss:
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = "RPE ${sliderValue.roundToInt()}",
+                    text = stringResource(Res.string.rpe_value_label, sliderValue.roundToInt()),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = getRpeColor(sliderValue.roundToInt()),
                 )
                 Text(
-                    text = "${currentRpeInfo.label} • ${currentRpeInfo.riR}",
+                    text = "${stringResource(currentRpeInfo.labelRes)} • ${stringResource(currentRpeInfo.rirRes)}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

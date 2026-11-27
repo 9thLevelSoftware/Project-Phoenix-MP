@@ -211,6 +211,8 @@ def cloud_config(env, *, required):
             pieces = key.split(".")
             require(len(pieces) == 3, "Expected public anon JWT or publishable key")
             payload = json.loads(base64.urlsafe_b64decode(pieces[1] + "=" * (-len(pieces[1]) % 4)))
+            if not isinstance(payload, dict):
+                raise ValueError("Supabase JWT payload must be a JSON object")
             require(payload.get("role") == "anon", "Only public anon keys may be embedded in an app")
         except (ValueError, KeyError, TypeError):
             raise ValueError("SUPABASE_ANON_KEY must be a public anon JWT or publishable key") from None
@@ -220,8 +222,13 @@ def cloud_config(env, *, required):
 def source_guard(root):
     """Fail closed on production/fixture composition drift; not a BLE behavior proof."""
     device = (root / "shared-tvos/src/tvosArm64Main/kotlin/com/devil/phoenixproject/di/TvosBleRepositoryFactory.tvosArm64.kt").read_text()
-    require("createTvosBleRepository(): BleRepository = KableBleRepository()" in device,
-            "Device BLE factory must use the real Kable repository")
+    require(
+        re.search(
+            r"\bcreateTvosBleRepository\s*\(\s*scannerCoordinator:\s*BleScannerCoordinator\s*\)\s*:\s*BleRepository\s*=\s*KableBleRepository\(\s*scannerCoordinator\s*\)",
+            device,
+        ) is not None,
+        "Device BLE factory must use the real Kable repository",
+    )
     require("isTvosSimulatorFixtureEnabled(): Boolean = false" in device and "Phantom" not in device,
             "Device BLE factory must disable simulator fixtures")
     simulator = (root / "shared-tvos/src/tvosSimulatorArm64Main/kotlin/com/devil/phoenixproject/di/TvosBleRepositoryFactory.tvosSimulatorArm64.kt").read_text()

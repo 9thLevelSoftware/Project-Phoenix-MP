@@ -10,6 +10,7 @@ import com.devil.phoenixproject.domain.model.WorkoutPhase
 import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.util.OneRepMaxCalculator
 import com.devil.phoenixproject.util.KmpUtils
+import com.devil.phoenixproject.util.rethrowIfCancellation
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.Flow
@@ -167,6 +168,7 @@ class SqlDelightPersonalRecordRepository(
             )
             Result.success(brokenPRs)
         } catch (e: Exception) {
+            e.rethrowIfCancellation()
             Result.failure(e)
         }
     }
@@ -218,8 +220,25 @@ class SqlDelightPersonalRecordRepository(
 
             Result.success(brokenPhasePRs)
         } catch (e: Exception) {
+            e.rethrowIfCancellation()
             Result.failure(e)
         }
+    }
+
+    internal suspend fun repairPRsFromHistory(
+        exerciseId: String,
+        weightPRWeightPerCableKg: Float,
+        volumePRWeightPerCableKg: Float,
+        reps: Int,
+        workoutMode: String,
+        timestamp: Long,
+        profileId: String,
+    ): List<PRType> = withContext(Dispatchers.IO) {
+        updatePRsIfBetterInternal(
+            exerciseId, weightPRWeightPerCableKg, volumePRWeightPerCableKg, reps,
+            workoutMode, timestamp, WorkoutPhase.COMBINED, profileId,
+            restoreDeletedRecords = false,
+        )
     }
 
     /**
@@ -236,6 +255,7 @@ class SqlDelightPersonalRecordRepository(
         phase: WorkoutPhase,
         profileId: String,
         cableCount: Int? = null,
+        restoreDeletedRecords: Boolean = true,
     ): List<PRType> {
         require(profileId.isNotBlank()) { "PR profileId must not be blank" }
         require(exerciseId.isNotBlank()) { "PR exerciseId must not be blank" }
@@ -307,9 +327,27 @@ class SqlDelightPersonalRecordRepository(
         // (e.g., weight PR upsert succeeds but volume PR or 1RM sync throws) doesn't
         // leave the DB in an inconsistent state while reporting Result.failure to the caller.
         db.transaction {
-            if (isNewWeightPR) {
+            if (isNewWeightPR && (restoreDeletedRecords || storedWeightPR?.deletedAt == null)) {
                 Logger.i { "PR_SAVE: Writing WEIGHT PR for exercise=$exerciseId, weight=${weightPRWeightPerCableKg}kg, profile=$effectiveProfileId" }
-                queries.upsertPR(
+                val weightUuid = storedWeightPR?.uuid ?: generateUUID()
+                queries.updatePRFromLocalLift(
+                    exerciseName = "",
+                    weight = weightPRWeightPerCableKg.toDouble(),
+                    reps = reps.toLong(),
+                    oneRepMax = estimatedOneRepMax.toDouble(),
+                    achievedAt = timestamp,
+                    volume = volumeForWeightPR.toDouble(),
+                    cableCount = cableCount?.toLong(),
+                    // A deleted snapshot is no longer the active comparison
+                    // baseline, but its UUID is retained until sync converges.
+                    uuid = weightUuid,
+                    exerciseId = exerciseId,
+                    workoutMode = canonicalWorkoutMode,
+                    prType = PRType.MAX_WEIGHT.name,
+                    phase = phaseName,
+                    profileId = effectiveProfileId,
+                )
+                queries.insertPRIgnore(
                     exerciseId = exerciseId,
                     exerciseName = "",
                     weight = weightPRWeightPerCableKg.toDouble(),
@@ -322,16 +360,30 @@ class SqlDelightPersonalRecordRepository(
                     phase = phaseName,
                     profile_id = effectiveProfileId,
                     cable_count = cableCount?.toLong(),
-                    // A deleted snapshot is no longer the active comparison
-                    // baseline, but its UUID is retained until sync converges.
-                    uuid = storedWeightPR?.uuid ?: generateUUID(),
+                    uuid = weightUuid,
                 )
                 brokenPRs.add(PRType.MAX_WEIGHT)
             }
 
-            if (isNewVolumePR) {
+            if (isNewVolumePR && (restoreDeletedRecords || storedVolumePR?.deletedAt == null)) {
                 Logger.i { "PR_SAVE: Writing VOLUME PR for exercise=$exerciseId, volume=$volumeForVolumePR, profile=$effectiveProfileId" }
-                queries.upsertPR(
+                val volumeUuid = storedVolumePR?.uuid ?: generateUUID()
+                queries.updatePRFromLocalLift(
+                    exerciseName = "",
+                    weight = volumePRWeightPerCableKg.toDouble(),
+                    reps = reps.toLong(),
+                    oneRepMax = estimatedOneRepMax.toDouble(),
+                    achievedAt = timestamp,
+                    volume = volumeForVolumePR.toDouble(),
+                    cableCount = cableCount?.toLong(),
+                    uuid = volumeUuid,
+                    exerciseId = exerciseId,
+                    workoutMode = canonicalWorkoutMode,
+                    prType = PRType.MAX_VOLUME.name,
+                    phase = phaseName,
+                    profileId = effectiveProfileId,
+                )
+                queries.insertPRIgnore(
                     exerciseId = exerciseId,
                     exerciseName = "",
                     weight = volumePRWeightPerCableKg.toDouble(),
@@ -344,7 +396,7 @@ class SqlDelightPersonalRecordRepository(
                     phase = phaseName,
                     profile_id = effectiveProfileId,
                     cable_count = cableCount?.toLong(),
-                    uuid = storedVolumePR?.uuid ?: generateUUID(),
+                    uuid = volumeUuid,
                 )
                 brokenPRs.add(PRType.MAX_VOLUME)
             }

@@ -88,6 +88,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.UserProfile
 import com.devil.phoenixproject.data.repository.UserProfileRepository
+import com.devil.phoenixproject.util.rethrowIfCancellation
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.domain.model.BleCompatibilitySetting
 import com.devil.phoenixproject.domain.model.WeightTextScale
@@ -478,8 +479,6 @@ fun SettingsTab(
     onNavigateToDiagnostics: () -> Unit,
     onNavigateToLinkAccount: () -> Unit,
     onNavigateToIntegrations: () -> Unit,
-    connectionError: String?,
-    onClearConnectionError: () -> Unit,
     onSetTitle: (String) -> Unit,
     onTestSounds: () -> Unit,
     bleCompatibilityMode: BleCompatibilitySetting,
@@ -1347,14 +1346,6 @@ fun SettingsTab(
         }
     }
 
-    // Connection error dialog
-    connectionError?.let { error ->
-        com.devil.phoenixproject.presentation.components.ConnectionErrorDialog(
-            message = error,
-            onDismiss = onClearConnectionError,
-        )
-    }
-
     // Issue #1425: Telemetry storage cleanup sheet (D1 modal frame)
     if (showCleanupSheet) {
         TelemetryCleanupSheet(
@@ -1397,6 +1388,7 @@ fun SettingsTab(
                             showResultDialog = true
                         }
                     } catch (e: Exception) {
+                        e.rethrowIfCancellation()
                         backupError = e.message ?: getString(Res.string.settings_unknown_database_error)
                         showResultDialog = true
                     } finally {
@@ -1446,6 +1438,7 @@ fun SettingsTab(
                             }
                             backupManager.shareBackup()
                         } catch (e: Exception) {
+                            e.rethrowIfCancellation()
                             backupError = e.message ?: getString(Res.string.settings_unknown_error)
                             showResultDialog = true
                         } finally {

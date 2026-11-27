@@ -270,12 +270,14 @@ val localPropsMap: Map<String, String> = if (localPropsFile.exists()) {
     emptyMap()
 }
 
-// Priority: local.properties > environment variables
-val rawSupabaseUrl: String = localPropsMap["supabase.url"]?.takeIf { it.isNotBlank() }
-    ?: System.getenv("SUPABASE_URL")
+// Priority: -P Gradle property > local.properties > environment variables
+val rawSupabaseUrl: String = providers.gradleProperty("supabase.url").orNull?.takeIf { it.isNotBlank() }
+    ?: localPropsMap["supabase.url"]?.takeIf { it.isNotBlank() }
+    ?: System.getenv("SUPABASE_URL")?.takeIf { it.isNotBlank() }
     ?: ""
-val rawSupabaseAnonKey: String = localPropsMap["supabase.anon.key"]?.takeIf { it.isNotBlank() }
-    ?: System.getenv("SUPABASE_ANON_KEY")
+val rawSupabaseAnonKey: String = providers.gradleProperty("supabase.anon.key").orNull?.takeIf { it.isNotBlank() }
+    ?: localPropsMap["supabase.anon.key"]?.takeIf { it.isNotBlank() }
+    ?: System.getenv("SUPABASE_ANON_KEY")?.takeIf { it.isNotBlank() }
     ?: ""
 
 // Fall back to placeholder credentials for local debug builds and Gradle Sync if missing
@@ -364,6 +366,10 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
 }
 
 // Fail fast when a release APK or app bundle would be packaged without an injected
@@ -394,7 +400,8 @@ tasks.configureEach {
             doFirst {
                 throw GradleException(
                     "Supabase credentials (supabase.url and supabase.anon.key) must be provided " +
-                        "via local.properties or environment variables (SUPABASE_URL, SUPABASE_ANON_KEY) for release builds.",
+                        "via Gradle properties (-Psupabase.url, -Psupabase.anon.key), local.properties, " +
+                        "or environment variables (SUPABASE_URL, SUPABASE_ANON_KEY) for release builds.",
                 )
             }
         }
@@ -482,6 +489,9 @@ dependencies {
     testDebugImplementation(libs.ktor.client.mock)
     testDebugImplementation(libs.multiplatform.settings)
     testDebugImplementation(libs.multiplatform.settings.test)
+    testDebugImplementation(libs.robolectric)
+    testDebugImplementation(libs.androidx.test.core)
+    testDebugImplementation(libs.androidx.test.junit)
     androidTestImplementation(libs.androidx.test.junit)
     androidTestImplementation(libs.androidx.security.crypto)
     androidTestImplementation(libs.multiplatform.settings)

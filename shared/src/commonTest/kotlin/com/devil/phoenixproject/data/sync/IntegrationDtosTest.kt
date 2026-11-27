@@ -120,4 +120,48 @@ class IntegrationDtosTest {
         assertEquals("p1", decoded.preview?.programExternalId)
         assertEquals("C", decoded.preview?.updatedProgramText)
     }
+
+    @Test
+    fun decodesLiftosaurTruncatedContinuationAndResumeFields() {
+        val continuingResponse = json.decodeFromString(
+            IntegrationSyncResponse.serializer(),
+            """
+            {
+              "status": "synced",
+              "activities": [],
+              "truncated": true,
+              "continuing": true,
+              "message": "Importing Liftosaur history: 500 records stored this run; older records are imported by the next run."
+            }
+            """.trimIndent(),
+        )
+        assertTrue(continuingResponse.truncated)
+        assertTrue(continuingResponse.continuing)
+        assertNull(continuingResponse.resumeAt)
+        assertEquals(
+            "Importing Liftosaur history: 500 records stored this run; older records are imported by the next run.",
+            continuingResponse.message,
+        )
+
+        val resumeResponse = json.decodeFromString(
+            IntegrationSyncResponse.serializer(),
+            """
+            {
+              "status": "synced",
+              "activities": [],
+              "truncated": true,
+              "continuing": false,
+              "resumeAt": "2026-11-27T02:00:00.000Z",
+              "message": "Liftosaur history is larger than one run can read; resuming from 2026-11-27T02:00:00.000Z"
+            }
+            """.trimIndent(),
+        )
+        assertTrue(resumeResponse.truncated)
+        assertFalse(resumeResponse.continuing)
+        assertEquals("2026-11-27T02:00:00.000Z", resumeResponse.resumeAt)
+        assertEquals(
+            "Liftosaur history is larger than one run can read; resuming from 2026-11-27T02:00:00.000Z",
+            resumeResponse.message,
+        )
+    }
 }

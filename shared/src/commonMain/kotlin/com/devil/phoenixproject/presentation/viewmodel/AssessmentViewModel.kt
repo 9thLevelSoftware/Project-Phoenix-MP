@@ -14,6 +14,8 @@ import com.devil.phoenixproject.domain.assessment.LoadCeiling
 import com.devil.phoenixproject.domain.assessment.LoadVelocityPoint
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.WorkoutMetric
+import com.devil.phoenixproject.domain.model.assessmentLoadToPerCableKg
+import com.devil.phoenixproject.domain.model.assessmentLoadToStoredTotalKg
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Job
@@ -41,6 +43,7 @@ sealed class AssessmentStep {
     data class ProgressiveLoading(
         val currentSetNumber: Int = 1,
         val suggestedWeightKg: Float = 20f,
+        val isTotalLoad: Boolean = true,
         val recordedSets: List<AssessmentSetResult> = emptyList(),
         val latestVelocity: Float? = null,
         val shouldStop: Boolean = false,
@@ -97,6 +100,12 @@ class AssessmentViewModel(
     private var assessmentResult: AssessmentResult? = null
     private var velocityCaptureJob: Job? = null
     private val capturedVelocities = mutableListOf<Float>()
+
+    private val Exercise?.assessmentMultiplier: Int
+        get() = this?.displayMultiplier ?: 1
+
+    private val Exercise?.assessmentLoadCeiling: LoadCeiling
+        get() = if (assessmentMultiplier == 2) LoadCeiling.TOTAL else LoadCeiling.PER_CABLE
 
     init {
         loadExercises()
@@ -184,11 +193,12 @@ class AssessmentViewModel(
 
     private fun startAssessmentInternal() {
         assessmentStartTimeMs = currentTimeMillis()
-        if (selectedExercise == null) return
+        val exercise = selectedExercise ?: return
 
         _currentStep.value = AssessmentStep.ProgressiveLoading(
             currentSetNumber = 1,
-            suggestedWeightKg = SAFE_STARTING_LOAD_TOTAL_KG,
+            suggestedWeightKg = SAFE_STARTING_LOAD_PER_CABLE_KG * exercise.assessmentMultiplier,
+            isTotalLoad = exercise.assessmentMultiplier == 2,
             recordedSets = emptyList(),
             latestVelocity = null,
             shouldStop = false,
@@ -201,7 +211,7 @@ class AssessmentViewModel(
      * Called after the user physically performs reps on the machine and
      * velocity is captured from the BLE metrics stream.
      *
-     * @param loadKg Actual TOTAL weight used for the set (both cables combined, what user sees on machine)
+     * @param loadKg Displayed load in kg, total for unified dual attachments and per cable otherwise
      * @param meanVelocityMs Mean concentric velocity in m/s
      */
     fun recordSet(loadKg: Float, meanVelocityMs: Float) {
@@ -221,7 +231,10 @@ class AssessmentViewModel(
         if (shouldStop || updatedSets.size >= 5) {
             // Try to estimate 1RM
             val points = updatedSets.map { LoadVelocityPoint(it.loadKg, it.meanVelocityMs) }
-            val result = assessmentEngine.estimateOneRepMax(points, loadCeiling = LoadCeiling.TOTAL)
+            val result = assessmentEngine.estimateOneRepMax(
+                points,
+                loadCeiling = selectedExercise.assessmentLoadCeiling,
+            )
 
             if (result != null) {
                 assessmentResult = result
@@ -245,11 +258,12 @@ class AssessmentViewModel(
             val nextWeight = assessmentEngine.suggestNextWeight(
                 loadKg,
                 meanVelocityMs,
-                loadCeiling = LoadCeiling.TOTAL,
+                loadCeiling = selectedExercise.assessmentLoadCeiling,
             )
             _currentStep.value = AssessmentStep.ProgressiveLoading(
                 currentSetNumber = current.currentSetNumber + 1,
                 suggestedWeightKg = nextWeight,
+                isTotalLoad = current.isTotalLoad,
                 recordedSets = updatedSets,
                 latestVelocity = meanVelocityMs,
                 shouldStop = false,
@@ -283,38 +297,34 @@ class AssessmentViewModel(
                 val lvDataJson = Json.encodeToString(
                     current.loadVelocityPoints.map {
                         mapOf(
-                            "loadKg" to it.loadKg.toString(),
+                            "loadKg" to exercise.assessmentLoadToStoredTotalKg(it.loadKg).toString(),
                             "velocityMs" to it.meanVelocityMs.toString(),
                         )
                     },
                 )
 
-                val totalReps = assessmentResult?.let {
-                    // Sum reps from recorded sets (accessible via the step history)
-                    // Each set is typically 3 reps
-                    current.loadVelocityPoints.size * 3
-                } ?: (current.loadVelocityPoints.size * 3)
+                val totalReps = current.loadVelocityPoints.size * 3
 
                 val durationMs = currentTimeMillis() - assessmentStartTimeMs
                 val avgWeight = current.loadVelocityPoints.map { it.loadKg }.average().toFloat()
 
-                // Convert from total weight (used throughout the wizard UI) to per-cable
-                // for DB storage. The DB stores per-cable values per project weight convention.
+                // Convert from wizard UI load (total for dual/unified, per-cable otherwise)
+                // to canonical per-cable kg for DB storage.
                 assessmentRepository.saveAssessmentSession(
                     exerciseId = exercise.id ?: exercise.name,
                     exerciseName = exercise.displayName,
-                    estimatedOneRepMaxKg = current.estimatedOneRepMaxKg,
+                    estimatedOneRepMaxKg = exercise.assessmentLoadToStoredTotalKg(current.estimatedOneRepMaxKg),
                     loadVelocityDataJson = lvDataJson,
                     userOverrideKg = if (overrideKg != null &&
                         overrideKg > 0f
                     ) {
-                        overrideKg
+                        exercise.assessmentLoadToStoredTotalKg(overrideKg)
                     } else {
                         null
                     },
                     totalReps = totalReps,
                     durationMs = durationMs,
-                    weightPerCableKg = avgWeight / 2f,
+                    weightPerCableKg = exercise.assessmentLoadToPerCableKg(avgWeight),
                     profileId = profileId,
                 )
 
@@ -336,7 +346,7 @@ class AssessmentViewModel(
     }
 
     private companion object {
-        const val SAFE_STARTING_LOAD_TOTAL_KG = 20f
+        const val SAFE_STARTING_LOAD_PER_CABLE_KG = 10f
     }
 
     /**
@@ -405,7 +415,7 @@ class AssessmentViewModel(
             val weight = current.suggestedWeightKg
 
             // Record the set with captured BLE velocity data
-            // Weight is total (both cables) as displayed in the UI
+            // The suggested load keeps the selected exercise's displayed weight basis.
             recordSet(weight, meanVelocity)
         } else {
             // No velocity data captured -- return to non-capturing state

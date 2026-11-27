@@ -5,6 +5,7 @@ import com.devil.phoenixproject.data.ble.BleCriticalEventType
 import com.devil.phoenixproject.data.ble.BleEventDeliverySnapshot
 import com.devil.phoenixproject.data.ble.BleEventDeliveryTracker
 import com.devil.phoenixproject.data.ble.BleOperationQueue
+import com.devil.phoenixproject.data.ble.BleScannerCoordinator
 import com.devil.phoenixproject.data.ble.DiagnosticPacket
 import com.devil.phoenixproject.data.ble.DiscoMode
 import com.devil.phoenixproject.data.ble.HandleStateDetector
@@ -14,7 +15,6 @@ import com.devil.phoenixproject.data.ble.MonitorDataProcessor
 import com.devil.phoenixproject.data.ble.decodeDiagnosticFaults
 import com.devil.phoenixproject.data.ble.formatDiagnosticUInt32
 import com.devil.phoenixproject.data.ble.parseRepPacket
-import com.devil.phoenixproject.data.ble.toPhoenixHex
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.HeuristicStatistics
 import com.devil.phoenixproject.domain.model.WorkoutMetric
@@ -59,6 +59,12 @@ class KableBleRepository internal constructor(
     constructor() : this(
         dispatcher = Dispatchers.Default,
         advertisements = { Scanner {}.advertisements },
+        createPeripheral = { Peripheral(it) },
+    )
+
+    constructor(scannerCoordinator: BleScannerCoordinator) : this(
+        dispatcher = Dispatchers.Default,
+        advertisements = { scannerCoordinator.advertisements() },
         createPeripheral = { Peripheral(it) },
     )
 
@@ -150,7 +156,7 @@ class KableBleRepository internal constructor(
             emitted
         },
         onHeuristicData = { stats -> _heuristicData.value = stats },
-        onConnectionLost = { connectionManager.disconnect() },
+        onConnectionLost = { connectionManager.handleUnexpectedConnectionLost("monitor_polling_timeout") },
         onDiagnosticData = { packet -> publishDiagnostics(packet) },
     )
 
@@ -294,7 +300,7 @@ class KableBleRepository internal constructor(
             }
 
             log.i { "REPS CHAR notification: ${data.size} bytes" }
-            log.d { "  hex=${data.joinToString(" ") { it.toPhoenixHex() }}" }
+            log.d { "  hex=${data.joinToString(" ") { it.toHexString(HexFormat.UpperCase) }}" }
 
             if (notification.isLegacyFormat) {
                 log.w { "REPS (LEGACY 6-byte format):" }

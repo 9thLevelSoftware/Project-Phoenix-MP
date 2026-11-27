@@ -88,8 +88,14 @@ class FakePreferencesManager : PreferencesManager {
     var oneShotResetCount = 0
         private set
 
-    override suspend fun resetOneShotWorkAfterRestore() {
+    var profilePreferencesMigrationResetCount = 0
+        private set
+
+    override suspend fun resetOneShotWorkAfterRestore(clearProfilePreferencesMigration: Boolean) {
         oneShotResetCount++
+        if (clearProfilePreferencesMigration) {
+            profilePreferencesMigrationResetCount++
+        }
         _preferencesFlow.value = _preferencesFlow.value.copy(velocityOneRepMaxBackfillDone = false)
     }
 

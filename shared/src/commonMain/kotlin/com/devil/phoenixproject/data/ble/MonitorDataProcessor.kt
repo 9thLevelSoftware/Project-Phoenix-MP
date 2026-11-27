@@ -17,9 +17,9 @@ import kotlin.math.abs
  *
  * Pipeline stages:
  * 1. Position clamping (last-good fallback for out-of-range values)
- * 2. Status flag processing (deload debounce, ROM violation callbacks)
- * 3. Issue #210: Position tracking update BEFORE jump validation (cascade prevention)
- * 4. Sample validation (range, load, jump filter)
+ * 2. Issue #210: Position tracking update BEFORE jump validation (cascade prevention)
+ * 3. Sample validation (range, load, jump filter)
+ * 4. Status flag processing (deload debounce, ROM violation callbacks — only on valid samples)
  * 5. Firmware velocity (raw firmware velocity, mm/s)
  * 6. EMA smoothing (with cold-start seeding and filtered-sample edge case)
  * 7. WorkoutMetric construction
@@ -143,12 +143,7 @@ class MonitorDataProcessor(
             lastGoodPosB = posB
         }
 
-        // ===== STAGE 2: STATUS FLAG PROCESSING =====
-        if (packet.status != 0) {
-            processStatusFlags(packet.status)
-        }
-
-        // ===== STAGE 3: ISSUE #210 - Update tracking BEFORE validation =====
+        // ===== STAGE 2: ISSUE #210 - Update tracking BEFORE validation =====
         // CRITICAL: Store previous positions and update tracking BEFORE validation.
         // This prevents cascading filter failures where every sample after one jump
         // is filtered because lastPositionA/B were never updated (early return skipped
@@ -158,10 +153,15 @@ class MonitorDataProcessor(
         lastPositionA = posA
         lastPositionB = posB
 
-        // ===== STAGE 4: SAMPLE VALIDATION =====
+        // ===== STAGE 3: SAMPLE VALIDATION =====
         if (!validateSample(posA, loadA, posB, loadB, previousPosA, previousPosB)) {
             lastSampleWasFiltered = true // Mark for velocity reset on next valid sample
             return null // Skip invalid sample, but position tracking is updated for next sample
+        }
+
+        // ===== STAGE 4: STATUS FLAG PROCESSING (only after sample passes validation) =====
+        if (packet.status != 0) {
+            processStatusFlags(packet.status)
         }
 
         // ===== STAGE 5: VELOCITY FROM FIRMWARE =====

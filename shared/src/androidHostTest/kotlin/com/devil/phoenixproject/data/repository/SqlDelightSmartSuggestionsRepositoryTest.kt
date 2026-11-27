@@ -3,6 +3,7 @@ package com.devil.phoenixproject.data.repository
 import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.volumeKg
 import com.devil.phoenixproject.testutil.createTestDatabase
+import com.devil.phoenixproject.testutil.seedExercise
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -221,6 +222,40 @@ class SqlDelightSmartSuggestionsRepositoryTest {
         val unmeasured = summaries.single { it.exerciseId == "squat" }
         assertTrue(unmeasured.isEcho)
         assertNull(unmeasured.volumeKg, "an unmeasured Echo session contributes NO volume - never the configured seed")
+    }
+
+    @Test
+    fun `smart suggestions queries exclude soft-deleted workout sessions`() = runTest {
+        database.seedExercise(id = "bench", name = "Bench Press", muscleGroup = "Chest")
+        insertWorkoutSession(
+            id = "live-session",
+            exerciseId = "bench",
+            exerciseName = "Bench Press",
+            timestamp = 1_000L,
+            weightPerCableKg = 40.0,
+            heaviestLiftKg = 40.0,
+            profileId = "default",
+        )
+        insertWorkoutSession(
+            id = "deleted-session",
+            exerciseId = "bench",
+            exerciseName = "Bench Press",
+            timestamp = 2_000L,
+            weightPerCableKg = 90.0,
+            heaviestLiftKg = 90.0,
+            profileId = "default",
+        )
+        database.phoenixDatabaseQueries.softDeleteSession(3_000L, 3_000L, "deleted-session")
+
+        val summaries = repository.getSessionSummariesSince(0L, "default")
+        assertEquals(1, summaries.size)
+        assertEquals(40f, summaries.single().weightPerCableKg)
+
+        val lastPerformed = repository.getExerciseLastPerformed("default")
+        assertEquals(1_000L, lastPerformed.single().timestamp)
+
+        val history = repository.getExerciseWeightHistory("default")
+        assertEquals(listOf(40f), history.map { it.weightPerCableKg })
     }
 
     private fun insertWorkoutSession(

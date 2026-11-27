@@ -5,6 +5,8 @@ import com.devil.phoenixproject.data.preferences.SettingsProfileLocalSafetyStore
 import com.devil.phoenixproject.data.repository.ActiveProfileContext
 import com.devil.phoenixproject.data.repository.SqlDelightProfilePreferencesRepository
 import com.devil.phoenixproject.data.repository.SqlDelightUserProfileRepository
+import com.devil.phoenixproject.domain.model.CustomEquipmentItem
+import com.devil.phoenixproject.domain.model.CustomEquipmentPreferences
 import com.devil.phoenixproject.domain.model.ProfileLocalSafetyPreferences
 import com.devil.phoenixproject.domain.model.ProfilePreferenceSectionName
 import com.devil.phoenixproject.domain.model.WorkoutPreferences
@@ -464,6 +466,137 @@ class SyncManagerProfilePreferencesTest {
         )
 
         assertEquals(listOf(workoutKey), outcomes.map { it.key })
+    }
+
+    @Test
+    fun `UNSUPPORTED_SECTION stops dirty respin loop without blocking sibling sections or wiping local custom equipment`() = runTest {
+        val sqlHarness = SqlPreferenceHarness()
+        sqlHarness.initialize()
+        val ready = assertIs<ActiveProfileContext.Ready>(
+            sqlHarness.profileRepository.activeProfileContext.value,
+        )
+        val profileId = ready.profile.id
+        val customEquipment = CustomEquipmentPreferences(
+            items = listOf(CustomEquipmentItem(token = "U_EZ_BAR", label = "EZ Bar", createdAt = 100L)),
+        )
+        sqlHarness.profileRepository.updateCore(
+            profileId,
+            ready.preferences.core.value.copy(bodyWeightKg = 84f),
+        )
+        sqlHarness.profileRepository.mutateCustomEquipment(profileId) { customEquipment }
+
+        val codec = ProfilePreferenceSyncCodec()
+        sqlHarness.api.pushResultsQueue = mutableListOf(
+            // Sync 1: ordinary push + preference chunk where all 5 supported sibling sections are accepted and CUSTOM_EQUIPMENT is UNSUPPORTED_SECTION
+            successResponse(),
+            successResponse(
+                profilePreferencesAccepted = true,
+                canonicalProfilePreferenceSections = listOf(
+                    coreCanonical(revision = 1, profileId = profileId, bodyWeightKg = 84.0),
+                    PortalProfilePreferenceSectionCanonicalDto(
+                        localProfileId = profileId,
+                        section = "RACK",
+                        documentVersion = 1,
+                        serverRevision = 1,
+                        serverUpdatedAt = "2026-07-11T12:00:00Z",
+                        payload = codec.rackPayload(ready.preferences.rack.value),
+                    ),
+                    PortalProfilePreferenceSectionCanonicalDto(
+                        localProfileId = profileId,
+                        section = "WORKOUT",
+                        documentVersion = 1,
+                        serverRevision = 1,
+                        serverUpdatedAt = "2026-07-11T12:00:00Z",
+                        payload = codec.workoutPayload(ready.preferences.workout.value),
+                    ),
+                    PortalProfilePreferenceSectionCanonicalDto(
+                        localProfileId = profileId,
+                        section = "LED",
+                        documentVersion = 1,
+                        serverRevision = 1,
+                        serverUpdatedAt = "2026-07-11T12:00:00Z",
+                        payload = codec.ledPayload(ready.preferences.led.value),
+                    ),
+                    PortalProfilePreferenceSectionCanonicalDto(
+                        localProfileId = profileId,
+                        section = "VBT",
+                        documentVersion = 1,
+                        serverRevision = 1,
+                        serverUpdatedAt = "2026-07-11T12:00:00Z",
+                        payload = codec.vbtPayload(ready.preferences.vbt.value),
+                    ),
+                ),
+                profilePreferenceRejections = listOf(
+                    ProfilePreferenceSectionRejectionDto(
+                        localProfileId = profileId,
+                        section = "CUSTOM_EQUIPMENT",
+                        serverRevision = 0,
+                        reason = "UNSUPPORTED_SECTION",
+                    ),
+                ),
+            ),
+            // Sync 2: ordinary push only (CUSTOM_EQUIPMENT at same generation must NOT re-spin another preference chunk)
+            successResponse(),
+            // Sync 3 (after local edit bumps generation): ordinary push + preference chunk retries CUSTOM_EQUIPMENT
+            successResponse(),
+            successResponse(
+                profilePreferencesAccepted = true,
+                canonicalProfilePreferenceSections = listOf(
+                    PortalProfilePreferenceSectionCanonicalDto(
+                        localProfileId = profileId,
+                        section = "CUSTOM_EQUIPMENT",
+                        documentVersion = 1,
+                        serverRevision = 1,
+                        serverUpdatedAt = "2026-07-11T12:05:00Z",
+                        payload = codec.customEquipmentPayload(
+                            CustomEquipmentPreferences(
+                                items = customEquipment.items + CustomEquipmentItem(
+                                    token = "U_SWISS_BAR",
+                                    label = "Swiss Bar",
+                                    createdAt = 200L,
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        val manager = sqlHarness.manager()
+        assertTrue(manager.sync().isSuccess)
+
+        val afterSync1 = assertIs<ActiveProfileContext.Ready>(
+            sqlHarness.profileRepository.activeProfileContext.value,
+        )
+        assertFalse(afterSync1.preferences.core.metadata.dirty, "CORE must be cleared despite CUSTOM_EQUIPMENT rejection")
+        assertTrue(afterSync1.preferences.customEquipment.metadata.dirty, "CUSTOM_EQUIPMENT must stay dirty")
+        assertEquals(customEquipment.items, afterSync1.preferences.customEquipment.value.items)
+
+        // Second sync must NOT spin on CUSTOM_EQUIPMENT at the same generation
+        sqlHarness.api.pushPayloads.clear()
+        assertTrue(manager.sync().isSuccess)
+        assertTrue(
+            sqlHarness.api.pushPayloads.none { it.profilePreferenceSections != null },
+            "Unsupported CUSTOM_EQUIPMENT generation must not re-spin infinitely",
+        )
+
+        // Editing custom equipment bumps generation and allows a fresh attempt once portal upgrades
+        sqlHarness.profileRepository.mutateCustomEquipment(profileId) {
+            CustomEquipmentPreferences(
+                items = customEquipment.items + CustomEquipmentItem(
+                    token = "U_SWISS_BAR",
+                    label = "Swiss Bar",
+                    createdAt = 200L,
+                ),
+            )
+        }
+        sqlHarness.api.pushPayloads.clear()
+        assertTrue(manager.sync().isSuccess)
+        assertEquals(1, sqlHarness.api.pushPayloads.count { it.profilePreferenceSections != null })
+        val afterSync3 = assertIs<ActiveProfileContext.Ready>(
+            sqlHarness.profileRepository.activeProfileContext.value,
+        )
+        assertFalse(afterSync3.preferences.customEquipment.metadata.dirty)
     }
 
     @Test

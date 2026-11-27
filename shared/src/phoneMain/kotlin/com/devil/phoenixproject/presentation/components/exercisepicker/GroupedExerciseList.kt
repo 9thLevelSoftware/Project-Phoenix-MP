@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.repository.ExerciseImageEntity
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.domain.model.Exercise
+import com.devil.phoenixproject.util.rethrowIfCancellation
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import projectphoenix.shared.generated.resources.*
@@ -199,7 +200,8 @@ private fun ExerciseItemWithImage(
                 images = exerciseRepository.getImages(it)
             }
             isLoadingImage = false
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            e.rethrowIfCancellation()
             isLoadingImage = false
         }
     }
@@ -253,7 +255,7 @@ fun ExerciseListEmptyState(
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     Text(
-                        text = "No custom exercises yet",
+                        text = stringResource(Res.string.empty_custom_exercises_title),
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -262,7 +264,7 @@ fun ExerciseListEmptyState(
                     // picker) shows the title alone instead of telling users to create.
                     if (enableCustomExercises) {
                         Text(
-                            text = "Create your own exercises to track workouts\nnot in the library",
+                            text = stringResource(Res.string.empty_custom_exercises_subtitle),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                         )
@@ -281,7 +283,7 @@ fun ExerciseListEmptyState(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Text(
-                        text = "No exercises found",
+                        text = stringResource(Res.string.empty_no_exercises_found),
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -299,14 +301,14 @@ fun ExerciseListEmptyState(
                     ) {
                         LoadingIndicator(LoadingIndicatorSize.Medium)
                         Text(
-                            text = "Loading exercises...",
+                            text = stringResource(Res.string.loading_exercises),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 } else {
                     Text(
-                        text = "No exercises found",
+                        text = stringResource(Res.string.empty_no_exercises_found),
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

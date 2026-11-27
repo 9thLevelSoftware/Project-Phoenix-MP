@@ -134,15 +134,45 @@ class IndexQueryPlanTest {
             assertTrue(plan.any { "idx_rep_metric_session" in it }, "$db: $plan")
         }
 
+    @Test
+    fun `migration 69 indexes serve serverId, ECG retention, and ON DELETE SET NULL FK lookups`() = forEachDatabase { db, driver ->
+        val sessionByServerId = queryPlan(driver, "selectSessionByServerId")
+        assertTrue(
+            sessionByServerId.any { "USING INDEX idx_session_server_id" in it || "USING COVERING INDEX idx_session_server_id" in it },
+            "$db: $sessionByServerId",
+        )
+
+        val ecgExpiry = queryPlan(driver, "deleteExpiredPolarEcgSegments")
+        assertTrue(
+            ecgExpiry.any { "USING INDEX idx_polar_ecg_segment_wall" in it || "USING COVERING INDEX idx_polar_ecg_segment_wall" in it },
+            "$db: $ecgExpiry",
+        )
+
+        val fkLookups = listOf(
+            "idx_assessment_result_session" to "SELECT id FROM AssessmentResult WHERE assessmentSessionId = ?",
+            "idx_completed_set_planned_set" to "SELECT id FROM CompletedSet WHERE planned_set_id = ?",
+            "idx_cycle_day_routine" to "SELECT id FROM CycleDay WHERE routine_id = ?",
+            "idx_routine_group" to "SELECT id FROM Routine WHERE groupId = ?",
+        )
+        for ((indexName, sql) in fkLookups) {
+            val plan = explainRawSql(driver, sql)
+            assertTrue(plan.any { "USING INDEX $indexName" in it || "USING COVERING INDEX $indexName" in it }, "$db ($indexName): $plan")
+            assertFalse(plan.any { it.startsWith("SCAN ") }, "$db ($indexName): $plan")
+        }
+    }
+
     private fun forEachDatabase(block: (String, SqlDriver) -> Unit) {
         for ((name, driver) in databases) block(name, driver)
     }
 
-    private fun queryPlan(driver: SqlDriver, label: String): List<String> {
+    private fun queryPlan(driver: SqlDriver, label: String): List<String> =
+        explainRawSql(driver, productionStatement(label))
+
+    private fun explainRawSql(driver: SqlDriver, sql: String): List<String> {
         val details = mutableListOf<String>()
         driver.executeQuery(
             identifier = null,
-            sql = "EXPLAIN QUERY PLAN ${productionStatement(label)}",
+            sql = "EXPLAIN QUERY PLAN $sql",
             mapper = { cursor ->
                 while (cursor.next().value) {
                     details += cursor.getString(3).orEmpty()

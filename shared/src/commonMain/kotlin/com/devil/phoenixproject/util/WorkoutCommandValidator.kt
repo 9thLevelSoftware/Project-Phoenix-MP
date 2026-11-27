@@ -1,5 +1,8 @@
 package com.devil.phoenixproject.util
 
+import com.devil.phoenixproject.data.ble.getFloatLE
+import com.devil.phoenixproject.data.ble.getInt16LE
+import com.devil.phoenixproject.data.ble.getInt32LE
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import kotlin.math.abs
@@ -93,15 +96,114 @@ object WorkoutCommandValidator {
     }
 
     fun validateColorScheme(brightness: Float, colors: List<RGBColor>): Result<Unit> {
-        if (!isFinite(brightness)) return failure("brightness must be finite")
+        if (!brightness.isFinite()) return failure("brightness must be finite")
         if (brightness !in 0f..1f) return failure("brightness must be 0.0..1.0, got $brightness")
         if (colors.size != 3) return failure("Color scheme must have exactly 3 colors")
         return Result.success(Unit)
     }
 
-    private fun validateFiniteWeight(value: Float, field: String = "weightPerCableKg"): Result<Unit> = if (isFinite(value)) Result.success(Unit) else failure("$field must be finite")
+    /**
+     * Validate a raw outbound BLE command frame before GATT write (AUD-020 backstop).
+     * Ensures no caller can bypass domain validation with malformed, non-finite, or
+     * over-limit frames.
+     */
+    fun validateFrame(command: ByteArray, maxWeightPerCableKg: Float): Result<Unit> {
+        if (command.size < 4) {
+            return failure("Malformed BLE command frame: expected at least 4 bytes, got ${command.size}")
+        }
+        val commandId = getInt32LE(command, 0)
+        return when (commandId) {
+            0x04 -> validateActivationFrame(command, maxWeightPerCableKg)
+            0x4E -> validateEchoFrame(command)
+            0x11 -> validateColorSchemeFrame(command)
+            0x0A -> {
+                if (command.size != 4) {
+                    failure("Malformed RESET frame: expected 4 bytes, got ${command.size}")
+                } else {
+                    Result.success(Unit)
+                }
+            }
+            else -> failure(
+                "Unsupported or malformed BLE command frame (size=${command.size}, commandId=0x${commandId.toUInt().toString(16)})",
+            )
+        }
+    }
 
-    private fun isFinite(value: Float): Boolean = !value.isNaN() && !value.isInfinite()
+    private fun validateActivationFrame(command: ByteArray, maxWeightPerCableKg: Float): Result<Unit> {
+        if (command.size != BleConstants.ActivationPacket.SIZE) {
+            return failure(
+                "Malformed activation frame: expected ${BleConstants.ActivationPacket.SIZE} bytes, got ${command.size}",
+            )
+        }
+        val repsByte = command[0x04].toInt() and 0xFF
+        if (repsByte !in 1..MAX_FINITE_REP_BYTE && repsByte != 0xFF) {
+            return failure("Invalid activation frame reps byte: $repsByte")
+        }
+        val forceMin = getFloatLE(command, BleConstants.ActivationPacket.OFFSET_FORCE_MIN)
+        if (!forceMin.isFinite() || forceMin < Constants.MIN_WEIGHT_KG ||
+            forceMin > maxWeightPerCableKg + CommandLimits.WEIGHT_TOLERANCE_KG
+        ) {
+            return failure("Invalid activation frame forceMin: $forceMin (max=${maxWeightPerCableKg}kg)")
+        }
+        val targetWeight = getFloatLE(command, BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT)
+        if (!targetWeight.isFinite() || targetWeight < Constants.MIN_WEIGHT_KG ||
+            targetWeight > maxWeightPerCableKg + CommandLimits.WEIGHT_TOLERANCE_KG
+        ) {
+            return failure("Invalid activation frame targetWeight: $targetWeight (max=${maxWeightPerCableKg}kg)")
+        }
+        val forceMax = getFloatLE(command, BleConstants.ActivationPacket.OFFSET_FORCE_MAX)
+        if (!forceMax.isFinite() || forceMax < Constants.MIN_WEIGHT_KG ||
+            forceMax > maxWeightPerCableKg + 10.0f + CommandLimits.WEIGHT_TOLERANCE_KG
+        ) {
+            return failure("Invalid activation frame forceMax: $forceMax (max=${maxWeightPerCableKg + 10.0f}kg)")
+        }
+        val progression = getFloatLE(command, BleConstants.ActivationPacket.OFFSET_PROGRESSION)
+        if (!progression.isFinite() || abs(progression) > CommandLimits.MAX_PROGRESSION_KG) {
+            return failure(
+                "Invalid activation frame progression: $progression (must be within ±${CommandLimits.MAX_PROGRESSION_KG}kg/rep)",
+            )
+        }
+        return Result.success(Unit)
+    }
+
+    private fun validateEchoFrame(command: ByteArray): Result<Unit> {
+        if (command.size != 32) {
+            return failure("Malformed Echo frame: expected 32 bytes, got ${command.size}")
+        }
+        val warmupReps = command[0x04].toInt() and 0xFF
+        if (warmupReps !in 0..MAX_FINITE_REP_BYTE) {
+            return failure("Invalid Echo frame warmupReps: $warmupReps")
+        }
+        val targetReps = command[0x05].toInt() and 0xFF
+        if (targetReps !in 1..MAX_FINITE_REP_BYTE && targetReps != 0xFF) {
+            return failure("Invalid Echo frame targetReps: $targetReps")
+        }
+        val eccentricOverload = getInt16LE(command, 0x08)
+        if (eccentricOverload !in 0..MAX_ECHO_ECCENTRIC_PERCENT) {
+            return failure("Invalid Echo frame eccentricOverload: $eccentricOverload (must be 0..$MAX_ECHO_ECCENTRIC_PERCENT)")
+        }
+        val floatOffsets = intArrayOf(0x0C, 0x10, 0x14, 0x18, 0x1C)
+        for (offset in floatOffsets) {
+            val value = getFloatLE(command, offset)
+            if (!value.isFinite()) {
+                return failure("Echo frame float at offset 0x${offset.toString(16)} must be finite, got $value")
+            }
+        }
+        return Result.success(Unit)
+    }
+
+    private fun validateColorSchemeFrame(command: ByteArray): Result<Unit> {
+        if (command.size != 34) {
+            return failure("Malformed color scheme frame: expected 34 bytes, got ${command.size}")
+        }
+        val brightness = getFloatLE(command, 12)
+        if (!brightness.isFinite() || brightness !in 0f..1f) {
+            return failure("Invalid color scheme brightness: $brightness (must be 0.0..1.0)")
+        }
+        return Result.success(Unit)
+    }
+
+    private fun validateFiniteWeight(value: Float, field: String = "weightPerCableKg"): Result<Unit> = if (value.isFinite()) Result.success(Unit) else failure("$field must be finite")
 
     private fun validateWeightRange(weightPerCableKg: Float, allowZero: Boolean, maxWeightPerCableKg: Float): Result<Unit> {
         if (!allowZero && weightPerCableKg <= Constants.MIN_WEIGHT_KG) {

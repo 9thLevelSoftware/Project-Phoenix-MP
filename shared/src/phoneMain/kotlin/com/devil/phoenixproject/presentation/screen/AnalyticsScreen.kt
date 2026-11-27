@@ -43,6 +43,7 @@ import com.devil.phoenixproject.util.rethrowIfCancellation
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import projectphoenix.shared.generated.resources.*
@@ -215,12 +216,14 @@ private fun ProgressTab(
 
                 // PRs for this mode (round bottom corners on the last card in each group)
                 itemsIndexed(modePRs, key = { _, pr -> pr.id }) { index, pr ->
-                    var exerciseName by remember(pr.exerciseId) { mutableStateOf("Loading...") }
+                    val loadingLabel = stringResource(Res.string.detail_loading_ellipsis)
+                    val unknownExerciseLabel = stringResource(Res.string.history_unknown_exercise)
+                    var exerciseName by remember(pr.exerciseId) { mutableStateOf(loadingLabel) }
                     val isLastInGroup = index == modePRs.lastIndex
 
-                    LaunchedEffect(pr.exerciseId) {
+                    LaunchedEffect(pr.exerciseId, unknownExerciseLabel) {
                         val exercise = exerciseRepository.getExerciseById(pr.exerciseId)
-                        exerciseName = exercise?.name ?: "Unknown Exercise"
+                        exerciseName = exercise?.name ?: unknownExerciseLabel
                     }
 
                     Card(
@@ -266,7 +269,7 @@ private fun ProgressTab(
                                     color = MaterialTheme.colorScheme.primary,
                                 )
                                 Text(
-                                    text = "${pr.reps} Reps",
+                                    text = stringResource(Res.string.analytics_pr_reps, pr.reps),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -350,8 +353,6 @@ fun AnalyticsScreen(
     val personalRecords by viewModel.allPersonalRecords.collectAsState()
     val weightUnit by viewModel.weightUnit.collectAsState()
 
-    val connectionError by viewModel.connectionError.collectAsState()
-
     // Responsive sizing based on window size class
     val windowSizeClass = LocalWindowSizeClass.current
     val useCompactTabs = isCompactAccessibilityLayout() ||
@@ -401,14 +402,15 @@ fun AnalyticsScreen(
     var showImportResultDialog by remember { mutableStateOf(false) }
 
     // Build exercise names map for export
+    val unknownExerciseLabel = stringResource(Res.string.history_unknown_exercise)
     val exerciseNames = remember { mutableStateMapOf<String, String>() }
-    LaunchedEffect(personalRecords, allWorkoutSessions) {
+    LaunchedEffect(personalRecords, allWorkoutSessions, unknownExerciseLabel) {
         val allExerciseIds = personalRecords.map { it.exerciseId } +
             allWorkoutSessions.mapNotNull { it.exerciseId }
         allExerciseIds.distinct().forEach { exerciseId ->
             if (!exerciseNames.containsKey(exerciseId)) {
                 val exercise = viewModel.exerciseRepository.getExerciseById(exerciseId)
-                exerciseNames[exerciseId] = exercise?.name ?: "Unknown Exercise"
+                exerciseNames[exerciseId] = exercise?.name ?: unknownExerciseLabel
             }
         }
     }
@@ -600,14 +602,6 @@ fun AnalyticsScreen(
             }
         }
 
-        // Connection error dialog
-        connectionError?.let { error ->
-            com.devil.phoenixproject.presentation.components.ConnectionErrorDialog(
-                message = error,
-                onDismiss = { viewModel.clearConnectionError() },
-            )
-        }
-
         // Export FAB - Material 3 Expressive
         FloatingActionButton(
             onClick = { showExportMenu = true },
@@ -669,24 +663,29 @@ fun AnalyticsScreen(
                     OutlinedButton(
                         onClick = {
                             isExporting = true
-                            scope.launch(Dispatchers.Default) {
-                                val result = csvExporter.exportPersonalRecords(
-                                    personalRecords = personalRecords,
-                                    exerciseNames = exerciseNames.toMap(),
-                                    weightUnit = weightUnit,
-                                    formatWeight = viewModel::formatWeight,
-                                )
-                                isExporting = false
-                                result.fold(
-                                    onSuccess = { path ->
-                                        exportMessage = exportSuccessTemplate.replace("__PLACEHOLDER__", path)
-                                        csvExporter.shareCSV(path, "personal_records.csv")
-                                    },
-                                    onFailure = { error ->
-                                        exportMessage = exportFailedTemplate.replace("__PLACEHOLDER__", error.message ?: "")
-                                    },
-                                )
-                                showExportMenu = false
+                            scope.launch(Dispatchers.Main) {
+                                try {
+                                    val result = withContext(Dispatchers.Default) {
+                                        csvExporter.exportPersonalRecords(
+                                            personalRecords = personalRecords,
+                                            exerciseNames = exerciseNames.toMap(),
+                                            weightUnit = weightUnit,
+                                            formatWeight = viewModel::formatWeight,
+                                        )
+                                    }
+                                    result.fold(
+                                        onSuccess = { path ->
+                                            exportMessage = exportSuccessTemplate.replace("__PLACEHOLDER__", path)
+                                            csvExporter.shareCSV(path, "personal_records.csv")
+                                        },
+                                        onFailure = { error ->
+                                            exportMessage = exportFailedTemplate.replace("__PLACEHOLDER__", error.message ?: "")
+                                        },
+                                    )
+                                    showExportMenu = false
+                                } finally {
+                                    isExporting = false
+                                }
                             }
                         },
                         enabled = !isExporting && personalRecords.isNotEmpty(),
@@ -715,24 +714,29 @@ fun AnalyticsScreen(
                     OutlinedButton(
                         onClick = {
                             isExporting = true
-                            scope.launch(Dispatchers.Default) {
-                                val result = csvExporter.exportPRProgression(
-                                    personalRecords = personalRecords,
-                                    exerciseNames = exerciseNames.toMap(),
-                                    weightUnit = weightUnit,
-                                    formatWeight = viewModel::formatWeight,
-                                )
-                                isExporting = false
-                                result.fold(
-                                    onSuccess = { path ->
-                                        exportMessage = exportSuccessTemplate.replace("__PLACEHOLDER__", path)
-                                        csvExporter.shareCSV(path, "pr_progression.csv")
-                                    },
-                                    onFailure = { error ->
-                                        exportMessage = exportFailedTemplate.replace("__PLACEHOLDER__", error.message ?: "")
-                                    },
-                                )
-                                showExportMenu = false
+                            scope.launch(Dispatchers.Main) {
+                                try {
+                                    val result = withContext(Dispatchers.Default) {
+                                        csvExporter.exportPRProgression(
+                                            personalRecords = personalRecords,
+                                            exerciseNames = exerciseNames.toMap(),
+                                            weightUnit = weightUnit,
+                                            formatWeight = viewModel::formatWeight,
+                                        )
+                                    }
+                                    result.fold(
+                                        onSuccess = { path ->
+                                            exportMessage = exportSuccessTemplate.replace("__PLACEHOLDER__", path)
+                                            csvExporter.shareCSV(path, "pr_progression.csv")
+                                        },
+                                        onFailure = { error ->
+                                            exportMessage = exportFailedTemplate.replace("__PLACEHOLDER__", error.message ?: "")
+                                        },
+                                    )
+                                    showExportMenu = false
+                                } finally {
+                                    isExporting = false
+                                }
                             }
                         },
                         enabled = !isExporting && personalRecords.isNotEmpty(),
@@ -791,25 +795,30 @@ fun AnalyticsScreen(
             onDateRangeSelected = { startDate, endDate ->
                 showDateRangePicker = false
                 isExporting = true
-                scope.launch(Dispatchers.Default) {
-                    val result = csvExporter.exportWorkoutHistoryFiltered(
-                        workoutSessions = allWorkoutSessions,
-                        startDate = startDate,
-                        endDate = endDate,
-                        exerciseNames = exerciseNames.toMap(),
-                        weightUnit = weightUnit,
-                        formatWeight = viewModel::formatWeight,
-                    )
-                    isExporting = false
-                    result.fold(
-                        onSuccess = { path ->
-                            exportMessage = exportSuccessTemplate.replace("__PLACEHOLDER__", path)
-                            csvExporter.shareCSV(path, "workout_history.csv")
-                        },
-                        onFailure = { error ->
-                            exportMessage = exportFailedTemplate.replace("__PLACEHOLDER__", error.message ?: "")
-                        },
-                    )
+                scope.launch(Dispatchers.Main) {
+                    try {
+                        val result = withContext(Dispatchers.Default) {
+                            csvExporter.exportWorkoutHistoryFiltered(
+                                workoutSessions = allWorkoutSessions,
+                                startDate = startDate,
+                                endDate = endDate,
+                                exerciseNames = exerciseNames.toMap(),
+                                weightUnit = weightUnit,
+                                formatWeight = viewModel::formatWeight,
+                            )
+                        }
+                        result.fold(
+                            onSuccess = { path ->
+                                exportMessage = exportSuccessTemplate.replace("__PLACEHOLDER__", path)
+                                csvExporter.shareCSV(path, "workout_history.csv")
+                            },
+                            onFailure = { error ->
+                                exportMessage = exportFailedTemplate.replace("__PLACEHOLDER__", error.message ?: "")
+                            },
+                        )
+                    } finally {
+                        isExporting = false
+                    }
                 }
             },
             onDismiss = { showDateRangePicker = false },
@@ -830,9 +839,11 @@ fun AnalyticsScreen(
             launchCsvFilePicker = false
             if (selectedFile != null) {
                 isImporting = true
-                scope.launch(Dispatchers.Default) {
+                scope.launch(Dispatchers.Main) {
                     try {
-                        val result = csvImporter.importFromCsv(selectedFile, activeProfileId)
+                        val result = withContext(Dispatchers.Default) {
+                            csvImporter.importFromCsv(selectedFile, activeProfileId)
+                        }
                         importResult = result
                         showImportResultDialog = true
                     } catch (e: Exception) {

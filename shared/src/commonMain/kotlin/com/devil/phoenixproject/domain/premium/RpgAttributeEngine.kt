@@ -12,13 +12,14 @@ import com.devil.phoenixproject.domain.model.RpgProfile
  * Computes five attribute scores (0-100) from aggregate workout data and
  * classifies the user into a CharacterClass based on dominant attribute.
  *
- * Ceiling constants are tuned for the Phoenix Trainer (max 220kg machine).
+ * Ceiling constants are tuned for the Phoenix Trainer per-cable loads
+ * (100kg per-cable V-Form / 110kg per-cable Trainer+).
  */
 object RpgAttributeEngine {
 
-    // -- Ceiling constants for normalization --
-    private const val MAX_WEIGHT_CEILING = 200.0
-    private const val AVG_WEIGHT_CEILING = 120.0
+    // -- Ceiling constants for normalization (per-cable kg) --
+    private const val MAX_WEIGHT_CEILING = 100.0
+    private const val AVG_WEIGHT_CEILING = 60.0
     private const val POWER_CEILING = 2000.0
     private const val VOLUME_CEILING = 500000.0
     private const val REPS_CEILING = 50000.0
@@ -61,7 +62,7 @@ object RpgAttributeEngine {
 
     /**
      * Strength: 70% maxLiftScore + 30% avgWeightScore.
-     * Normalized against Phoenix max (200kg) and typical working weight (120kg).
+     * Normalized against per-cable max (100kg) and typical working weight (60kg).
      */
     internal fun computeStrength(input: RpgInput): Int {
         val maxLiftScore = normalize(input.maxWeightLiftedKg, MAX_WEIGHT_CEILING)

@@ -10,10 +10,11 @@ import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.generateUUID
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.map
 
 /**
  * Fake TrainingCycleRepository for testing.
- * Provides in-memory storage for training cycles and their progress.
+ * Provides in-memory storage for training cycles and their progress, scoped by profileId.
  */
 @Suppress("unused") // Test utility methods are available for future tests
 class FakeTrainingCycleRepository : TrainingCycleRepository {
@@ -22,7 +23,7 @@ class FakeTrainingCycleRepository : TrainingCycleRepository {
     private val cycleDays = mutableMapOf<String, MutableList<CycleDay>>()
     private val cycleProgress = mutableMapOf<String, CycleProgress>()
     private val cycleProgressions = mutableMapOf<String, CycleProgression>()
-    private var activeCycleId: String? = null
+    private val activeCycleIds = mutableMapOf<String, String?>()
 
     // Issue #549: ordered log of mutating/read methods invoked on this fake. Tests can inspect
     // it to assert call order (e.g. that the Home path calls `checkAndAutoAdvance` before
@@ -35,38 +36,57 @@ class FakeTrainingCycleRepository : TrainingCycleRepository {
     fun resetCallLog() { _callLog.clear() }
 
     private val _cyclesFlow = MutableStateFlow<List<TrainingCycle>>(emptyList())
-    private val _activeCycleFlow = MutableStateFlow<TrainingCycle?>(null)
+    private val activeCycleFlows = mutableMapOf<String, MutableStateFlow<TrainingCycle?>>()
+
+    private fun activeCycleFlowFor(profileId: String): MutableStateFlow<TrainingCycle?> =
+        activeCycleFlows.getOrPut(profileId) {
+            MutableStateFlow(activeCycleIds[profileId]?.let { cycles[it]?.takeIf { c -> c.profileId == profileId } })
+        }
+
+    private fun storeCycle(cycle: TrainingCycle) {
+        cycles[cycle.id] = cycle
+        cycleDays[cycle.id] = cycle.days.toMutableList()
+        if (cycle.isActive) {
+            cycles.entries.forEach { (id, existing) ->
+                if (existing.profileId == cycle.profileId && id != cycle.id && existing.isActive) {
+                    cycles[id] = existing.copy(isActive = false)
+                }
+            }
+            activeCycleIds[cycle.profileId] = cycle.id
+        } else if (activeCycleIds[cycle.profileId] == cycle.id) {
+            activeCycleIds.remove(cycle.profileId)
+        }
+        updateFlows()
+    }
 
     // Test control methods
     fun addCycle(cycle: TrainingCycle) {
-        cycles[cycle.id] = cycle
-        cycleDays[cycle.id] = cycle.days.toMutableList()
-        updateFlows()
+        storeCycle(cycle)
     }
 
     private fun updateFlows() {
         _cyclesFlow.value = cycles.values.sortedByDescending { it.createdAt }
-        _activeCycleFlow.value = activeCycleId?.let { cycles[it] }
+        for ((profileId, flow) in activeCycleFlows) {
+            val activeId = activeCycleIds[profileId]
+            flow.value = activeId?.let { cycles[it]?.takeIf { cycle -> cycle.profileId == profileId } }
+        }
     }
 
     // ========== TrainingCycleRepository interface implementation ==========
 
-    override fun getAllCycles(profileId: String): Flow<List<TrainingCycle>> = _cyclesFlow
+    override fun getAllCycles(profileId: String): Flow<List<TrainingCycle>> =
+        _cyclesFlow.map { list -> list.filter { it.profileId == profileId } }
 
     override suspend fun getCycleById(cycleId: String): TrainingCycle? = cycles[cycleId]
 
-    override fun getActiveCycle(profileId: String): Flow<TrainingCycle?> = _activeCycleFlow
+    override fun getActiveCycle(profileId: String): Flow<TrainingCycle?> = activeCycleFlowFor(profileId)
 
     override suspend fun saveCycle(cycle: TrainingCycle) {
-        cycles[cycle.id] = cycle
-        cycleDays[cycle.id] = cycle.days.toMutableList()
-        updateFlows()
+        storeCycle(cycle)
     }
 
     override suspend fun updateCycle(cycle: TrainingCycle) {
-        cycles[cycle.id] = cycle
-        cycleDays[cycle.id] = cycle.days.toMutableList()
-        updateFlows()
+        storeCycle(cycle)
     }
 
     override suspend fun updateWeekNumber(cycleId: String, weekNumber: Int) {
@@ -76,7 +96,17 @@ class FakeTrainingCycleRepository : TrainingCycleRepository {
     }
 
     override suspend fun setActiveCycle(cycleId: String, profileId: String) {
-        activeCycleId = cycleId
+        val selected = cycles[cycleId] ?: return
+        if (selected.profileId != profileId) return
+        if (activeCycleIds[profileId] == cycleId && selected.isActive) return
+        val previousActiveId = activeCycleIds[profileId]
+        if (previousActiveId != null && previousActiveId != cycleId) {
+            cycles[previousActiveId]?.let { prev ->
+                cycles[previousActiveId] = prev.copy(isActive = false)
+            }
+        }
+        cycles[cycleId] = selected.copy(isActive = true)
+        activeCycleIds[profileId] = cycleId
         // Reset progress on activation so deactivate/reactivate starts fresh
         if (cycleProgress.containsKey(cycleId)) {
             resetStoredProgress(cycleId)
@@ -87,12 +117,14 @@ class FakeTrainingCycleRepository : TrainingCycleRepository {
     }
 
     override suspend fun deleteCycle(cycleId: String) {
-        cycles.remove(cycleId)
+        val removed = cycles.remove(cycleId)
         cycleDays.remove(cycleId)
         cycleProgress.remove(cycleId)
         cycleProgressions.remove(cycleId)
-        if (activeCycleId == cycleId) {
-            activeCycleId = null
+        if (removed != null && activeCycleIds[removed.profileId] == cycleId) {
+            activeCycleIds.remove(removed.profileId)
+        } else {
+            activeCycleIds.entries.removeAll { it.value == cycleId }
         }
         updateFlows()
     }
@@ -220,7 +252,11 @@ class FakeTrainingCycleRepository : TrainingCycleRepository {
     }
 
     override suspend fun clearActiveCycle(profileId: String) {
-        activeCycleId = null
+        activeCycleIds.remove(profileId)?.let { cycleId ->
+            cycles[cycleId]?.let { cycle ->
+                cycles[cycleId] = cycle.copy(isActive = false)
+            }
+        }
         updateFlows()
     }
 }

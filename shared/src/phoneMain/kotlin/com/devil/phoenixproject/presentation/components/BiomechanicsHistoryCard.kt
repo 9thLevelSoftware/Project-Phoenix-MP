@@ -49,16 +49,41 @@ import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.velocityZoneColor
 import com.devil.phoenixproject.ui.theme.velocityZoneLabel
 import com.devil.phoenixproject.util.KmpUtils
+import org.jetbrains.compose.resources.stringResource
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.biomech_asymmetry_value
+import projectphoenix.shared.generated.resources.biomech_avg_mcv_empty
+import projectphoenix.shared.generated.resources.biomech_avg_mcv_value
+import projectphoenix.shared.generated.resources.biomech_no_per_rep_data
+import projectphoenix.shared.generated.resources.biomech_rep_number
+import projectphoenix.shared.generated.resources.biomech_side_balanced
+import projectphoenix.shared.generated.resources.biomech_side_cable_a
+import projectphoenix.shared.generated.resources.biomech_side_cable_b
+import projectphoenix.shared.generated.resources.biomech_sticking_point_rom
+import projectphoenix.shared.generated.resources.biomech_strength_ascending
+import projectphoenix.shared.generated.resources.biomech_strength_bell_shaped
+import projectphoenix.shared.generated.resources.biomech_strength_descending
+import projectphoenix.shared.generated.resources.biomech_strength_flat
+import projectphoenix.shared.generated.resources.biomech_title
+import projectphoenix.shared.generated.resources.biomech_vel_loss_empty
+import projectphoenix.shared.generated.resources.biomech_vel_loss_value
+import projectphoenix.shared.generated.resources.biomech_velocity_mms
+import projectphoenix.shared.generated.resources.biomech_view_per_rep_details
+import projectphoenix.shared.generated.resources.cd_collapse
+import projectphoenix.shared.generated.resources.cd_expand
 
 /**
  * Human-readable label for a [StrengthProfile].
  */
-private fun strengthProfileLabel(profile: StrengthProfile): String = when (profile) {
-    StrengthProfile.ASCENDING -> "Ascending"
-    StrengthProfile.DESCENDING -> "Descending"
-    StrengthProfile.BELL_SHAPED -> "Bell-shaped"
-    StrengthProfile.FLAT -> "Flat"
-}
+@Composable
+private fun strengthProfileLabel(profile: StrengthProfile): String = stringResource(
+    when (profile) {
+        StrengthProfile.ASCENDING -> Res.string.biomech_strength_ascending
+        StrengthProfile.DESCENDING -> Res.string.biomech_strength_descending
+        StrengthProfile.BELL_SHAPED -> Res.string.biomech_strength_bell_shaped
+        StrengthProfile.FLAT -> Res.string.biomech_strength_flat
+    },
+)
 
 // ──────────────────────────────────────────────────────────────────────────────
 // 1. Set-level summary ("at a glance")
@@ -113,7 +138,7 @@ fun BiomechanicsHistorySummary(
                 )
                 Spacer(modifier = Modifier.width(Spacing.extraSmall))
                 Text(
-                    "Biomechanics",
+                    stringResource(Res.string.biomech_title),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary,
@@ -140,7 +165,7 @@ fun BiomechanicsHistorySummary(
                         )
                         Spacer(modifier = Modifier.width(Spacing.extraSmall))
                         Text(
-                            "Avg MCV: ${KmpUtils.formatFloat(avgMcvMmS, 1)} mm/s",
+                            stringResource(Res.string.biomech_avg_mcv_value, KmpUtils.formatFloat(avgMcvMmS, 1)),
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onSurface,
@@ -149,7 +174,7 @@ fun BiomechanicsHistorySummary(
                         VelocityZoneChip(zone)
                     } else {
                         Text(
-                            "Avg MCV: \u2014",
+                            stringResource(Res.string.biomech_avg_mcv_empty),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -157,13 +182,14 @@ fun BiomechanicsHistorySummary(
                 }
 
                 // Strength profile
-                val profileLabel = strengthProfile?.let { sp ->
+                val parsedProfile = strengthProfile?.let { sp ->
                     try {
-                        strengthProfileLabel(StrengthProfile.valueOf(sp))
+                        StrengthProfile.valueOf(sp)
                     } catch (_: IllegalArgumentException) {
-                        sp
+                        null
                     }
                 }
+                val profileLabel = parsedProfile?.let { strengthProfileLabel(it) } ?: strengthProfile
                 Text(
                     profileLabel ?: "\u2014",
                     style = MaterialTheme.typography.bodySmall,
@@ -182,13 +208,17 @@ fun BiomechanicsHistorySummary(
                 // Asymmetry (only shown if non-null, i.e. Elite tier)
                 if (avgAsymmetryPercent != null) {
                     val sideLabel = when (dominantSide) {
-                        "A" -> "Cable A"
-                        "B" -> "Cable B"
-                        "BALANCED" -> "Balanced"
+                        "A" -> stringResource(Res.string.biomech_side_cable_a)
+                        "B" -> stringResource(Res.string.biomech_side_cable_b)
+                        "BALANCED" -> stringResource(Res.string.biomech_side_balanced)
                         else -> dominantSide ?: ""
                     }
                     Text(
-                        "Asymmetry: ${KmpUtils.formatFloat(avgAsymmetryPercent, 1)}% ($sideLabel)",
+                        stringResource(
+                            Res.string.biomech_asymmetry_value,
+                            KmpUtils.formatFloat(avgAsymmetryPercent, 1),
+                            sideLabel,
+                        ),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -199,7 +229,10 @@ fun BiomechanicsHistorySummary(
                 // Velocity loss
                 if (totalVelocityLossPercent != null) {
                     Text(
-                        "Vel. Loss: ${KmpUtils.formatFloat(totalVelocityLossPercent, 1)}%",
+                        stringResource(
+                            Res.string.biomech_vel_loss_value,
+                            KmpUtils.formatFloat(totalVelocityLossPercent, 1),
+                        ),
                         style = MaterialTheme.typography.bodySmall,
                         color = if (totalVelocityLossPercent > 20f) {
                             MaterialTheme.colorScheme.error
@@ -209,7 +242,7 @@ fun BiomechanicsHistorySummary(
                     )
                 } else {
                     Text(
-                        "Vel. Loss: \u2014",
+                        stringResource(Res.string.biomech_vel_loss_empty),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -227,7 +260,7 @@ fun BiomechanicsHistorySummary(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    "View Per-Rep Details",
+                    stringResource(Res.string.biomech_view_per_rep_details),
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary,
@@ -288,7 +321,7 @@ fun RepBiomechanicsDetail(
             }
         } else if (repResults.isEmpty()) {
             Text(
-                "No per-rep biomechanics data available",
+                stringResource(Res.string.biomech_no_per_rep_data),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(Spacing.small),
@@ -334,14 +367,17 @@ private fun RepBiomechanicsRow(rep: BiomechanicsRepResult) {
                 // Left: Rep number + MCV + zone chip
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "Rep ${rep.repNumber}",
+                        stringResource(Res.string.biomech_rep_number, rep.repNumber),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     Spacer(modifier = Modifier.width(Spacing.small))
                     Text(
-                        "${KmpUtils.formatFloat(rep.velocity.meanConcentricVelocityMmS, 1)} mm/s",
+                        stringResource(
+                            Res.string.biomech_velocity_mms,
+                            KmpUtils.formatFloat(rep.velocity.meanConcentricVelocityMmS, 1),
+                        ),
                         style = MaterialTheme.typography.bodySmall,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurface,
@@ -367,7 +403,9 @@ private fun RepBiomechanicsRow(rep: BiomechanicsRepResult) {
 
                     Icon(
                         imageVector = Icons.Default.KeyboardArrowDown,
-                        contentDescription = if (isExpanded) "Collapse" else "Expand",
+                        contentDescription = stringResource(
+                            if (isExpanded) Res.string.cd_collapse else Res.string.cd_expand,
+                        ),
                         modifier = Modifier
                             .size(16.dp)
                             .rotate(if (isExpanded) 180f else 0f),
@@ -378,16 +416,17 @@ private fun RepBiomechanicsRow(rep: BiomechanicsRepResult) {
 
             Spacer(modifier = Modifier.height(2.dp))
             val sideLabel = when (rep.asymmetry.dominantSide) {
-                "A" -> "Cable A"
-                "B" -> "Cable B"
-                "BALANCED" -> "Balanced"
+                "A" -> stringResource(Res.string.biomech_side_cable_a)
+                "B" -> stringResource(Res.string.biomech_side_cable_b)
+                "BALANCED" -> stringResource(Res.string.biomech_side_balanced)
                 else -> rep.asymmetry.dominantSide
             }
             Text(
-                "Asymmetry: ${KmpUtils.formatFloat(
-                    rep.asymmetry.asymmetryPercent,
-                    1,
-                )}% ($sideLabel)",
+                stringResource(
+                    Res.string.biomech_asymmetry_value,
+                    KmpUtils.formatFloat(rep.asymmetry.asymmetryPercent, 1),
+                    sideLabel,
+                ),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -422,7 +461,10 @@ private fun RepBiomechanicsRow(rep: BiomechanicsRepResult) {
                     ) {
                         rep.forceCurve.stickingPointPct?.let { sp ->
                             Text(
-                                "Sticking point: ${KmpUtils.formatFloat(sp, 0)}% ROM",
+                                stringResource(
+                                    Res.string.biomech_sticking_point_rom,
+                                    KmpUtils.formatFloat(sp, 0),
+                                ),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )

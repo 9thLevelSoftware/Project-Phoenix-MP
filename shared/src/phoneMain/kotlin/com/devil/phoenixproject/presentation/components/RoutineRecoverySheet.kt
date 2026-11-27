@@ -43,9 +43,27 @@ import com.devil.phoenixproject.data.repository.RoutineRecoveryItem
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.data.sync.PortalTokenStorage
+import com.devil.phoenixproject.domain.model.WeightUnit
+import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.action_preview
+import projectphoenix.shared.generated.resources.label_kg
+import projectphoenix.shared.generated.resources.label_lbs
+import projectphoenix.shared.generated.resources.recovery_hide_preview
+import projectphoenix.shared.generated.resources.recovery_planned_set_slot
+import projectphoenix.shared.generated.resources.recovery_reason_duplicate
+import projectphoenix.shared.generated.resources.recovery_reason_server_deleted
+import projectphoenix.shared.generated.resources.recovery_recover_deleted_routines_count
+import projectphoenix.shared.generated.resources.recovery_recover_deleted_routines_title
+import projectphoenix.shared.generated.resources.recovery_reps_count
+import projectphoenix.shared.generated.resources.recovery_restore_as_copy
+import projectphoenix.shared.generated.resources.recovery_restored
+import projectphoenix.shared.generated.resources.recovery_sets_format
+import projectphoenix.shared.generated.resources.recovery_sheet_description
 
 /**
  * Issue #1162 — recoverable routines surface (DailyRoutinesScreen/RoutinesTab).
@@ -64,6 +82,7 @@ import org.koin.compose.koinInject
 @Composable
 fun RoutineRecoveryHost(
     modifier: Modifier = Modifier,
+    weightUnit: WeightUnit = WeightUnit.KG,
     workoutRepository: WorkoutRepository = koinInject(),
     profileRepository: UserProfileRepository = koinInject(),
     portalTokenStorage: PortalTokenStorage = koinInject(),
@@ -136,7 +155,7 @@ fun RoutineRecoveryHost(
             },
             modifier = modifier,
         ) {
-            Text("Recover deleted routines (${items.size})")
+            Text(stringResource(Res.string.recovery_recover_deleted_routines_count, items.size))
         }
     }
 
@@ -153,13 +172,11 @@ fun RoutineRecoveryHost(
                     .padding(horizontal = 20.dp, vertical = 8.dp),
             ) {
                 PhoenixSheetHeader(
-                    title = "Recover deleted routines",
+                    title = stringResource(Res.string.recovery_recover_deleted_routines_title),
                     onClose = { sheetOpen = false },
                 )
                 Text(
-                    "These routines were removed by a duplicate cleanup or a server-side " +
-                        "deletion and can be restored as copies. The preview includes the " +
-                        "conflicting programming that was dropped, such as planned-set slots.",
+                    stringResource(Res.string.recovery_sheet_description),
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.padding(top = 8.dp, bottom = 12.dp),
                 )
@@ -179,10 +196,12 @@ fun RoutineRecoveryHost(
                             Column(modifier = Modifier.padding(16.dp)) {
                                 Text(item.routineName, style = MaterialTheme.typography.titleMedium)
                                 Text(
-                                    when (item.reason) {
-                                        "alias_coalesce" -> "Removed as a duplicate of the same routine"
-                                        else -> "Deleted on the server"
-                                    },
+                                    stringResource(
+                                        when (item.reason) {
+                                            "alias_coalesce" -> Res.string.recovery_reason_duplicate
+                                            else -> Res.string.recovery_reason_server_deleted
+                                        },
+                                    ),
                                     style = MaterialTheme.typography.bodySmall,
                                 )
                                 @OptIn(ExperimentalLayoutApi::class)
@@ -199,7 +218,15 @@ fun RoutineRecoveryHost(
                                         },
                                         modifier = Modifier.heightIn(min = 48.dp),
                                     ) {
-                                        Text(if (expandedKey == key) "Hide preview" else "Preview")
+                                        Text(
+                                            stringResource(
+                                                if (expandedKey == key) {
+                                                    Res.string.recovery_hide_preview
+                                                } else {
+                                                    Res.string.action_preview
+                                                },
+                                            ),
+                                        )
                                     }
                                     val restored = key in restoredKeys
                                     Button(
@@ -232,10 +259,21 @@ fun RoutineRecoveryHost(
                                             }
                                         },
                                     ) {
-                                        Text(if (restored) "Restored" else "Restore as copy")
+                                        Text(
+                                            stringResource(
+                                                if (restored) {
+                                                    Res.string.recovery_restored
+                                                } else {
+                                                    Res.string.recovery_restore_as_copy
+                                                },
+                                            ),
+                                        )
                                     }
                                 }
                                 if (expandedKey == key) {
+                                    val unitLabel = stringResource(
+                                        if (weightUnit == WeightUnit.LB) Res.string.label_lbs else Res.string.label_kg,
+                                    )
                                     Column(
                                         modifier = Modifier
                                             .fillMaxWidth()
@@ -251,14 +289,23 @@ fun RoutineRecoveryHost(
                                                 style = MaterialTheme.typography.bodyMedium,
                                             )
                                             Text(
-                                                "sets: ${exercise.setReps}",
+                                                stringResource(Res.string.recovery_sets_format, exercise.setReps),
                                                 style = MaterialTheme.typography.bodySmall,
                                             )
                                             exercise.plannedSets.forEach { plannedSet ->
+                                                val slotPrefix = stringResource(
+                                                    Res.string.recovery_planned_set_slot,
+                                                    plannedSet.setNumber,
+                                                    plannedSet.setType,
+                                                )
+                                                val repsPart = plannedSet.targetReps?.let {
+                                                    " · " + stringResource(Res.string.recovery_reps_count, it)
+                                                }.orEmpty()
+                                                val weightPart = plannedSet.targetWeightKg?.let { kg ->
+                                                    " · ${WeightDisplayFormatter.formatDisplayWeight(kg.toFloat(), weightUnit)} $unitLabel"
+                                                }.orEmpty()
                                                 Text(
-                                                    "slot ${plannedSet.setNumber} (${plannedSet.setType})" +
-                                                        (plannedSet.targetReps?.let { " · $it reps" } ?: "") +
-                                                        (plannedSet.targetWeightKg?.let { " · $it kg" } ?: ""),
+                                                    slotPrefix + repsPart + weightPart,
                                                     style = MaterialTheme.typography.bodySmall,
                                                     modifier = Modifier.padding(start = 8.dp),
                                                 )

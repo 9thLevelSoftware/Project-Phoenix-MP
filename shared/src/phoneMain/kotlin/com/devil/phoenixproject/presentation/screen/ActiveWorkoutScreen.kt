@@ -48,7 +48,6 @@ import com.devil.phoenixproject.domain.voice.SafeWordUnavailableReason
 import com.devil.phoenixproject.presentation.components.BackHandler
 import com.devil.phoenixproject.presentation.components.BadgeCelebrationQueueState
 import com.devil.phoenixproject.presentation.components.BatchedBadgeCelebrationDialog
-import com.devil.phoenixproject.presentation.components.ConnectionErrorDialog
 import com.devil.phoenixproject.presentation.components.PRCelebrationDialog
 import com.devil.phoenixproject.presentation.components.HrmWorkoutStrip
 import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManager
@@ -151,7 +150,6 @@ fun ActiveWorkoutScreen(
     val machineTeardownState by viewModel.machineTeardownState.collectAsState()
     val restTransitionPlan by viewModel.restTransitionPlan.collectAsState()
 
-    val connectionError by viewModel.connectionError.collectAsState()
     val userPreferences by viewModel.userPreferences.collectAsState()
     val routineFlowState by viewModel.routineFlowState.collectAsState()
 
@@ -713,14 +711,6 @@ fun ActiveWorkoutScreen(
                 },
             )
         }
-    }
-
-    // Connection error dialog
-    connectionError?.let { error ->
-        ConnectionErrorDialog(
-            message = error,
-            onDismiss = { viewModel.clearConnectionError() },
-        )
     }
 
     // PR Celebration Dialog - shows first if both PR and badges earned

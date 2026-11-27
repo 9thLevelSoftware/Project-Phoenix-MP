@@ -4,38 +4,41 @@ import com.devil.phoenixproject.data.repository.ConnectionLogRepository
 import com.devil.phoenixproject.data.repository.ReconnectionRequest
 import com.devil.phoenixproject.data.repository.ScannedDevice
 import com.devil.phoenixproject.domain.model.ConnectionState
+import com.juul.kable.Advertisement
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 
 /**
  * Tests for KableBleConnectionManager callback routing and state management.
- *
- * Testing approach: Since Kable's Peripheral can't be mocked in KMP common tests,
- * we test what CAN be verified in isolation:
- * - disconnect() state cleanup and callback firing
- * - parseDiagnosticData() safety (no crashes on valid/invalid data)
- * - Initial state (currentPeripheral is null)
- *
- * Connection, scanning, and auto-reconnect tests require real BLE hardware
- * and will be verified via manual BLE testing (FACADE-03).
  */
 class KableBleConnectionManagerTest {
 
     /**
      * Create a test manager with tracking callbacks.
-     * Returns the manager and a tracker object for asserting callback invocations.
+     * Returns the manager, tracker, and scope for asserting callback invocations.
      */
-    private fun createTestManager(): Pair<KableBleConnectionManager, CallbackTracker> {
+    private fun createTestManager(
+        dispatcher: CoroutineDispatcher = Dispatchers.Default,
+        advertisements: () -> Flow<Advertisement> = { emptyFlow() },
+    ): Triple<KableBleConnectionManager, CallbackTracker, CoroutineScope> {
         val tracker = CallbackTracker()
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val scope = CoroutineScope(SupervisorJob() + dispatcher)
         val manager = KableBleConnectionManager(
             scope = scope,
             logRepo = ConnectionLogRepository.instance,
@@ -49,15 +52,16 @@ class KableBleConnectionManagerTest {
                 onHeuristicData = {},
                 onConnectionLost = {},
             ),
-            discoMode = DiscoMode(scope = scope, sendCommand = {}),
+            discoMode = DiscoMode(scope = scope, sendCommand = { Result.success(Unit) }),
             handleDetector = HandleStateDetector(),
             onConnectionStateChanged = { state -> tracker.connectionStates.add(state) },
             onScannedDevicesChanged = { devices -> tracker.scannedDevicesUpdates.add(devices) },
             onReconnectionRequested = { request -> tracker.reconnectionRequests.add(request) },
             onRepEventFromCharacteristic = { data -> tracker.repEventsFromChar.add(data) },
             onDiagnosticData = { packet -> tracker.diagnostics.add(packet) },
+            advertisements = advertisements,
         )
-        return manager to tracker
+        return Triple(manager, tracker, scope)
     }
 
     /** Tracks callback invocations for assertions. */
@@ -221,24 +225,42 @@ class KableBleConnectionManagerTest {
         assertEquals(800L, manager.repsBackoffMs(10)) // still capped, no overflow
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     @Test
-    fun `shutdown cancels lifecycle jobs and clears scan state`() = runTest {
-        val (manager, tracker) = createTestManager()
+    fun `shutdown cancels active scan collector and clears scan state`() = runTest {
+        var activeCollectors = 0
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val (manager, tracker, scope) = createTestManager(
+            dispatcher = dispatcher,
+            advertisements = {
+                flow {
+                    activeCollectors++
+                    try {
+                        emit(CompositionAdvertisement(name = "Vee_Test"))
+                        awaitCancellation()
+                    } finally {
+                        activeCollectors--
+                    }
+                }
+            },
+        )
+        try {
+            manager.startScanning()
+            runCurrent()
 
-        manager.startFakeLifecycleJobsForTest()
-        delay(50)
+            assertEquals(1, activeCollectors)
+            assertEquals(ConnectionState.Scanning, tracker.connectionStates.last())
+            assertTrue(tracker.scannedDevicesUpdates.last().isNotEmpty())
 
-        assertTrue(manager.isLifecycleJobActiveForTest(KableBleConnectionManager.LifecycleJob.SCAN))
-        assertTrue(manager.isLifecycleJobActiveForTest(KableBleConnectionManager.LifecycleJob.STATE_OBSERVER))
-        assertTrue(tracker.scannedDevicesUpdates.last().isNotEmpty())
+            manager.shutdown()
+            runCurrent()
 
-        manager.shutdown()
-        delay(50)
-
-        assertFalse(manager.isLifecycleJobActiveForTest(KableBleConnectionManager.LifecycleJob.SCAN))
-        assertFalse(manager.isLifecycleJobActiveForTest(KableBleConnectionManager.LifecycleJob.STATE_OBSERVER))
-        assertEquals(emptyList(), tracker.scannedDevicesUpdates.last())
-        assertEquals(ConnectionState.Disconnected, tracker.connectionStates.last())
+            assertEquals(0, activeCollectors)
+            assertEquals(emptyList(), tracker.scannedDevicesUpdates.last())
+            assertEquals(ConnectionState.Disconnected, tracker.connectionStates.last())
+        } finally {
+            scope.cancel()
+        }
     }
 
     // =========================================================================

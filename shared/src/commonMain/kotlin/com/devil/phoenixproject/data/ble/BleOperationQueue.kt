@@ -3,6 +3,7 @@ package com.devil.phoenixproject.data.ble
 import com.devil.phoenixproject.util.rethrowIfCancellation
 import com.juul.kable.Characteristic
 import com.juul.kable.Peripheral
+import com.juul.kable.State
 import com.juul.kable.WriteType
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
@@ -69,7 +70,7 @@ class BleOperationQueue {
                     e.message?.contains("WriteRequestBusy", ignoreCase = true) == true ||
                     e.message?.contains("Write failed: Unknown", ignoreCase = true) == true
 
-                if (isBusyError && attempt < maxRetries - 1) {
+                if (isBusyError && peripheral.state.value is State.Connected && attempt < maxRetries - 1) {
                     // Exponential backoff: 50ms, 100ms, 200ms
                     val delayMs = 50L shl attempt
                     delay(delayMs)

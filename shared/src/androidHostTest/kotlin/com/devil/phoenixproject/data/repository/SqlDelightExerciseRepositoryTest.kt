@@ -7,6 +7,8 @@ import com.devil.phoenixproject.data.local.FreeExerciseJson
 import com.devil.phoenixproject.data.local.SupplementalCatalogSeed
 import com.devil.phoenixproject.data.sync.CustomExerciseSyncDto
 import com.devil.phoenixproject.database.PhoenixDatabase
+import com.devil.phoenixproject.domain.model.Exercise
+import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.ExerciseCableIntent
 import com.devil.phoenixproject.domain.model.liveUnifiedAccessoryDisplayMultiplier
 import com.devil.phoenixproject.presentation.components.exercisepicker.ExercisePickerFilterState
@@ -1611,5 +1613,116 @@ class SqlDelightExerciseRepositoryTest {
             mvtOverrideMs = null,
             isBodyweight = null,
         )
+    }
+
+    @Test
+    fun `customExerciseTombstones_hiddenFromPickers_andPreservedForHistoryAndSync`() = runTest {
+        val created = repository.createCustomExercise(
+            Exercise(
+                name = "Garage Belt Squat",
+                muscleGroup = "Legs",
+                muscleGroups = "Legs",
+                equipment = "BELT",
+                isCustom = true,
+            ),
+        ).getOrThrow()
+        val customId = assertNotNull(created.id)
+        val queries = database.phoenixDatabaseQueries
+
+        // Attach child rows (ExerciseImage, ProfileExerciseBaseline, ProgressionEvent)
+        queries.insertUserProfileIgnore("default", "Default", 0L, 1_000L, 1L)
+        queries.insertImage(customId, "/media/custom.jpg", 0L)
+        queries.insertProfileExerciseBaselineIfAbsent(
+            profileId = "default",
+            exerciseId = customId,
+            oneRepMaxPerCableKg = 60.0,
+            updatedAt = 1_000L,
+            revision = 1L,
+        )
+        queries.insertProgressionEventIgnore(
+            id = "prog-1",
+            exercise_id = customId,
+            suggested_weight_kg = 55.0,
+            previous_weight_kg = 50.0,
+            reason = "AUTO",
+            user_response = "PENDING",
+            actual_weight_kg = null,
+            timestamp = 1_000L,
+            profile_id = "default",
+        )
+
+        SqlDelightWorkoutRepository(database, repository).saveSession(
+            WorkoutSession(id = "garage-workout", exerciseId = customId),
+        )
+        assertEquals(customId, queries.selectExerciseLastPerformed("default").executeAsOne().exerciseId)
+
+        // Delete custom exercise -> must soft-delete instead of hard-deleting
+        assertTrue(repository.deleteCustomExercise(customId).isSuccess)
+
+        val rawRow = queries.selectExerciseById(customId).executeAsOneOrNull()
+        assertNotNull(rawRow, "Historical Exercise row must remain in DB")
+        assertNotNull(rawRow.deletedAt, "deletedAt tombstone must be stamped")
+        assertEquals(1L, rawRow.archived)
+        assertTrue(queries.selectExerciseLastPerformed("default").executeAsList().isEmpty())
+        assertNotNull(rawRow.updatedAt, "updatedAt must be stamped")
+
+        // Child rows must NOT be cascade-deleted
+        assertEquals(listOf("/media/custom.jpg"), repository.getImages(customId).map { it.url })
+        assertNotNull(queries.selectProfileExerciseBaseline("default", customId).executeAsOneOrNull())
+        assertNotNull(queries.selectProgressionEventById("prog-1").executeAsOneOrNull())
+
+        // Historical lookup by ID still works
+        assertNotNull(repository.getExerciseById(customId))
+
+        // Hidden from all picker & active-name lookups
+        repository.getAllExercises().test {
+            assertFalse(awaitItem().any { it.id == customId })
+            cancelAndIgnoreRemainingEvents()
+        }
+        repository.searchExercises("Garage").test {
+            assertTrue(awaitItem().none { it.id == customId })
+            cancelAndIgnoreRemainingEvents()
+        }
+        repository.getCustomExercises().test {
+            assertTrue(awaitItem().none { it.id == customId })
+            cancelAndIgnoreRemainingEvents()
+        }
+        assertNull(queries.findExerciseByNameActive("Garage Belt Squat").executeAsOneOrNull())
+        assertNull(queries.findExerciseByNameAndMuscleActive("Garage Belt Squat", "Legs").executeAsOneOrNull())
+
+        // Sync export includes the tombstone and backup sync query still sees it
+        val syncRepo = SqlDelightSyncRepository(
+            database,
+            com.devil.phoenixproject.testutil.FakeUserProfileRepository(),
+        )
+        val pushed = syncRepo.getCustomExercisesModifiedSince(0L)
+        val pushedDto = pushed.single { it.clientId == customId }
+        assertTrue(pushedDto.archived)
+        assertNotNull(pushedDto.deletedAt)
+        assertEquals(listOf(customId), queries.selectAllCustomExercisesSync().executeAsList().map { it.id })
+
+        // Pull tombstone from server onto a fresh DB hides it from pickers too
+        syncRepo.mergeCustomExercises(
+            listOf(
+                CustomExerciseSyncDto(
+                    clientId = "custom_remote_deleted",
+                    serverId = "custom_remote_deleted",
+                    name = "Remote Deleted",
+                    displayName = "Remote Deleted",
+                    muscleGroup = "Back",
+                    equipment = "HANDLES",
+                    defaultCableConfig = "DOUBLE",
+                    archived = true,
+                    deletedAt = 5_000L,
+                    createdAt = 1_000L,
+                    updatedAt = 5_000L,
+                ),
+            ),
+        )
+        repository.getCustomExercises().test {
+            assertTrue(awaitItem().none { it.id == "custom_remote_deleted" })
+            cancelAndIgnoreRemainingEvents()
+        }
+        assertNotNull(repository.getExerciseById("custom_remote_deleted"))
     }
 }

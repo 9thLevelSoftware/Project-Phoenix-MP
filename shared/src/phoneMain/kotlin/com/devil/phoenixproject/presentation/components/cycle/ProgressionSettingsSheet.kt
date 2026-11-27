@@ -46,7 +46,7 @@ fun ProgressionSettingsSheet(
                 .padding(bottom = 24.dp),
         ) {
             PhoenixSheetHeader(
-                title = "Progression Settings",
+                title = stringResource(Res.string.cd_progression_settings),
                 onClose = onDismiss,
             )
 
@@ -54,7 +54,7 @@ fun ProgressionSettingsSheet(
 
             // Frequency selector
             Text(
-                text = "Apply progression every:",
+                text = stringResource(Res.string.progression_apply_every),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -72,7 +72,7 @@ fun ProgressionSettingsSheet(
                     Text(stringResource(Res.string.nav_previous), style = MaterialTheme.typography.titleLarge)
                 }
                 Text(
-                    text = "$frequency cycle completions",
+                    text = stringResource(Res.string.progression_frequency_completions, frequency),
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.Medium,
                     modifier = Modifier.padding(horizontal = 16.dp),
@@ -98,7 +98,7 @@ fun ProgressionSettingsSheet(
                     onCheckedChange = { weightEnabled = it },
                 )
                 Text(
-                    text = "Increase weight by",
+                    text = stringResource(Res.string.progression_increase_weight_by),
                     style = MaterialTheme.typography.bodyLarge,
                     modifier = Modifier.weight(1f),
                 )
@@ -138,11 +138,11 @@ fun ProgressionSettingsSheet(
                 )
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Increase Echo level by 1",
+                        text = stringResource(Res.string.progression_increase_echo_by_1),
                         style = MaterialTheme.typography.bodyLarge,
                     )
                     Text(
-                        text = "Applies to Echo-mode exercises",
+                        text = stringResource(Res.string.progression_applies_to_echo),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -194,12 +194,16 @@ fun ProgressionSettingsSheet(
             // Progress indicator
             val cyclesUntilNext = frequency - (currentRotation % frequency)
             Text(
-                text = "Current rotation: $currentRotation",
+                text = stringResource(Res.string.progression_current_rotation, currentRotation),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
-                text = "Next progression applies after $cyclesUntilNext more cycle${if (cyclesUntilNext != 1) "s" else ""}",
+                text = if (cyclesUntilNext == 1) {
+                    stringResource(Res.string.progression_next_after_one)
+                } else {
+                    stringResource(Res.string.progression_next_after_other, cyclesUntilNext)
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

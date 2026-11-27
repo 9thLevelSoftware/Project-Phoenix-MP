@@ -840,7 +840,7 @@ class AccountSwitchSyncTest {
         val q = database.phoenixDatabaseQueries
         insertSession("a-session", groupId = null, timestamp = baseTime, profileId = profileId)
         q.insertEarnedBadge("first_workout", baseTime, profileId)
-        q.upsertGamificationStats(1L, 40L, 400L, 3200L, 9L, 4L, 5L, 2L, baseTime, baseTime, baseTime, profileId)
+        q.upsertGamificationStats(40L, 400L, 3200L, 9L, 4L, 5L, 2L, baseTime, baseTime, baseTime, profileId)
         assertTrue(manager.sync().isSuccess)
         assertTrue(api.pushPayloads.any { it.gamificationStats != null }, "A's own sync carries A's totals")
 

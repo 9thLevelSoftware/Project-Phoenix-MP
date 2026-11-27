@@ -517,6 +517,7 @@ class WorkoutCoordinator(
     // 0+ = index into RoutineExercise.warmupSets list.
     internal val _currentWarmupSetIndex = MutableStateFlow(-1)
     val currentWarmupSetIndex: StateFlow<Int> = _currentWarmupSetIndex.asStateFlow()
+    internal var preWarmupWorkingParameters: WorkoutParameters? = null
 
     // ===== Session Tracking =====
 

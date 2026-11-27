@@ -37,6 +37,8 @@ import com.devil.phoenixproject.domain.model.generateUUID
 import kotlin.time.Instant
 
 private const val MAX_SYNC_PAGES_PER_ENTITY = 50
+internal const val EXTERNAL_NON_ACTIVITY_INTEGRATIONS_ENABLED = false
+internal const val EXTERNAL_PLAYGROUND_ENABLED = false
 
 /**
  * Multi-entity coordinator for third-party integrations.
@@ -53,6 +55,7 @@ class IntegrationManager(
     private val measurementRepository: ExternalMeasurementRepository,
     private val templateRepository: ExternalExerciseTemplateRepository,
     private val cursorRepository: IntegrationSyncCursorRepository,
+    private val playgroundEnabled: Boolean = EXTERNAL_PLAYGROUND_ENABLED,
 ) {
     suspend fun connectProvider(
         provider: IntegrationProvider,
@@ -91,13 +94,20 @@ class IntegrationManager(
     suspend fun disconnectProvider(provider: IntegrationProvider, profileId: String): Result<Unit> {
         Logger.d("IntegrationManager") { "Disconnecting provider ${provider.key}" }
 
-        val portalResult = apiClient.callIntegrationSync(
+        val response = apiClient.callIntegrationSync(
             IntegrationSyncRequest(provider = provider.key, action = "disconnect"),
-        )
-        portalResult.onFailure { error ->
+        ).getOrElse { error ->
             Logger.w("IntegrationManager") {
-                "Portal disconnect call failed for ${provider.key} (non-fatal): ${error.message}"
+                "Portal disconnect call failed for ${provider.key}: ${error.message}"
             }
+            return Result.failure(error)
+        }
+        if (response.status == "error") {
+            val message = response.error ?: "Failed to disconnect ${provider.key}"
+            Logger.w("IntegrationManager") {
+                "Portal disconnect rejected for ${provider.key}: $message"
+            }
+            return Result.failure(Exception(message))
         }
 
         activityRepository.deleteActivities(provider, profileId)
@@ -122,23 +132,28 @@ class IntegrationManager(
         scriptText: String,
         commands: List<String>,
         profileId: String,
-    ): Result<ExternalPlaygroundPreview> = apiClient.callIntegrationPlaygroundSimulation(
-        IntegrationPlaygroundSimulationRequest(
-            provider = provider.key,
-            externalProgramId = externalProgramId,
-            scriptText = scriptText,
-            commands = commands,
-            profileId = profileId,
-        ),
-    ).mapCatching { response ->
-        if (response.status == "error") {
-            throw IllegalStateException(response.error ?: "Playground simulation failed")
+    ): Result<ExternalPlaygroundPreview> {
+        if (!playgroundEnabled) {
+            return Result.failure(UnsupportedOperationException("Program playground is not available"))
         }
-        val preview = response.preview ?: IntegrationPlaygroundPreviewDto(
-            programExternalId = externalProgramId,
-            updatedProgramText = response.updatedProgramText,
-        )
-        preview.toDomain()
+        return apiClient.callIntegrationPlaygroundSimulation(
+            IntegrationPlaygroundSimulationRequest(
+                provider = provider.key,
+                externalProgramId = externalProgramId,
+                scriptText = scriptText,
+                commands = commands,
+                profileId = profileId,
+            ),
+        ).mapCatching { response ->
+            if (response.status == "error") {
+                throw IllegalStateException(response.error ?: "Playground simulation failed")
+            }
+            val preview = response.preview ?: IntegrationPlaygroundPreviewDto(
+                programExternalId = externalProgramId,
+                updatedProgramText = response.updatedProgramText,
+            )
+            preview.toDomain()
+        }
     }
 
     suspend fun commitProgramText(programId: String, updatedProgramText: String, markNeedsSync: Boolean = true) {
@@ -157,13 +172,14 @@ class IntegrationManager(
         var cursor = startCursor
         var aggregate = IntegrationSyncResult(provider = provider)
         var latestProviderSyncCursor: String? = null
+        var lastContinuationWarning: IntegrationSyncWarning? = null
 
         while (page < MAX_SYNC_PAGES_PER_ENTITY) {
             val request = IntegrationSyncRequest(
                 provider = provider.key,
-                action = action,
+                action = if (page == 0) action else "sync",
                 apiKey = if (page == 0) apiKey else null,
-                entityTypes = ALL_ENTITY_TYPES,
+                entityTypes = SYNC_ENTITY_TYPES,
                 cursor = cursor,
                 includeRawData = true,
             )
@@ -216,19 +232,25 @@ class IntegrationManager(
             aggregate = aggregate.merge(pageResult)
             response.providerSyncCursor?.let { latestProviderSyncCursor = it }
 
-            if (!response.hasMore || response.nextCursor == null) break
+            val canContinue = (response.hasMore && response.nextCursor != null) || response.continuing
+            if (!canContinue) {
+                lastContinuationWarning = null
+                break
+            }
+            lastContinuationWarning = if (response.truncated) buildTruncationWarning(response) else null
             cursor = response.nextCursor
             page++
         }
 
         if (page >= MAX_SYNC_PAGES_PER_ENTITY) {
+            val capWarning = IntegrationSyncWarning(
+                entityType = "sync",
+                code = "page_cap_reached",
+                message = "Stopped after $MAX_SYNC_PAGES_PER_ENTITY pages to avoid an infinite sync loop.",
+            )
             aggregate = aggregate.copy(
                 partial = true,
-                warnings = aggregate.warnings + IntegrationSyncWarning(
-                    entityType = "sync",
-                    code = "page_cap_reached",
-                    message = "Stopped after $MAX_SYNC_PAGES_PER_ENTITY pages to avoid an infinite sync loop.",
-                ),
+                warnings = aggregate.warnings + listOfNotNull(lastContinuationWarning, capWarning),
             )
         }
 
@@ -311,7 +333,12 @@ class IntegrationManager(
         }
         if (stats.isNotEmpty()) programRepository.upsertStats(stats)
 
-        val warnings = response.errors.map { it.toWarning() }
+        val truncationWarning = if (response.truncated && !response.continuing) {
+            buildTruncationWarning(response)
+        } else {
+            null
+        }
+        val warnings = response.errors.map { it.toWarning() } + listOfNotNull(truncationWarning)
         val entitlementState = response.toEntitlementState(provider)
 
         return IntegrationSyncResult(
@@ -326,7 +353,7 @@ class IntegrationManager(
                 programStatsImported = stats.size,
             ),
             entitlementState = entitlementState,
-            partial = response.partial || response.errors.isNotEmpty(),
+            partial = response.partial || (response.truncated && !response.continuing) || response.errors.isNotEmpty(),
             warnings = warnings,
             nextCursor = response.nextCursor,
             hasMore = response.hasMore,
@@ -539,6 +566,23 @@ class IntegrationManager(
         null
     }
 
+    private fun buildTruncationWarning(response: IntegrationSyncResponse): IntegrationSyncWarning {
+        val resumeAt = response.resumeAt?.takeIf { it.isNotBlank() }
+        val serverMessage = response.message?.takeIf { it.isNotBlank() }
+        val message = when {
+            serverMessage != null && resumeAt != null && !serverMessage.contains(resumeAt) ->
+                "$serverMessage (resume at $resumeAt)"
+            serverMessage != null -> serverMessage
+            resumeAt != null -> "Sync truncated; resume at $resumeAt"
+            else -> "Sync response was truncated"
+        }
+        return IntegrationSyncWarning(
+            entityType = "activities",
+            code = if (resumeAt != null) "rate_limited" else "truncated",
+            message = message,
+        )
+    }
+
     private companion object {
         val ALL_ENTITY_TYPES = listOf(
             "activities",
@@ -549,5 +593,10 @@ class IntegrationManager(
             "programs",
             "programStats",
         )
+        val SYNC_ENTITY_TYPES = if (EXTERNAL_NON_ACTIVITY_INTEGRATIONS_ENABLED) {
+            ALL_ENTITY_TYPES
+        } else {
+            listOf("activities")
+        }
     }
 }

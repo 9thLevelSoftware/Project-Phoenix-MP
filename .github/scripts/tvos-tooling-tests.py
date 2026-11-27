@@ -687,6 +687,29 @@ class ToolingTests(unittest.TestCase):
             release.local(args)
 
     @unittest.skipUnless(Path("/usr/bin/plutil").is_file(), "Apple plutil is required to parse the PBX project")
+    def test_tv_app_and_ui_tests_default_to_phone_signing_team(self):
+        def objects(path):
+            return json.loads(subprocess.check_output([
+                "/usr/bin/plutil", "-convert", "json", "-o", "-", str(ROOT / path)]))["objects"]
+
+        phone = objects("iosApp/PhoenixApp/PhoenixApp.xcodeproj/project.pbxproj")
+        teams = {obj["buildSettings"]["DEVELOPMENT_TEAM"] for obj in phone.values()
+                 if obj.get("isa") == "XCBuildConfiguration"
+                 and obj.get("buildSettings", {}).get("DEVELOPMENT_TEAM")}
+        self.assertEqual(len(teams), 1)
+        team = teams.pop()
+        tv = objects(release.TV_PROJECT)
+        targets = [obj for obj in tv.values() if obj.get("isa") == "PBXNativeTarget"]
+        self.assertEqual({obj["name"] for obj in targets}, {"PhoenixTV", "PhoenixTVUITests"})
+        for target in targets:
+            configs = tv[target["buildConfigurationList"]]["buildConfigurations"]
+            for ref in configs:
+                config = tv[ref]
+                with self.subTest(target=target["name"], configuration=config["name"]):
+                    self.assertEqual(config["buildSettings"].get("DEVELOPMENT_TEAM"), team)
+                    self.assertEqual(config["buildSettings"].get("CODE_SIGN_STYLE"), "Automatic")
+
+    @unittest.skipUnless(Path("/usr/bin/plutil").is_file(), "Apple plutil is required to parse the PBX project")
     def test_tv_privacy_source_is_registered_in_application_resources(self):
         source = ROOT / "tvosApp/PhoenixTV/PrivacyInfo.xcprivacy"
         self.assertTrue(source.is_file(), "TV privacy source is missing")
@@ -791,7 +814,10 @@ class ToolingTests(unittest.TestCase):
             destination.write_bytes((ROOT / relative).read_bytes())
         release.source_guard(self.root)
         factory = self.root / paths[3]
-        factory.write_text(factory.read_text().replace("= KableBleRepository()", "= PhantomBleRepository()"))
+        original = factory.read_text()
+        mutated = original.replace("KableBleRepository(scannerCoordinator)", "PhantomBleRepository()")
+        self.assertNotEqual(mutated, original)
+        factory.write_text(mutated)
         with self.assertRaises(ValueError):
             release.source_guard(self.root)
 

@@ -27,6 +27,7 @@ import projectphoenix.shared.generated.resources.mode_echo
 import projectphoenix.shared.generated.resources.mode_eccentric_only
 import projectphoenix.shared.generated.resources.mode_old_school
 import projectphoenix.shared.generated.resources.mode_pump
+import projectphoenix.shared.generated.resources.mode_selector_header
 import projectphoenix.shared.generated.resources.mode_tut
 
 /**
@@ -56,7 +57,7 @@ fun ModeSelector(selectedMode: ProgramMode, onModeSelected: (ProgramMode) -> Uni
 
     Column(modifier = modifier) {
         Text(
-            text = "WORKOUT MODE",
+            text = stringResource(Res.string.mode_selector_header),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             letterSpacing = 1.sp,

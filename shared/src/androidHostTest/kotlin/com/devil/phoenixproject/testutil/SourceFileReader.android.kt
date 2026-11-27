@@ -46,3 +46,14 @@ actual fun readProjectFile(relativePath: String): String? {
     }
     return null
 }
+
+internal fun findProjectRoot(): File {
+    var current: File? = File(System.getProperty("user.dir") ?: ".").absoluteFile
+    while (current != null) {
+        if (File(current, "settings.gradle.kts").isFile || File(current, ".git").exists()) {
+            return current
+        }
+        current = current.parentFile
+    }
+    error("Could not locate project root from ${System.getProperty("user.dir")}")
+}

@@ -46,6 +46,11 @@ internal fun installTvosIsolatedFixture(): Boolean {
             if (arguments.contains("--phoenix-tv-connect-failure")) {
                 Result.failure(IllegalStateException("SIMULATOR FIXTURE: connection refused"))
             } else backend.connect(device)
+
+        override suspend fun stopWorkout(): Result<Unit> =
+            if (arguments.contains("--phoenix-tv-stop-failure")) {
+                Result.failure(IllegalStateException("SIMULATOR FIXTURE: safe stop refused"))
+            } else backend.stopWorkout()
     }
     val suite = "com.devil.phoenixproject.tv.fixture.${NSUUID().UUIDString}"
     val settings = NSUserDefaultsSettings(NSUserDefaults(suiteName = suite))

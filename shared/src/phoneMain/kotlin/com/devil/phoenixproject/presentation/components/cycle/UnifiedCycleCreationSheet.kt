@@ -49,8 +49,8 @@ fun UnifiedCycleCreationSheet(
                 .padding(bottom = 24.dp),
         ) {
             PhoenixSheetHeader(
-                title = "Create Training Cycle",
-                subtitle = "Start with a template or build your own",
+                title = stringResource(Res.string.cycle_create_sheet_title),
+                subtitle = stringResource(Res.string.cycle_create_sheet_subtitle),
                 onClose = onDismiss,
             )
 
@@ -58,7 +58,7 @@ fun UnifiedCycleCreationSheet(
 
             // TEMPLATES Section
             Text(
-                text = "TEMPLATES",
+                text = stringResource(Res.string.cycle_create_templates_header),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontWeight = FontWeight.SemiBold,
@@ -84,7 +84,7 @@ fun UnifiedCycleCreationSheet(
 
             // Custom cycle button
             Text(
-                text = "Or start from scratch",
+                text = stringResource(Res.string.cycle_create_or_scratch),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.align(Alignment.CenterHorizontally),
@@ -105,7 +105,7 @@ fun UnifiedCycleCreationSheet(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "Create Custom Cycle",
+                    text = stringResource(Res.string.cycle_create_custom_button),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                 )
@@ -123,9 +123,10 @@ fun UnifiedCycleCreationSheet(
 private fun TemplateCard(template: CycleTemplate, onClick: () -> Unit) {
     val requiresOneRepMax = template.requiresOneRepMax
 
+    val restBadgeLabel = stringResource(Res.string.cycles_rest_badge)
     // Build day breakdown string (e.g., "Day 1: Push A, Day 2: Pull A, ...")
     val dayBreakdown = template.days.joinToString(" / ") { day ->
-        if (day.isRestDay) "Rest" else (day.routine?.name ?: day.name)
+        if (day.isRestDay) restBadgeLabel else (day.routine?.name ?: day.name)
     }
 
     ExpressiveCard(
@@ -159,7 +160,7 @@ private fun TemplateCard(template: CycleTemplate, onClick: () -> Unit) {
                             shape = RoundedCornerShape(4.dp),
                         ) {
                             Text(
-                                text = "1RM",
+                                text = stringResource(Res.string.config_meta_1rm),
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -171,7 +172,7 @@ private fun TemplateCard(template: CycleTemplate, onClick: () -> Unit) {
                         shape = RoundedCornerShape(4.dp),
                     ) {
                         Text(
-                            text = "${template.days.size} days",
+                            text = stringResource(Res.string.day_count_other, template.days.size),
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,

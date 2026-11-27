@@ -155,7 +155,8 @@ object BleConstants {
     // -------------------------------------------------------------------------
     // Heartbeat no-op command
     // -------------------------------------------------------------------------
-    val HEARTBEAT_NO_OP = byteArrayOf(0x00, 0x00, 0x00, 0x00)
+    private val HEARTBEAT_NO_OP_BYTES = byteArrayOf(0x00, 0x00, 0x00, 0x00)
+    val HEARTBEAT_NO_OP: ByteArray get() = HEARTBEAT_NO_OP_BYTES.copyOf()
 
     // -------------------------------------------------------------------------
     // Pre-built Kable characteristic references

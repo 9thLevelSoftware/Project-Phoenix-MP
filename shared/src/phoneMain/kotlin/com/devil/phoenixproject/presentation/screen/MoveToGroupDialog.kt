@@ -13,6 +13,9 @@ import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.RoutineGroup
 import com.devil.phoenixproject.presentation.components.ConfirmEditTextField
 import com.devil.phoenixproject.presentation.components.PhoenixModalDialogFrame
+import org.jetbrains.compose.resources.stringResource
+import projectphoenix.shared.generated.resources.*
+import projectphoenix.shared.generated.resources.Res
 
 /**
  * Dialog for moving routine(s) to a group.
@@ -39,7 +42,7 @@ fun MoveToGroupDialog(
                 onClick = onDismiss,
                 modifier = Modifier.heightIn(min = 48.dp),
             ) {
-                Text("Cancel")
+                Text(stringResource(Res.string.action_cancel))
             }
         },
     ) {
@@ -82,7 +85,7 @@ fun MoveToGroupDialog(
                         )
                         if (isCurrentGroup) {
                             Text(
-                                text = "Current",
+                                text = stringResource(Res.string.external_status_current),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.primary,
                             )
@@ -93,7 +96,7 @@ fun MoveToGroupDialog(
 
             Spacer(modifier = Modifier.height(4.dp))
 
-            // "New Group..." option
+            // stringResource(Res.string.group_move_new_group) option
             Surface(
                 onClick = onCreateNewGroup,
                 shape = MaterialTheme.shapes.small,
@@ -114,7 +117,7 @@ fun MoveToGroupDialog(
                         tint = MaterialTheme.colorScheme.primary,
                     )
                     Text(
-                        text = "New Group...",
+                        text = stringResource(Res.string.group_move_new_group),
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.primary,
@@ -122,7 +125,7 @@ fun MoveToGroupDialog(
                 }
             }
 
-            // "Remove from Group" option (only if currently in a group)
+            // stringResource(Res.string.group_move_remove_from_group) option (only if currently in a group)
             if (currentGroupId != null) {
                 Surface(
                     onClick = onRemoveFromGroup,
@@ -144,7 +147,7 @@ fun MoveToGroupDialog(
                             tint = MaterialTheme.colorScheme.error,
                         )
                         Text(
-                            text = "Remove from Group",
+                            text = stringResource(Res.string.group_move_remove_from_group),
                             style = MaterialTheme.typography.bodyLarge,
                             fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.error,
@@ -171,15 +174,15 @@ fun GroupNameDialog(
     PhoenixModalDialogFrame(
         title = title,
         onDismiss = onDismiss,
-        confirmLabel = "Save",
+        confirmLabel = stringResource(Res.string.action_save),
         onConfirm = { onConfirm(name.trim()) },
-        dismissLabel = "Cancel",
+        dismissLabel = stringResource(Res.string.action_cancel),
         confirmEnabled = name.isNotBlank(),
     ) {
         ConfirmEditTextField(
             value = name,
             onValueChange = { name = it },
-            label = { Text("Group name") },
+            label = { Text(stringResource(Res.string.group_name_label)) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )

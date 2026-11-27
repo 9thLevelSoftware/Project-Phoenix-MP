@@ -7,15 +7,25 @@ import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 
 class BleConnectionManagerRecoveryTest {
 
@@ -220,6 +230,168 @@ class BleConnectionManagerRecoveryTest {
         } finally {
             harness.cleanup()
         }
+    }
+
+    @Test
+    fun `cancelScanOrConnection cancels active ensureConnection and scanAndConnect`() = runTest {
+        val repository = RecoveryRecordingBleRepository()
+        val harness = BleManagerRecoveryHarness(this, repository)
+        val scanStarted = CompletableDeferred<Unit>()
+        var connectedCalls = 0
+        var failedCalls = 0
+        try {
+            repository.scanAndConnectBlock = {
+                repository.fake.simulateConnecting()
+                scanStarted.complete(Unit)
+                try {
+                    awaitCancellation()
+                } finally {
+                    repository.events += "old-job-cancelled"
+                }
+            }
+
+            harness.manager.ensureConnection(
+                onConnected = { connectedCalls++ },
+                onFailed = { failedCalls++ },
+            )
+            runCurrent()
+            scanStarted.await()
+
+            harness.manager.cancelScanOrConnection()
+            runCurrent()
+
+            assertTrue(repository.events.contains("old-job-cancelled"))
+            assertTrue(repository.events.contains("stop-scanning"))
+            assertEquals(0, connectedCalls)
+            assertEquals(0, failedCalls)
+            assertNull(harness.manager.connectionError.value)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `cancelScanOrConnection followed immediately by ensureConnection completes teardown first and connects`() = runTest {
+        val repository = RecoveryRecordingBleRepository()
+        val harness = BleManagerRecoveryHarness(this, repository)
+        val firstAttemptStarted = CompletableDeferred<Unit>()
+        val unwindGate = CompletableDeferred<Unit>()
+        var secondConnected = 0
+        var secondFailed = 0
+        try {
+            repository.scanAndConnectBlock = { attempt ->
+                if (attempt == 1) {
+                    repository.fake.simulateConnecting()
+                    firstAttemptStarted.complete(Unit)
+                    try {
+                        awaitCancellation()
+                    } finally {
+                        withContext(NonCancellable) {
+                            unwindGate.await()
+                            repository.events += "old-job-unwound"
+                        }
+                    }
+                } else {
+                    repository.fake.simulateConnect("Vee_Test")
+                    Result.success(Unit)
+                }
+            }
+
+            harness.manager.ensureConnection(onConnected = {}, onFailed = {})
+            runCurrent()
+            firstAttemptStarted.await()
+
+            harness.manager.cancelScanOrConnection()
+            harness.manager.ensureConnection(
+                onConnected = { secondConnected++ },
+                onFailed = { secondFailed++ },
+            )
+            runCurrent()
+
+            // Second scanAndConnect must wait until the first attempt finishes unwinding and cancel teardown runs.
+            assertEquals(1, repository.scanAndConnectCallCount)
+
+            unwindGate.complete(Unit)
+            runCurrent()
+            advanceTimeBy(500L)
+            runCurrent()
+
+            assertEquals(2, repository.scanAndConnectCallCount)
+            assertEquals(1, secondConnected)
+            assertEquals(0, secondFailed)
+            val secondScanIdx = repository.events.indexOf("scan-and-connect-2")
+            assertTrue(repository.events.indexOf("old-job-unwound") in 0 until secondScanIdx)
+            assertTrue(repository.events.indexOf("stop-scanning") in 0 until secondScanIdx)
+            assertTrue(repository.events.indexOf("cancel-connection") in 0 until secondScanIdx)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `init collectors propagate CancellationException instead of swallowing it`() = runTest {
+        val managerJob = Job(coroutineContext[Job])
+        val managerScope = CoroutineScope(StandardTestDispatcher(testScheduler) + managerJob)
+        val fake = FakeBleRepository()
+        val gate = CompletableDeferred<Unit>()
+        val cancellingErrors = object : kotlinx.coroutines.flow.SharedFlow<String> by MutableSharedFlow() {
+            override suspend fun collect(collector: kotlinx.coroutines.flow.FlowCollector<String>): Nothing {
+                gate.await()
+                throw CancellationException("bleErrorEvents cancelled")
+            }
+        }
+        val cancellingRepo = object : BleRepository by fake {
+            override val connectionState: StateFlow<com.devil.phoenixproject.domain.model.ConnectionState> =
+                flow<com.devil.phoenixproject.domain.model.ConnectionState> {
+                    emit(com.devil.phoenixproject.domain.model.ConnectionState.Disconnected)
+                    gate.await()
+                    throw CancellationException("connectionState cancelled")
+                }.let { upstream ->
+                    object : StateFlow<com.devil.phoenixproject.domain.model.ConnectionState> by MutableStateFlow(
+                        com.devil.phoenixproject.domain.model.ConnectionState.Disconnected,
+                    ) {
+                        override suspend fun collect(
+                            collector: kotlinx.coroutines.flow.FlowCollector<com.devil.phoenixproject.domain.model.ConnectionState>,
+                        ): Nothing {
+                            upstream.collect(collector)
+                            awaitCancellation()
+                        }
+                    }
+                }
+            override val reconnectionRequested: Flow<com.devil.phoenixproject.data.repository.ReconnectionRequest> =
+                flow {
+                    gate.await()
+                    throw CancellationException("reconnectionRequested cancelled")
+                }
+        }
+        val preferences = FakePreferencesManager()
+        val profiles = FakeUserProfileRepository().apply { setActiveProfileForTest() }
+        val settings = SettingsManager(preferences, profiles, managerScope)
+
+        BleConnectionManager(
+            bleRepository = cancellingRepo,
+            settingsManager = settings,
+            workoutStateProvider = InactiveWorkoutStateProvider,
+            bleErrorEvents = cancellingErrors,
+            scope = managerScope,
+        )
+        runCurrent()
+
+        val children = managerJob.children.toList()
+        val completionCauses = mutableListOf<Throwable?>()
+        children.forEach { child ->
+            child.invokeOnCompletion { cause -> completionCauses += cause }
+        }
+
+        gate.complete(Unit)
+        runCurrent()
+
+        assertTrue(
+            completionCauses.count { it is CancellationException } >= 3,
+            "Expected all 3 guarded init collectors to propagate CancellationException, got $completionCauses",
+        )
+        managerScope.cancel()
     }
 
     private class BleManagerRecoveryHarness(

@@ -1,5 +1,9 @@
 package com.devil.phoenixproject.domain.model
 
+import com.devil.phoenixproject.util.METRIC_UNIT_VERSION_MM
+
+const val PAIRED_CABLE_POWER_METHOD = "PAIRED_CABLE_WORK_V1"
+
 /**
  * Complete metric data for a single rep.
  * Captured in real-time during workout, persisted at set completion.
@@ -44,6 +48,8 @@ data class RepMetricData(
     val rangeOfMotionMm: Float, // max position - min position
     val peakPowerWatts: Float, // max(force * velocity)
     val avgPowerWatts: Float, // mean(force * velocity) over concentric
+    val metricUnitVersion: Int = METRIC_UNIT_VERSION_MM,
+    val powerMethod: String? = null,
 ) {
     // Custom equals/hashCode needed because data classes don't deep-compare arrays
     override fun equals(other: Any?): Boolean {
@@ -78,7 +84,9 @@ data class RepMetricData(
             avgVelocityEccentric == other.avgVelocityEccentric &&
             rangeOfMotionMm == other.rangeOfMotionMm &&
             peakPowerWatts == other.peakPowerWatts &&
-            avgPowerWatts == other.avgPowerWatts
+            avgPowerWatts == other.avgPowerWatts &&
+            metricUnitVersion == other.metricUnitVersion &&
+            powerMethod == other.powerMethod
     }
 
     /** Scalar summary of this rep — the fields the portal push's rep summaries read. */
@@ -95,6 +103,8 @@ data class RepMetricData(
         avgPowerWatts = avgPowerWatts,
         concentricDurationMs = concentricDurationMs,
         eccentricDurationMs = eccentricDurationMs,
+        metricUnitVersion = metricUnitVersion,
+        powerMethod = powerMethod,
     )
 
     override fun hashCode(): Int {
@@ -115,6 +125,8 @@ data class RepMetricData(
         result = 31 * result + eccentricTimestamps.contentHashCode()
         result = 31 * result + peakForceA.hashCode()
         result = 31 * result + peakForceB.hashCode()
+        result = 31 * result + metricUnitVersion
+        result = 31 * result + (powerMethod?.hashCode() ?: 0)
         return result
     }
 }
@@ -138,4 +150,6 @@ data class RepMetricSummary(
     val avgPowerWatts: Float,
     val concentricDurationMs: Long,
     val eccentricDurationMs: Long,
+    val metricUnitVersion: Int = METRIC_UNIT_VERSION_MM,
+    val powerMethod: String? = null,
 )

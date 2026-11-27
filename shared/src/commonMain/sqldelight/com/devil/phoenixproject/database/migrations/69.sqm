@@ -1,0 +1,6 @@
+CREATE INDEX IF NOT EXISTS idx_assessment_result_session ON AssessmentResult(assessmentSessionId);
+CREATE INDEX IF NOT EXISTS idx_completed_set_planned_set ON CompletedSet(planned_set_id);
+CREATE INDEX IF NOT EXISTS idx_cycle_day_routine ON CycleDay(routine_id);
+CREATE INDEX IF NOT EXISTS idx_routine_group ON Routine(groupId);
+CREATE INDEX IF NOT EXISTS idx_polar_ecg_segment_wall ON PolarEcgSegment(wallClockTimestampMs);
+CREATE INDEX IF NOT EXISTS idx_session_server_id ON WorkoutSession(serverId);

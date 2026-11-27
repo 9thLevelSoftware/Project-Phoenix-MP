@@ -474,13 +474,8 @@ interface SyncRepository {
     // === Exercise Lookup for Pull ===
 
     /**
-     * Find exercise ID by name and optionally muscle group for session enrichment during pull.
-     * Lookup strategy:
-     * 1. Exact match on name + muscle group (if muscle group provided)
-     * 2. Exact match on name only
-     * 3. Case-insensitive match on name
-     *
-     * @return Exercise ID if found, null otherwise
+     * Resolve the portal catalogue ID, preserving references to rows on later pull pages.
+     * When the portal omits the ID, match by exercise name and optional muscle group.
      */
     suspend fun findExerciseId(name: String, muscleGroup: String? = null, exerciseId: String? = null): String?
 
@@ -542,6 +537,7 @@ interface SyncRepository {
         pushWatermark: Long = 0L,
         /** PR 11: `entity type -> ids` pulled from [ownerUserId], recorded in the same transaction. */
         pulledProvenance: Map<String, Collection<String>> = emptyMap(),
+        customExercises: List<CustomExerciseSyncDto> = emptyList(),
     )
 
     /**

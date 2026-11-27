@@ -64,6 +64,7 @@ internal class CompositionGattFake(
 
     var connectGate: CompletableDeferred<Unit>? = null
     var cancelConnectGateOnDisconnect = true
+    var repsSubscriptionGate: CompletableDeferred<Unit>? = null
     var afterRepsSubscription: (() -> Unit)? = null
     // Optional pre-physical-disconnect barrier for exact call(s).
     var disconnectGateOnCalls: Set<Int> = emptySet()
@@ -71,6 +72,7 @@ internal class CompositionGattFake(
     // Optional first-call return barrier: physical teardown has already completed.
     var disconnectReturnGate: CompletableDeferred<Unit>? = null
     var readGate: CompletableDeferred<Unit>? = null
+    var monitorReadFailure: Exception? = null
     var writeFailure: Exception? = null
 
     /** Optional authoritative service-discovery override (SD2 enumeration tests). */
@@ -181,6 +183,7 @@ internal class CompositionGattFake(
         return operation {
             when (characteristic.characteristicUuid) {
                 BleConstants.MONITOR_UUID -> {
+                    monitorReadFailure?.let { throw it }
                     readGate?.await()
                     ByteArray(16)
                 }
@@ -212,6 +215,9 @@ internal class CompositionGattFake(
             emitAll(
                 notifications.getOrPut(characteristic.characteristicUuid) { MutableSharedFlow() }
                     .onSubscription {
+                        if (characteristic.characteristicUuid == BleConstants.REPS_UUID) {
+                            repsSubscriptionGate?.await()
+                        }
                         onSubscription()
                         if (characteristic.characteristicUuid == BleConstants.REPS_UUID) {
                             afterRepsSubscription?.invoke()

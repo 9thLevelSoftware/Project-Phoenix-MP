@@ -17,7 +17,7 @@ internal class TvosUnavailableDataBackupManager : DataBackupManager {
     override suspend fun importFromFile(filePath: String): Result<ImportResult> =
         Result.failure(UnsupportedOperationException("Phoenix backup files are unavailable on tvOS."))
 
-    override suspend fun shareBackup() = Unit
+    override suspend fun shareBackup() { unsupported() }
 
     override suspend fun exportSession(sessionId: String): Result<String> =
         Result.failure(UnsupportedOperationException("Phoenix backup files are unavailable on tvOS."))
@@ -27,5 +27,5 @@ internal class TvosUnavailableDataBackupManager : DataBackupManager {
 
     override suspend fun getBackupStats(): BackupStats = BackupStats(fileCount = 0, totalBytes = 0)
 
-    override fun openBackupFolder() = Unit
+    override fun openBackupFolder() { unsupported() }
 }

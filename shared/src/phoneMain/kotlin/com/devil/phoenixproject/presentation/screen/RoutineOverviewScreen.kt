@@ -78,6 +78,7 @@ import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.usecase.RoutineTimeEstimate
+import com.devil.phoenixproject.util.rethrowIfCancellation
 import com.devil.phoenixproject.domain.usecase.RoutineTimeEstimator
 import com.devil.phoenixproject.presentation.components.BackHandler
 import com.devil.phoenixproject.presentation.components.DestructiveConfirmDialog
@@ -102,15 +103,8 @@ import com.devil.phoenixproject.util.CommandLimits
 import com.devil.phoenixproject.util.Constants
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
+import projectphoenix.shared.generated.resources.*
 import projectphoenix.shared.generated.resources.Res
-import projectphoenix.shared.generated.resources.action_exit
-import projectphoenix.shared.generated.resources.action_stop
-import projectphoenix.shared.generated.resources.exit_routine_message
-import projectphoenix.shared.generated.resources.exit_routine_title
-import projectphoenix.shared.generated.resources.cd_completed
-import projectphoenix.shared.generated.resources.pager_page_of
-import projectphoenix.shared.generated.resources.start_exercise
-import projectphoenix.shared.generated.resources.target_reps
 
 /**
  * Routine Overview Screen - Entry point when starting a routine.
@@ -208,6 +202,7 @@ fun RoutineOverviewScreen(navController: NavController, viewModel: MainViewModel
         try {
             timeEstimate = timeEstimator.estimateRoutineDuration(routine, routine.profileId)
         } catch (e: Exception) {
+            e.rethrowIfCancellation()
             Logger.w(e) { "Failed to compute routine time estimate" }
         }
     }
@@ -246,7 +241,7 @@ fun RoutineOverviewScreen(navController: NavController, viewModel: MainViewModel
                 )
                 navController.navigate(NavigationRoutes.SetReady.route)
             },
-            onFailed = {}, // Toast/error handled by ensureConnection
+            onFailed = {},
         )
     }
 
@@ -290,10 +285,12 @@ fun RoutineOverviewScreen(navController: NavController, viewModel: MainViewModel
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Spacer(Modifier.width(4.dp))
+                        val estPrefix = stringResource(Res.string.routine_overview_est_prefix)
+                        val estSuffix = stringResource(Res.string.routine_overview_est_suffix)
                         val displayText = buildString {
-                            append("Est. ")
+                            append(estPrefix)
                             append(if (estimate.hasRange) estimate.formattedRange else estimate.formattedDuration)
-                            if (estimate.isEntirelyFallback) append(" (est.)")
+                            if (estimate.isEntirelyFallback) append(estSuffix)
                         }
                         Text(
                             text = displayText,
@@ -325,7 +322,8 @@ fun RoutineOverviewScreen(navController: NavController, viewModel: MainViewModel
                     exercise.exercise.id?.let { exerciseId ->
                         try {
                             images = exerciseRepository.getImages(exerciseId)
-                        } catch (_: Exception) {
+                        } catch (e: Exception) {
+                            e.rethrowIfCancellation()
                             // Image loading failed - will show placeholder
                         }
                     }
@@ -606,7 +604,7 @@ private fun ExerciseOverviewCard(
                 // Exercise header
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
-                        "Exercise ${exerciseIndex + 1}",
+                        stringResource(Res.string.exercise_numbered, exerciseIndex + 1),
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.primary,
                     )
@@ -654,7 +652,7 @@ private fun ExerciseOverviewCard(
                     // Show "Timed Exercise" or duration for bodyweight
                     val durationText = exercise.duration?.let { "${it}s" } ?: "Timed"
                     Text(
-                        "Bodyweight • $durationText",
+                        stringResource(Res.string.routine_overview_bodyweight_duration, durationText),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -684,7 +682,7 @@ private fun ExerciseOverviewCard(
                             )
 
                             Text(
-                                "${exercise.setReps.size} sets",
+                                stringResource(Res.string.routine_overview_sets_count, exercise.setReps.size),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier.align(Alignment.CenterHorizontally),
@@ -711,7 +709,7 @@ private fun ExerciseOverviewCard(
                                         },
                                         valueRange = 1f..50f,
                                         step = 1f,
-                                        label = "Target Reps",
+                                        label = stringResource(Res.string.rest_target_reps),
                                         formatValue = { it.toInt().toString() },
                                     )
                                 } else {
@@ -726,7 +724,7 @@ private fun ExerciseOverviewCard(
                                             modifier = Modifier.weight(1f),
                                         )
                                         Text(
-                                            "AMRAP",
+                                            stringResource(Res.string.label_amrap),
                                             style = MaterialTheme.typography.titleMedium,
                                             fontWeight = FontWeight.Bold,
                                             color = MaterialTheme.colorScheme.primary,
@@ -760,7 +758,7 @@ private fun ExerciseOverviewCard(
                                             modifier = Modifier.weight(1f),
                                         )
                                         Text(
-                                            "AMRAP",
+                                            stringResource(Res.string.label_amrap),
                                             style = MaterialTheme.typography.titleMedium,
                                             fontWeight = FontWeight.Bold,
                                             color = MaterialTheme.colorScheme.primary,
@@ -774,7 +772,7 @@ private fun ExerciseOverviewCard(
                                         },
                                         valueRange = 1f..50f,
                                         step = 1f,
-                                        label = "Target Reps",
+                                        label = stringResource(Res.string.rest_target_reps),
                                         formatValue = { it.toInt().toString() },
                                     )
                                 }
@@ -786,7 +784,7 @@ private fun ExerciseOverviewCard(
                                     },
                                     valueRange = 0f..maxWeightKg,
                                     step = weightStepKg,
-                                    label = "Weight per cable",
+                                    label = stringResource(Res.string.rest_weight_per_cable),
                                     formatValue = { formatWeight(it, weightUnit) },
                                     deltaText = deltaText,
                                     isDeltaPositive = deltaKg >= 0f,

@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.data.auth
 
+import com.devil.phoenixproject.testutil.findProjectRoot
 import java.io.File
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -12,9 +13,8 @@ class OAuthIosUrlSchemeConfigTest {
 
     @Test
     fun iosInfoPlistRegistersOAuthCallbackScheme() {
-        val repoRoot = findRepoRoot()
         val infoPlist = File(
-            repoRoot,
+            findProjectRoot(),
             "iosApp/PhoenixApp/PhoenixApp/Info.plist",
         )
 
@@ -29,19 +29,5 @@ class OAuthIosUrlSchemeConfigTest {
             "Expected iOS Info.plist to register the com.devil.phoenixproject URL scheme used by mobile OAuth",
             content.contains("<string>com.devil.phoenixproject</string>"),
         )
-    }
-
-    private fun findRepoRoot(): File {
-        val workingDirectory = requireNotNull(System.getProperty("user.dir")) {
-            "user.dir is not available"
-        }
-        var current = File(workingDirectory).absoluteFile
-        while (true) {
-            if (File(current, "settings.gradle.kts").isFile) {
-                return current
-            }
-            current = current.parentFile
-                ?: error("Could not locate repo root from $workingDirectory")
-        }
     }
 }

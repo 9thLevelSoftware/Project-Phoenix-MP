@@ -46,6 +46,5 @@ class SqlDelightPersonalMvtRepository(private val db: PhoenixDatabase) : Persona
             sampleCount = sampleCount.toLong(),
             updatedAt = currentTimeMillis(),
         )
-        Unit
     }
 }

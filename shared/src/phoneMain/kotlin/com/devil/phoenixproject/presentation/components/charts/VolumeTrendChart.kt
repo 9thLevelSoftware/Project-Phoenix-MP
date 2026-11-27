@@ -48,6 +48,10 @@ import kotlin.math.roundToInt
 import kotlin.time.Instant
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.TimeZone
+import org.jetbrains.compose.resources.StringResource
+import org.jetbrains.compose.resources.stringResource
+import projectphoenix.shared.generated.resources.*
+import projectphoenix.shared.generated.resources.Res
 import kotlinx.datetime.isoDayNumber
 import kotlinx.datetime.minus
 import kotlinx.datetime.number
@@ -57,10 +61,10 @@ import kotlinx.datetime.toLocalDateTime
 /**
  * Time period for volume chart grouping
  */
-private enum class VolumePeriod(val label: String) {
-    WEEK("Week"),
-    MONTH("Month"),
-    YEAR("Year"),
+private enum class VolumePeriod(val labelRes: StringResource) {
+    WEEK(Res.string.chart_period_week),
+    MONTH(Res.string.chart_period_month),
+    YEAR(Res.string.chart_period_year),
 }
 
 /**
@@ -160,7 +164,7 @@ fun VolumeTrendChart(
                     onClick = { selectedPeriod = period },
                     label = {
                         Text(
-                            period.label,
+                            stringResource(period.labelRes),
                             style = MaterialTheme.typography.labelMedium,
                         )
                     },
@@ -176,9 +180,14 @@ fun VolumeTrendChart(
         selectedBarIndex?.let { index ->
             if (index in volumeData.indices) {
                 val data = volumeData[index]
-                val unit = if (weightUnit == WeightUnit.KG) "kg" else "lbs"
+                val unit = stringResource(if (weightUnit == WeightUnit.KG) Res.string.label_kg else Res.string.label_lbs)
                 Text(
-                    text = "${data.dateLabel}: ${formatVolumeLabel(data.volume)} $unit",
+                    text = stringResource(
+                        Res.string.chart_volume_tooltip,
+                        data.dateLabel,
+                        formatVolumeLabel(data.volume),
+                        unit,
+                    ),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(bottom = 4.dp),
@@ -476,7 +485,7 @@ private fun EmptyVolumeTrendState(modifier: Modifier = Modifier) {
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            text = "Complete workouts to see your volume trend",
+            text = stringResource(Res.string.chart_volume_empty),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,

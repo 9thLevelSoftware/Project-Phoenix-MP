@@ -518,6 +518,7 @@ class FakeSyncRepository : SyncRepository {
         sessionUpdatedAtById: Map<String, Long>,
         pushWatermark: Long,
         pulledProvenance: Map<String, Collection<String>>,
+        customExercises: List<CustomExerciseSyncDto>,
     ) {
         mergeServerWinsRoutineIdsHistory += serverWinsRoutineIds
         if (atomicMergeShouldFail) {
@@ -571,6 +572,9 @@ class FakeSyncRepository : SyncRepository {
         }
         if (sessionNotes.isNotEmpty()) {
             mergeSessionNotesCallCount++
+        }
+        if (customExercises.isNotEmpty()) {
+            mergeCustomExercises(customExercises)
         }
     }
 

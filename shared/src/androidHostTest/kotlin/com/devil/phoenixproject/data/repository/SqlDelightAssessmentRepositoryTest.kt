@@ -570,6 +570,35 @@ class SqlDelightAssessmentRepositoryTest {
         )
     }
 
+    @Test
+    fun `saveAssessmentSession retains total storage and normalizes single-cable baseline`() = runTest {
+        insertExercise(
+            id = "single-curl",
+            name = "Single Arm Curl",
+            equipment = "HANDLES",
+            sidedness = "unilateral",
+            defaultCableConfig = "SINGLE",
+        )
+
+        repository.saveAssessmentSession(
+            exerciseId = "single-curl",
+            exerciseName = "Single Arm Curl",
+            estimatedOneRepMaxKg = 80f,
+            loadVelocityDataJson = "[]",
+            userOverrideKg = null,
+            totalReps = 9,
+            durationMs = 60_000L,
+            weightPerCableKg = 25f,
+            profileId = "athlete-a",
+        )
+
+        assertEquals(80f, repository.getLatestAssessment("single-curl", "athlete-a")?.estimatedOneRepMaxKg)
+        assertEquals(
+            40f,
+            baselineRepository.get("athlete-a", "single-curl")?.oneRepMaxPerCableKg,
+        )
+    }
+
     private suspend fun SqlDelightAssessmentRepository.saveSessionForTest(
         estimatedOneRepMaxKg: Float = 100f,
         userOverrideKg: Float? = null,
@@ -586,7 +615,13 @@ class SqlDelightAssessmentRepositoryTest {
         profileId = profileId,
     )
 
-    private fun insertExercise(id: String, name: String) {
+    private fun insertExercise(
+        id: String,
+        name: String,
+        equipment: String = "BAR",
+        sidedness: String? = "bilateral",
+        defaultCableConfig: String = "DOUBLE",
+    ) {
         database.phoenixDatabaseQueries.insertExercise(
             id = id,
             name = name,
@@ -596,9 +631,9 @@ class SqlDelightAssessmentRepositoryTest {
             muscleGroup = "Chest",
             muscleGroups = "Chest",
             muscles = null,
-            equipment = "BAR",
+            equipment = equipment,
             movement = null,
-            sidedness = null,
+            sidedness = sidedness,
             grip = null,
             gripWidth = null,
             minRepRange = null,
@@ -609,7 +644,7 @@ class SqlDelightAssessmentRepositoryTest {
             timesPerformed = 0L,
             lastPerformed = null,
             aliases = null,
-            defaultCableConfig = "DOUBLE",
+            defaultCableConfig = defaultCableConfig,
             one_rep_max_kg = null,
             mvtOverrideMs = null,
             isBodyweight = null,

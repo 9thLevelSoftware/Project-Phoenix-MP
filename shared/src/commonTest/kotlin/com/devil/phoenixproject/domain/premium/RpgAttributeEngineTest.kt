@@ -58,11 +58,27 @@ class RpgAttributeEngineTest {
     @Test
     fun strengthComputationWithHighMaxWeight() {
         val result = RpgAttributeEngine.computeProfile(
-            input(maxWeightLiftedKg = 180.0, avgWorkingWeightKg = 100.0),
+            input(maxWeightLiftedKg = 90.0, avgWorkingWeightKg = 50.0),
         )
         assertTrue(
-            result.strength >= 60,
-            "Strength should be >= 60 for 180kg max / 100kg avg, got ${result.strength}",
+            result.strength >= 80,
+            "Strength should be >= 80 for 90kg max / 50kg avg per cable, got ${result.strength}",
+        )
+    }
+
+    @Test
+    fun strengthComputationMatchesPerCableCeilings() {
+        assertEquals(
+            100,
+            RpgAttributeEngine.computeStrength(
+                input(maxWeightLiftedKg = 100.0, avgWorkingWeightKg = 60.0),
+            ),
+        )
+        assertEquals(
+            50,
+            RpgAttributeEngine.computeStrength(
+                input(maxWeightLiftedKg = 50.0, avgWorkingWeightKg = 30.0),
+            ),
         )
     }
 
@@ -119,8 +135,8 @@ class RpgAttributeEngineTest {
         // All attributes within 15pt spread -> PHOENIX
         val result = RpgAttributeEngine.computeProfile(
             input(
-                maxWeightLiftedKg = 100.0,
-                avgWorkingWeightKg = 60.0,
+                maxWeightLiftedKg = 50.0,
+                avgWorkingWeightKg = 30.0,
                 peakPowerWatts = 1000.0,
                 totalVolumeKg = 250000.0,
                 totalReps = 25000,
@@ -145,8 +161,8 @@ class RpgAttributeEngineTest {
     fun dominantStrengthClassifiesAsPowerlifter() {
         val result = RpgAttributeEngine.computeProfile(
             input(
-                maxWeightLiftedKg = 200.0,
-                avgWorkingWeightKg = 120.0,
+                maxWeightLiftedKg = 100.0,
+                avgWorkingWeightKg = 60.0,
                 peakPowerWatts = 200.0,
                 totalVolumeKg = 10000.0,
                 totalReps = 1000,

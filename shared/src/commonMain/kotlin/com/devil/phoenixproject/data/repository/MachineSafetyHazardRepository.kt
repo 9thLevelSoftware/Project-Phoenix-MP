@@ -66,12 +66,19 @@ interface MachineSafetyHazardRepository {
     suspend fun loadAll(): List<MachineSafetyLoadResult>
     suspend fun replace(document: MachineSafetyHazardDocument)
     suspend fun deleteIfGenerationMatches(trainerAddress: String, generation: Long): Boolean
+    suspend fun deleteRejectedIfMatches(rawTrainerAddress: String, generation: Long?): Boolean =
+        generation?.let { deleteIfGenerationMatches(rawTrainerAddress, it) } ?: false
 }
 
 sealed interface MachineSafetyLoadResult {
     data object Missing : MachineSafetyLoadResult
     data class Loaded(val document: MachineSafetyHazardDocument) : MachineSafetyLoadResult
-    data class Rejected(val reason: MachineSafetyRejection, val trainerAddress: String?) : MachineSafetyLoadResult
+    data class Rejected(
+        val reason: MachineSafetyRejection,
+        val trainerAddress: String?,
+        val rawTrainerAddress: String? = trainerAddress,
+        val storedGeneration: Long? = null,
+    ) : MachineSafetyLoadResult
 }
 enum class MachineSafetyRejection { CORRUPT_JSON, UNSUPPORTED_VERSION, TRUNCATED, IDENTITY_BLANK }
 
@@ -116,17 +123,47 @@ class SqlDelightMachineSafetyHazardRepository internal constructor(
         deleted
     }
 
+    override suspend fun deleteRejectedIfMatches(rawTrainerAddress: String, generation: Long?): Boolean =
+        withContext(Dispatchers.IO) {
+            var deleted = false
+            queries.transaction {
+                val row = queries.selectMachineSafetyHazard(rawTrainerAddress).executeAsOneOrNull() ?: return@transaction
+                if (decode(row) !is MachineSafetyLoadResult.Rejected) return@transaction
+                if (generation != null && row.generation != generation) return@transaction
+                queries.deleteMachineSafetyHazardIfGenerationMatches(rawTrainerAddress, row.generation)
+                deleted = true
+            }
+            deleted
+        }
+
     private fun decode(row: com.devil.phoenixproject.database.MachineSafetyHazard): MachineSafetyLoadResult {
-        if (row.trainer_address.isBlank()) return MachineSafetyLoadResult.Rejected(MachineSafetyRejection.IDENTITY_BLANK, null)
+        if (row.trainer_address.isBlank()) {
+            return MachineSafetyLoadResult.Rejected(
+                reason = MachineSafetyRejection.IDENTITY_BLANK,
+                trainerAddress = null,
+                rawTrainerAddress = row.trainer_address,
+                storedGeneration = row.generation,
+            )
+        }
         if (row.document_version != MachineSafetyHazardDocument.CURRENT_VERSION.toLong()) {
-            return MachineSafetyLoadResult.Rejected(MachineSafetyRejection.UNSUPPORTED_VERSION, row.trainer_address)
+            return MachineSafetyLoadResult.Rejected(
+                reason = MachineSafetyRejection.UNSUPPORTED_VERSION,
+                trainerAddress = row.trainer_address,
+                rawTrainerAddress = row.trainer_address,
+                storedGeneration = row.generation,
+            )
         }
         return try {
             MachineSafetyLoadResult.Loaded(Json.decodeFromString(row.hazard_json))
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: Exception) {
-            MachineSafetyLoadResult.Rejected(MachineSafetyRejection.CORRUPT_JSON, row.trainer_address)
+            MachineSafetyLoadResult.Rejected(
+                reason = MachineSafetyRejection.CORRUPT_JSON,
+                trainerAddress = row.trainer_address,
+                rawTrainerAddress = row.trainer_address,
+                storedGeneration = row.generation,
+            )
         }
     }
 }

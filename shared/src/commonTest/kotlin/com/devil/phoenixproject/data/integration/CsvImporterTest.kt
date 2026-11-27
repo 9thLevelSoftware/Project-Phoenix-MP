@@ -299,18 +299,18 @@ class CsvImporterTest {
     }
 
     // -------------------------------------------------------------------------
-    // buildStrongExternalId / buildHevyExternalId
+    // buildExternalId
     // -------------------------------------------------------------------------
 
     @Test
-    fun buildStrongExternalId_spacesConvertedToUnderscores() {
-        val id = CsvImporter.buildStrongExternalId("Push Day", 1_697_359_800_000L)
+    fun buildExternalId_strongSpacesConvertedToUnderscores() {
+        val id = CsvImporter.buildExternalId("strong", "Push Day", 1_697_359_800_000L)
         assertEquals("strong-push_day-1697359800", id)
     }
 
     @Test
-    fun buildHevyExternalId_titleLowercasedAndSlugified() {
-        val id = CsvImporter.buildHevyExternalId("Pull Day", 1_697_359_800_000L)
+    fun buildExternalId_hevyTitleLowercasedAndSlugified() {
+        val id = CsvImporter.buildExternalId("hevy", "Pull Day", 1_697_359_800_000L)
         assertEquals("hevy-pull_day-1697359800", id)
     }
 }

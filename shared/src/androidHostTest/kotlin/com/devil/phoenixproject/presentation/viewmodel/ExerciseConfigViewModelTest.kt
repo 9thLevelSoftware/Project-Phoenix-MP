@@ -1,6 +1,5 @@
 package com.devil.phoenixproject.presentation.viewmodel
 
-import androidx.lifecycle.viewModelScope
 import com.devil.phoenixproject.data.repository.SqlDelightPersonalRecordRepository
 import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
@@ -307,7 +306,7 @@ class ExerciseConfigViewModelTest {
                 assertEquals(listOf(90, 80, 80, 85), saved.setWeightsPercentOfPR)
                 assertEquals(listOf(45f, 40f, 40f, 42.5f), saved.setWeightsPerCableKg)
             } finally {
-                viewModel.viewModelScope.cancel()
+                viewModel.clear()
             }
         } finally {
             Dispatchers.resetMain()
@@ -356,7 +355,7 @@ class ExerciseConfigViewModelTest {
                 assertEquals(listOf(50, 80), saved.setWeightsPercentOfPR)
                 assertEquals(listOf(25f, 40f), saved.setWeightsPerCableKg)
             } finally {
-                viewModel.viewModelScope.cancel()
+                viewModel.clear()
             }
         } finally {
             Dispatchers.resetMain()
@@ -597,7 +596,7 @@ class ExerciseConfigViewModelTest {
             assertNull(viewModel.baselineKgForCurrentBasis())
             assertTrue(viewModel.estimatedOneRepMaxBaselineAvailable.value)
         } finally {
-            viewModel.viewModelScope.cancel()
+            viewModel.clear()
             Dispatchers.resetMain()
         }
     }
@@ -670,7 +669,7 @@ class ExerciseConfigViewModelTest {
             advanceUntilIdle()
             assertEquals(3, eligibleSetLookups)
         } finally {
-            viewModel.viewModelScope.cancel()
+            viewModel.clear()
             Dispatchers.resetMain()
         }
     }
@@ -741,7 +740,7 @@ class ExerciseConfigViewModelTest {
             assertEquals(ScalingBaselineLoadStatus.AVAILABLE, viewModel.baselineLoadStatus.value)
         } finally {
             releaseCompletedQuery.complete(Unit)
-            viewModel.viewModelScope.cancel()
+            viewModel.clear()
             Dispatchers.resetMain()
         }
     }
@@ -784,7 +783,7 @@ class ExerciseConfigViewModelTest {
 
             assertEquals(1, eligibleSetLookups)
         } finally {
-            viewModel.viewModelScope.cancel()
+            viewModel.clear()
             Dispatchers.resetMain()
         }
     }
@@ -854,7 +853,7 @@ class ExerciseConfigViewModelTest {
             assertEquals(80f, viewModel.baselineKgForCurrentBasis())
             assertEquals(ScalingBaselineLoadStatus.AVAILABLE, viewModel.baselineLoadStatus.value)
         } finally {
-            viewModel.viewModelScope.cancel()
+            viewModel.clear()
             Dispatchers.resetMain()
         }
     }
@@ -895,7 +894,7 @@ class ExerciseConfigViewModelTest {
             assertEquals(ScalingBaselineLoadStatus.UNAVAILABLE, viewModel.baselineLoadStatus.value)
             assertEquals(listOf(90f), viewModel.sets.value.map { it.weightPerCable })
         } finally {
-            viewModel.viewModelScope.cancel()
+            viewModel.clear()
             Dispatchers.resetMain()
         }
     }
@@ -947,7 +946,7 @@ class ExerciseConfigViewModelTest {
                 assertNotNull(saved)
                 assertEquals(listOf(25f, 30f), saved.setWeightsPerCableKg)
             } finally {
-                viewModel.viewModelScope.cancel()
+                viewModel.clear()
             }
         } finally {
             Dispatchers.resetMain()
@@ -985,7 +984,7 @@ class ExerciseConfigViewModelTest {
             assertFalse(viewModel.baselineResolutionReason.value.isNullOrBlank())
             assertEquals(listOf(25f, 30f), viewModel.sets.value.map { it.weightPerCable })
         } finally {
-            viewModel.viewModelScope.cancel()
+            viewModel.clear()
             Dispatchers.resetMain()
         }
     }
@@ -1023,7 +1022,7 @@ class ExerciseConfigViewModelTest {
             assertEquals(80.5f, viewModel.sets.value.single().weightPerCable)
             assertEquals(100.4f, viewModel.baselineKgForCurrentBasis())
         } finally {
-            viewModel.viewModelScope.cancel()
+            viewModel.clear()
             Dispatchers.resetMain()
         }
     }
@@ -1117,7 +1116,7 @@ class ExerciseConfigViewModelTest {
             oldSchoolResult.complete(emptyList())
             pumpResult.complete(emptyList())
             newExerciseResult.complete(emptyList())
-            viewModel.viewModelScope.cancel()
+            viewModel.clear()
             Dispatchers.resetMain()
         }
     }
@@ -1202,7 +1201,7 @@ class ExerciseConfigViewModelTest {
             assertEquals(100f, viewModel.routineScalingBaseline.value?.weightPerCableKg)
             assertEquals(3, lookups[oldSchoolContext])
         } finally {
-            viewModel.viewModelScope.cancel()
+            viewModel.clear()
             Dispatchers.resetMain()
         }
     }
@@ -1246,7 +1245,7 @@ class ExerciseConfigViewModelTest {
                 advanceUntilIdle()
                 assertEquals(listOf(45f, 5f), viewModel.sets.value.map { it.weightPerCable })
             } finally {
-                viewModel.viewModelScope.cancel()
+                viewModel.clear()
             }
         } finally {
             Dispatchers.resetMain()
@@ -1292,7 +1291,7 @@ class ExerciseConfigViewModelTest {
                 viewModel.onUsePercentOfPRChange(false)
                 assertEquals(listOf(5f, 5f), viewModel.sets.value.map { it.weightPerCable })
             } finally {
-                viewModel.viewModelScope.cancel()
+                viewModel.clear()
             }
         } finally {
             Dispatchers.resetMain()
@@ -1345,7 +1344,7 @@ class ExerciseConfigViewModelTest {
                 // The PR load path must not start a second baseline request.
                 assertEquals(1, eligibleReads)
             } finally {
-                viewModel.viewModelScope.cancel()
+                viewModel.clear()
             }
         } finally {
             Dispatchers.resetMain()
@@ -1394,7 +1393,7 @@ class ExerciseConfigViewModelTest {
                 assertNull(viewModel.baselineKgForCurrentBasis())
                 assertNull(viewModel.routineScalingBaseline.value)
             } finally {
-                viewModel.viewModelScope.cancel()
+                viewModel.clear()
             }
         } finally {
             Dispatchers.resetMain()
