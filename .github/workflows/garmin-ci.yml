@@ -121,10 +121,30 @@ jobs:
             -t
 
       - name: Run simulator protocol/input checks (monkeydo -t)
+        id: phoenix
         run: |
           bash garmin/tests/run-simulator-tests.sh \
             "build/phoenix-tests-${{ matrix.device }}.prg" \
             "${{ matrix.device }}"
+
+      # Compare on the same runner after a failed real suite. The wrapper
+      # creates a fresh simulator, D-Bus session and display per invocation.
+      - name: Check out pinned upstream smoke fixture
+        if: failure() && matrix.device == 'fenix7' && steps.phoenix.outcome == 'failure'
+        uses: actions/checkout@v4
+        with:
+          repository: DuckSoft/setup-connectiq-actions
+          ref: 64f7145dcd1087c262d89f5f714fa03af27b3cba
+          path: upstream-smoke
+          persist-credentials: false
+
+      - name: Compare upstream fenix7 smoke in a fresh simulator session
+        if: failure() && matrix.device == 'fenix7' && steps.phoenix.outcome == 'failure'
+        run: |
+          monkeyc -f upstream-smoke/tests/simulator/monkey.jungle -d fenix7 -o "$RUNNER_TEMP/smoke.prg" -y "$RUNNER_TEMP/developer_key.der" -t
+          bash garmin/tests/run-simulator-tests.sh "$RUNNER_TEMP/smoke.prg" fenix7 | tee "$RUNNER_TEMP/smoke.log"
+          grep -Fq SETUP_CONNECTIQ_SIMULATOR_SMOKE_EXECUTED "$RUNNER_TEMP/smoke.log"
+        shell: bash
 
       - name: Upload CI artifact
         uses: actions/upload-artifact@v4

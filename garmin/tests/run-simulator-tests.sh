@@ -47,7 +47,14 @@ exec timeout --signal=TERM --kill-after=10s 480s \
     bash -euo pipefail -c '
         log_dir="$(mktemp -d)"
         simulator_pid=""
+        observer_pid=""
+        device=$2
         cleanup() {
+            printf "[%s] cleanup device=%s\n" "$(date -u +%T)" "$device" >&2
+            if [[ -n "$observer_pid" ]]; then
+                kill "$observer_pid" 2>/dev/null || true
+                wait "$observer_pid" 2>/dev/null || true
+            fi
             if [[ -n "$simulator_pid" ]]; then
                 kill "$simulator_pid" 2>/dev/null || true
                 wait "$simulator_pid" 2>/dev/null || true
@@ -80,6 +87,7 @@ exec timeout --signal=TERM --kill-after=10s 480s \
             fi
             if (: > /dev/tcp/127.0.0.1/1234) 2>/dev/null; then
                 ready=true
+                printf "[%s] simulator pid=%s port=1234 accepting connections\n" "$(date -u +%T)" "$simulator_pid"
                 break
             fi
             sleep 0.5
@@ -92,9 +100,25 @@ exec timeout --signal=TERM --kill-after=10s 480s \
         # SDK 9.x can return nonzero after reporting a valid passing result,
         # so the final MonkeyDo summary line is the authoritative verdict.
         set +e
+        printf "[%s] launching monkeydo prg=%s device=%s\n" "$(date -u +%T)" "$1" "$2"
+        # Read-only snapshot from this isolated virtual display/session. Never
+        # treat an open port, visible window or thread state as a test verdict.
+        (
+            sleep 45
+            printf "[%s] progress device=%s captured_bytes=%s\n" "$(date -u +%T)" "$2" "$(wc -c < "$log_dir/tests.log")"
+            ss -tnp "( sport = :1234 or dport = :1234 )"
+            xwininfo -root -tree
+            tree=$(pstree -Tp "$$")
+            printf "%s\n" "$tree"
+            for pid in $(printf "%s\n" "$tree" | grep -oE "java\([0-9]+\)" | tr -cd "0-9\n"); do
+                timeout 10s jcmd "$pid" Thread.print
+            done
+        ) >&2 &
+        observer_pid=$!
         "$CONNECT_IQ_HOME/bin/monkeydo" "$1" "$2" -t 2>&1 | tee "$log_dir/tests.log"
         pipeline_status=("${PIPESTATUS[@]}")
         set -e
+        printf "[%s] monkeydo exit=%s tee exit=%s\n" "$(date -u +%T)" "${pipeline_status[0]}" "${pipeline_status[1]}"
         if (( pipeline_status[1] != 0 )); then
             echo "::error::Failed to capture MonkeyDo output (tee exited ${pipeline_status[1]})." >&2
             exit "${pipeline_status[1]}"
