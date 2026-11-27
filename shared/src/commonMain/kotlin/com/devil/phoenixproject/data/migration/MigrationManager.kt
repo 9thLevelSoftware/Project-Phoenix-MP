@@ -427,6 +427,7 @@ class MigrationManager(
                 var profileRepairedRecords = 0
 
                 profileSessions.sortedBy { it.timestamp }.forEach { session ->
+                    if (session.deletedAt != null) return@forEach
                     val exerciseId = LegacyLabelSanitizer.sanitize(session.exerciseId) ?: return@forEach
                     if (session.isJustLift != 0L) return@forEach
 
@@ -442,7 +443,7 @@ class MigrationManager(
 
                     val repairedCount = try {
                         personalRecordHistoryRepair?.repair(session, profileId)
-                            ?: personalRecordRepository.updatePRsIfBetter(
+                            ?: personalRecordRepository.repairPRsFromHistory(
                             exerciseId = exerciseId,
                             weightPRWeightPerCableKg = achievedWeightKg,
                             volumePRWeightPerCableKg = configuredWeightKg,
@@ -450,7 +451,7 @@ class MigrationManager(
                             workoutMode = normalizedMode,
                             timestamp = session.timestamp,
                             profileId = profileId,
-                        ).getOrThrow().size
+                        ).size
                     } catch (error: Throwable) {
                         log.e(error) { "Failed to repair PRs for session ${session.id} (profile=$profileId)" }
                         throw error

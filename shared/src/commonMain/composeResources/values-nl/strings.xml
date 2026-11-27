@@ -394,7 +394,7 @@
 
     <!-- ==================== Assessment Wizard ==================== -->
     <string name="wizard_step_of">Stap %1$d van %2$d</string>
-    <string name="actual_weight_label">Werkelijk gebruikt gewicht (kg)</string>
+    <string name="actual_weight_label">Werkelijk gebruikt gewicht (%1$s)</string>
     <string name="mean_velocity_label">Gemiddelde snelheid (m/s)</string>
     <string name="cancel_assessment">Krachtmeting annuleren</string>
     <string name="assessment_save_failed">De krachtmeting kon niet worden opgeslagen. Probeer het opnieuw.</string>
@@ -1801,7 +1801,7 @@
     <string name="assessment_completed_sets">Voltooide sets</string>
     <string name="assessment_velocity_ms">%1$s m/s</string>
     <string name="assessment_velocity_threshold_stop">Snelheidsdrempel bereikt - test voltooid</string>
-    <string name="assessment_set_machine_to">Stel de machine in op %1$s</string>
+    <string name="assessment_set_machine_to">Stel de machine in op %1$s (%2$s)</string>
     <string name="assessment_capture_instructions">Voer 3 herhalingen uit met maximale concentrische kracht.\nTik op Set starten en begin met tillen.</string>
     <string name="assessment_start_set">Set starten</string>
     <string name="assessment_capturing_velocity">Snelheid meten...</string>
@@ -2136,4 +2136,7 @@
     <string name="rpe_rir_1">1 RiR</string>
     <string name="rpe_rir_0">0 RiR</string>
     <string name="analytics_pr_reps">%1$d herh.</string>
+    <string name="assessment_suggested_weight_per_cable">Aanbevolen gewicht (Per kabel)</string>
+    <string name="assessment_load_total">Totaal</string>
+    <string name="assessment_load_per_cable">Per kabel</string>
 </resources>

@@ -10496,6 +10496,11 @@ class DWSMWorkoutLifecycleTest {
             advanceUntilIdle()
 
             val savedSession = harness.fakeWorkoutRepo.saveSessionAttempts.single()
+            val savedRepMetrics = harness.fakeRepMetricRepo.getRepMetrics(savedSession.id)
+            assertEquals(3, savedRepMetrics.size)
+            assertTrue(savedRepMetrics.all {
+                it.powerMethod == com.devil.phoenixproject.domain.model.PAIRED_CABLE_POWER_METHOD
+            })
             val savedBiomechanics = harness.fakeBiomechanicsRepo.savedBiomechanics[savedSession.id]
             assertNotNull(savedBiomechanics)
             assertEquals(

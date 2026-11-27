@@ -112,7 +112,8 @@ class ExerciseMediaWiringTest {
     //     (65: issue #1400 metric-unit x10; 66: retire direct outbound sync tables;
     //     67: record the workout completion for portal sync;
     //     68: deduplicate RpgAttributes and enforce unique profile index;
-    //     69: add missing FK/lookup/retention indexes);
+    //     69: add missing FK/lookup/retention indexes;
+    //     70: persist the calculation method for rep power).
     // (b) the only migration allowed to mention ExerciseImage is 43.sqm, the
     //     historical migration that CREATED the table; nothing may ALTER/DROP it.
     @Test
@@ -127,8 +128,8 @@ class ExerciseMediaWiringTest {
             if (src.contains("ExerciseImage")) mentions.add("$n.sqm")
         }
         assertTrue(
-            maxSeen <= 69,
-            "Phase 1 adds no schema migration — found $maxSeen.sqm beyond the base 69.sqm (T6/AC13).",
+            maxSeen <= 70,
+            "Phase 1 adds no schema migration — found $maxSeen.sqm beyond the base 70.sqm (T6/AC13).",
         )
         assertTrue(
             mentions == listOf("43.sqm"),

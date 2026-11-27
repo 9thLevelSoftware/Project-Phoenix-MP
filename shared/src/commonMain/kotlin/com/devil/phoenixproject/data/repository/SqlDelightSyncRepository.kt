@@ -756,7 +756,7 @@ class SqlDelightSyncRepository(
      * Find exercise ID by catalog ID, name, and optionally muscle group for session enrichment during pull.
      *
      * Lookup strategy (in order):
-     * 0. Direct ID lookup (unambiguous, O(1)) — added for #404
+     * 0. Retain the explicit portal ID, translating retired catalogue IDs when a replacement exists.
      * 1. Active match on name + muscle group (case-insensitive; if muscle group provided)
      * 2. Pre-rename alias match (#857) compatible with the supplied muscle group (if provided)
      * 3. Active match on name only (case-insensitive)
@@ -775,19 +775,13 @@ class SqlDelightSyncRepository(
      * @param name Exercise name from portal
      * @param muscleGroup Optional muscle group for disambiguation
      * @param exerciseId Optional catalog exercise ID (preferred, unambiguous)
-     * @return Exercise ID if found, null otherwise
+     * @return The resolved ID, or null when a name-only lookup has no match.
      */
     override suspend fun findExerciseId(name: String, muscleGroup: String?, exerciseId: String?): String? = withContext(Dispatchers.IO) {
-        // Strategy 0: Direct ID lookup — O(1), unambiguous (#404)
-        exerciseId?.let { id ->
-            val match = queries.selectExerciseById(id).executeAsOneOrNull()
-            if (match != null) return@withContext match.id
-            // A retired catalogue id an older client uploaded. On a device that never held the
-            // archived legacy row (a fresh install) there is nothing for LegacyCatalogueRemapper
-            // to heal later, so translate it here with the remapper's own resolution (explicit
-            // ids and the reviewed name fallbacks) when this catalogue has the replacement.
-            val translated = LegacyCatalogueTranslator(db).translate(id, name)
-            if (translated != id) return@withContext translated
+        // Sessions and PRs can arrive pages before their custom catalogue rows. Keep
+        // the wire ID unless it has a known local replacement from the legacy catalogue.
+        exerciseId?.takeIf { it.isNotBlank() }?.let { id ->
+            return@withContext LegacyCatalogueTranslator(db).translate(id, name)
         }
 
         // Resolved once and consumed by Strategies 2 and 4 (#857): the row whose aliases carry the
@@ -936,6 +930,7 @@ class SqlDelightSyncRepository(
                             peakPowerWatts = row.peakPowerWatts.toFloat(),
                             avgPowerWatts = row.avgPowerWatts.toFloat(),
                             metricUnitVersion = row.metric_unit_version.toInt(),
+                            powerMethod = row.power_method,
                         )
                     }
                 }
@@ -1982,12 +1977,50 @@ class SqlDelightSyncRepository(
                 return@forEach
             }
             val prUuid = dto.clientId.ifBlank { generateUUID() }
+            val byUuid = queries.selectPersonalRecordByUuid(prUuid, profileId).executeAsOneOrNull()
+            if (dto.deletedAt != null && byUuid != null) {
+                // Tombstones can omit their mode. The UUID owns the deletion,
+                // so the adapter's fallback mode must never select another slot.
+                if (byUuid.updatedAt != null) applyPulledPersonalRecordState(dto, prUuid, profileId)
+                return@forEach
+            }
+            val slot = queries.selectPRIncludingDeleted(
+                dto.exerciseId, dto.workoutMode, dto.prType, dto.phase, profileId,
+            ).executeAsOneOrNull()
+            // Check pending local state before re-keying or removing either slot.
+            if ((byUuid != null && byUuid.updatedAt == null) ||
+                (slot?.uuid != null && slot.updatedAt == null)
+            ) {
+                return@forEach
+            }
+            if (byUuid != null && byUuid.workoutMode != dto.workoutMode &&
+                byUuid.exerciseId == dto.exerciseId && byUuid.prType == dto.prType && byUuid.phase == dto.phase &&
+                dto.workoutMode in setOf("Old School", "Pump", "TUT", "TUT Beast", "Eccentric Only", "Echo")
+            ) {
+                if ((byUuid.updatedAt != null && byUuid.updatedAt > dto.updatedAt) ||
+                    (byUuid.deletedAt != null && byUuid.updatedAt == dto.updatedAt)
+                ) {
+                    return@forEach
+                }
+                if (slot != null) {
+                    if (slot.updatedAt != null && (slot.updatedAt > dto.updatedAt ||
+                        (slot.deletedAt != null && slot.updatedAt == dto.updatedAt))
+                    ) {
+                        return@forEach
+                    }
+                    queries.deletePersonalRecordById(slot.id)
+                }
+                // Re-key the existing server identity before inserting/updating a
+                // slot, so metrics cannot be copied into a different UUID's mode.
+                queries.updatePersonalRecordModeById(dto.workoutMode, byUuid.id)
+            }
             // Materialize an unknown remote PR first. The state-only LWW update below
             // immediately turns it into a hidden tombstone when appropriate.
             val effectiveVolume = if (dto.volume > 0f) dto.volume else dto.weight * dto.reps
             queries.adoptServerPrUuid(
                 uuid = prUuid,
                 exerciseId = dto.exerciseId,
+                workoutMode = dto.workoutMode,
                 prType = dto.prType,
                 phase = dto.phase,
                 profileId = profileId,
@@ -2029,20 +2062,24 @@ class SqlDelightSyncRepository(
             }
             // A newer active row can restore a record; an older active row cannot
             // clear a tombstone, and an equal-time tombstone wins deterministically.
-            queries.applyPulledPersonalRecordTombstoneState(
-                deletedAt = dto.deletedAt,
-                updatedAt = dto.updatedAt,
-                exerciseName = dto.exerciseName,
-                weight = dto.weight.toDouble(),
-                reps = dto.reps.toLong(),
-                oneRepMax = dto.oneRepMax.toDouble(),
-                achievedAt = dto.achievedAt,
-                volume = effectiveVolume.toDouble(),
-                cableCount = dto.cableCount?.toLong(),
-                uuid = prUuid,
-                profileId = profileId,
-            )
+            applyPulledPersonalRecordState(dto, prUuid, profileId)
         }
+    }
+
+    private fun applyPulledPersonalRecordState(dto: PersonalRecordSyncDto, uuid: String, profileId: String) {
+        queries.applyPulledPersonalRecordTombstoneState(
+            deletedAt = dto.deletedAt,
+            updatedAt = dto.updatedAt,
+            exerciseName = dto.exerciseName,
+            weight = dto.weight.toDouble(),
+            reps = dto.reps.toLong(),
+            oneRepMax = dto.oneRepMax.toDouble(),
+            achievedAt = dto.achievedAt,
+            volume = (if (dto.volume > 0f) dto.volume else dto.weight * dto.reps).toDouble(),
+            cableCount = dto.cableCount?.toLong(),
+            uuid = uuid,
+            profileId = profileId,
+        )
     }
 
     // === Atomic Pull Merge ===

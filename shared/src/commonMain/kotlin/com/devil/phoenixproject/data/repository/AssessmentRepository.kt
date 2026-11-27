@@ -4,6 +4,8 @@ import kotlinx.coroutines.flow.Flow
 
 /**
  * Entity representing an assessment result from the database.
+ * Estimates, overrides, and JSON load points retain the historical combined-total kg basis.
+ * WorkoutSession weights and training baselines remain per cable.
  */
 data class AssessmentResultEntity(
     val id: Long,

@@ -451,7 +451,7 @@ private fun InstructionContent(step: AssessmentStep.Instruction, onStartAssessme
 // ---------- Step 3: Progressive Loading ----------
 
 @Composable
-private fun ProgressiveLoadingContent(
+internal fun ProgressiveLoadingContent(
     step: AssessmentStep.ProgressiveLoading,
     weightUnit: WeightUnit,
     onRecordSet: (Float, Float) -> Unit,
@@ -497,7 +497,7 @@ private fun ProgressiveLoadingContent(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(
-                    text = stringResource(Res.string.assessment_suggested_weight_total),
+                    text = stringResource(if (step.isTotalLoad) Res.string.assessment_suggested_weight_total else Res.string.assessment_suggested_weight_per_cable),
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
@@ -601,6 +601,7 @@ private fun ProgressiveLoadingContent(
                     isCapturing = step.isCapturing,
                     liveVelocityMs = step.liveVelocityMs,
                     suggestedWeight = step.suggestedWeightKg,
+                    isTotalLoad = step.isTotalLoad,
                     weightUnit = weightUnit,
                     onStartCapture = onStartCapture,
                     onStopCapture = onStopCapture,
@@ -609,6 +610,7 @@ private fun ProgressiveLoadingContent(
                 // Manual fallback mode: user types weight and velocity
                 ManualInputSection(
                     weightInput = weightInput,
+                    isTotalLoad = step.isTotalLoad,
                     velocityInput = velocityInput,
                     weightUnit = weightUnit,
                     onWeightChange = { weightInput = it },
@@ -640,6 +642,7 @@ private fun BleVelocityCaptureSection(
     isCapturing: Boolean,
     liveVelocityMs: Float?,
     suggestedWeight: Float,
+    isTotalLoad: Boolean,
     weightUnit: WeightUnit,
     onStartCapture: () -> Unit,
     onStopCapture: () -> Unit,
@@ -663,6 +666,7 @@ private fun BleVelocityCaptureSection(
                     text = stringResource(
                         Res.string.assessment_set_machine_to,
                         formatAssessmentWeight(suggestedWeight, weightUnit),
+                        stringResource(if (isTotalLoad) Res.string.assessment_load_total else Res.string.assessment_load_per_cable),
                     ),
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
@@ -753,6 +757,7 @@ private fun BleVelocityCaptureSection(
 @Composable
 private fun ManualInputSection(
     weightInput: String,
+    isTotalLoad: Boolean,
     velocityInput: String,
     weightUnit: WeightUnit,
     onWeightChange: (String) -> Unit,
@@ -771,7 +776,12 @@ private fun ManualInputSection(
     OutlinedTextField(
         value = weightInput,
         onValueChange = onWeightChange,
-        label = { Text(stringResource(Res.string.actual_weight_label)) },
+        label = {
+            Text(stringResource(
+                Res.string.actual_weight_label,
+                stringResource(if (isTotalLoad) Res.string.assessment_load_total else Res.string.assessment_load_per_cable),
+            ))
+        },
         suffix = { Text(unitSuffix) },
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
         modifier = Modifier.fillMaxWidth(),

@@ -158,7 +158,7 @@ val dataModule = module {
     single<SmartSuggestionsRepository> { SqlDelightSmartSuggestionsRepository(get()) }
 
     // Assessment Repository
-    single<AssessmentRepository> { SqlDelightAssessmentRepository(get(), get(), get(), get()) }
+    single<AssessmentRepository> { SqlDelightAssessmentRepository(get(), get(), get()) }
 
     // Velocity-based 1RM Repositories (issue #517)
     single<VelocityOneRepMaxRepository> { SqlDelightVelocityOneRepMaxRepository(get()) }

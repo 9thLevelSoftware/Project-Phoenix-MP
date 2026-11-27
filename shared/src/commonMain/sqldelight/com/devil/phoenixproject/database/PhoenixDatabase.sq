@@ -453,6 +453,7 @@ CREATE TABLE RepMetric (
     rangeOfMotionMm REAL NOT NULL,
     peakPowerWatts REAL NOT NULL,
     avgPowerWatts REAL NOT NULL,
+    power_method TEXT,
     updatedAt INTEGER,
     serverId TEXT,
     -- Issue #1400 (migration 65): 1 = legacy cm/cm-s scale, 2 = mm/mm-s. Insert paths write 2.
@@ -824,7 +825,8 @@ WHERE id = ? AND isCustom = 1;
 
 deleteCustomExercise:
 UPDATE Exercise
-SET deletedAt = :deletedAt,
+SET archived = 1,
+    deletedAt = :deletedAt,
     updatedAt = :updatedAt
 WHERE id = :id
   AND isCustom = 1
@@ -1526,6 +1528,12 @@ insertPRIgnore:
 INSERT OR IGNORE INTO PersonalRecord (exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, phase, profile_id, cable_count, uuid)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
+selectPersonalRecordByUuid:
+SELECT * FROM PersonalRecord WHERE uuid = :uuid AND profile_id = :profileId;
+
+updatePersonalRecordModeById:
+UPDATE PersonalRecord SET workoutMode = :workoutMode WHERE id = :id;
+
 adoptServerPrUuid:
 UPDATE PersonalRecord
 SET uuid = :uuid
@@ -1537,6 +1545,12 @@ WHERE id = (
     AND candidate.phase = :phase
     AND candidate.profile_id = :profileId
     AND candidate.achievedAt = :achievedAt
+    AND (candidate.uuid IS NULL OR candidate.updatedAt IS NOT NULL)
+    AND (
+      candidate.workoutMode = :workoutMode
+      OR candidate.workoutMode IN ('MAX_WEIGHT', 'MAX_VOLUME', '1RM')
+      OR (:workoutMode IN ('MAX_WEIGHT', 'MAX_VOLUME', '1RM') AND candidate.uuid IS NULL)
+    )
     AND (candidate.uuid IS NULL OR candidate.uuid != :uuid)
     AND NOT EXISTS (
       SELECT 1 FROM PersonalRecord AS existing WHERE existing.uuid = :uuid
@@ -1838,9 +1852,9 @@ INSERT INTO RepMetric (
     peakForceA, peakForceB, avgForceConcentricA, avgForceConcentricB,
     avgForceEccentricA, avgForceEccentricB, peakVelocity,
     avgVelocityConcentric, avgVelocityEccentric, rangeOfMotionMm,
-    peakPowerWatts, avgPowerWatts, updatedAt, serverId
+    peakPowerWatts, avgPowerWatts, updatedAt, serverId, power_method
 , metric_unit_version)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 2);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 2);
 
 selectRepMetricsBySession:
 SELECT * FROM RepMetric WHERE sessionId = ? ORDER BY repNumber ASC;
@@ -1852,7 +1866,7 @@ SELECT * FROM RepMetric WHERE sessionId = ? ORDER BY repNumber ASC;
 selectRepMetricSummariesBySession:
 SELECT repNumber, peakForceA, peakForceB, avgForceConcentricA, avgForceConcentricB,
        peakVelocity, avgVelocityConcentric, rangeOfMotionMm, peakPowerWatts,
-       avgPowerWatts, concentricDurationMs, eccentricDurationMs, metric_unit_version
+       avgPowerWatts, concentricDurationMs, eccentricDurationMs, metric_unit_version, power_method
 FROM RepMetric WHERE sessionId = ? ORDER BY repNumber ASC;
 
 deleteRepMetricsBySession:
@@ -3123,6 +3137,12 @@ WHERE id = :routineId
       WHERE RoutineGroup.id = Routine.groupId
         AND RoutineGroup.profile_id = :targetProfileId
   );
+
+selectLiveCyclesUnlinkedByRoutineMove:
+SELECT DISTINCT tc.id, tc.profile_id
+FROM TrainingCycle tc
+JOIN CycleDay cd ON cd.cycle_id = tc.id
+WHERE cd.routine_id = :routineId AND tc.profile_id != :targetProfileId AND tc.deletedAt IS NULL;
 
 clearCrossProfileCycleDayRoutineLinks:
 UPDATE CycleDay
@@ -4649,7 +4669,7 @@ SELECT e.id AS exerciseId, e.name AS exerciseName, e.muscleGroup,
        MAX(ws.timestamp) AS lastPerformed
 FROM Exercise e
 INNER JOIN WorkoutSession ws ON ws.exerciseId = e.id
-WHERE e.archived = 0
+WHERE e.archived = 0 AND e.deletedAt IS NULL
   AND ws.profile_id = :profileId
   AND ws.deletedAt IS NULL
 GROUP BY e.id;

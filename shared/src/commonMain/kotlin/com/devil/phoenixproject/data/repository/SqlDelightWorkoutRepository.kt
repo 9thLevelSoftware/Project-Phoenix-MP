@@ -1525,7 +1525,9 @@ class SqlDelightWorkoutRepository(
             db.transaction {
                 queries.adoptRoutineProfile(profileId = targetProfileId, id = routineId)
                 queries.clearCrossProfileRoutineGroupOnMove(targetProfileId = targetProfileId, routineId = routineId)
+                val affectedCycles = queries.selectLiveCyclesUnlinkedByRoutineMove(routineId, targetProfileId).executeAsList()
                 queries.clearCrossProfileCycleDayRoutineLinks(targetProfileId = targetProfileId, routineId = routineId)
+                affectedCycles.forEach { queries.markCycleEdited(it.id, it.profile_id) }
             }
             Logger.d { "Moved routine $routineId to profile $targetProfileId" }
         }

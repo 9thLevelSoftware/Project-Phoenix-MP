@@ -184,23 +184,11 @@ private class PortalSyncPayloadRawScanner(
             val character = raw[index++]
             when {
                 character == '"' -> return
-                character == '\\' -> skipEscape()
+                character == '\\' -> parseEscape()
                 character.code < 0x20 -> fail(INVALID_JSON_STRUCTURE)
             }
         }
         fail(INVALID_JSON_STRUCTURE)
-    }
-
-    private fun skipEscape() {
-        if (index >= raw.length) fail(INVALID_JSON_STRUCTURE)
-        when (raw[index++]) {
-            '"', '\\', '/', 'b', 'f', 'n', 'r', 't' -> Unit
-            'u' -> {
-                if (index + 4 > raw.length) fail(INVALID_JSON_STRUCTURE)
-                repeat(4) { hexValue(raw[index++]) }
-            }
-            else -> fail(INVALID_JSON_STRUCTURE)
-        }
     }
 
     private fun parseEscape(): Char {

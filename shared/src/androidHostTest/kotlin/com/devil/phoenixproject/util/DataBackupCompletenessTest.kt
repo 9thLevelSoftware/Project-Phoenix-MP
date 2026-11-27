@@ -664,6 +664,12 @@ class DataBackupCompletenessTest {
         source.saveSession("session-a")
         source.saveSession("session-b", profileId = PROFILE_B)
         source.saveRoutineOn("custom-row", progressionKg = 1f, profileId = PROFILE_B)
+        listOf("default", PROFILE_B).forEach { profileId ->
+            source.queries.insertPRFromMergeIgnore(
+                "custom-row", "Custom Row", 30.0, 5L, 33.75, 100L, "Pump", "MAX_WEIGHT", 150.0,
+                "COMBINED", 200L, null, 200L, profileId, 2L, "deleted-pr-$profileId",
+            )
+        }
         pending.add(PROFILE_B)
 
         listOf(
@@ -674,6 +680,8 @@ class DataBackupCompletenessTest {
             assertEquals(listOf("default"), backup.data.profilePreferences.map { it.profileId })
             assertEquals(listOf("session-a"), backup.data.workoutSessions.map { it.id })
             assertTrue(backup.data.routines.isEmpty() && backup.data.routineExercises.isEmpty())
+            assertTrue(backup.data.personalRecords.isEmpty())
+            assertEquals(listOf("default"), backup.data.personalRecordTombstones.map { it.profileId })
         }
     }
 
@@ -692,6 +700,13 @@ class DataBackupCompletenessTest {
                     sessionNotes = listOf(SessionNotesBackup("session-b", "B's private note", 1L)),
                     gamificationStats = GamificationStatsBackup(totalWorkouts = 5, lastUpdated = 1L, profileId = PROFILE_B),
                     gamificationStatsByProfile = emptyList(),
+                    personalRecordTombstones = listOf(
+                        PersonalRecordBackup(
+                            exerciseId = "custom-row", exerciseName = "Custom Row", weight = 30f, reps = 5,
+                            oneRepMax = 33.75f, achievedAt = 100L, workoutMode = "Pump", profileId = PROFILE_B,
+                            uuid = "deleted-profile-pr", deletedAt = 200L, updatedAt = 200L,
+                        ),
+                    ),
                 ),
             ),
         )
@@ -716,6 +731,7 @@ class DataBackupCompletenessTest {
             assertTrue(target.queries.selectSessionById("session-a").executeAsOneOrNull() != null, "$case")
             assertEquals(null, target.queries.getSessionNotes("session-b").executeAsOneOrNull(), "$case: note dropped")
             assertEquals(null, target.queries.selectGamificationStats(PROFILE_B).executeAsOneOrNull(), "$case: stats dropped")
+            assertNull(target.queries.selectPersonalRecordByUuid("deleted-profile-pr", PROFILE_B).executeAsOneOrNull())
         }
         assertEquals(null, finalized.queries.getProfileById(PROFILE_B).executeAsOneOrNull(), "no resurrected profile")
         assertEquals(1L, finalized.queries.selectRoutineById("routine-1").executeAsOne().deletedAt, "tombstone untouched")
@@ -878,6 +894,10 @@ class DataBackupCompletenessTest {
         File(streamingPath).delete()
 
         listOf(bufferedJson, streamingJson).forEach { exportedJson ->
+            val envelope = testJson.decodeFromString<BackupData>(exportedJson)
+            assertEquals(listOf("bench"), envelope.data.personalRecords.map { it.exerciseId })
+            assertEquals(listOf("squat"), envelope.data.personalRecordTombstones.map { it.exerciseId })
+            assertTrue(envelope.data.personalRecords.all { it.deletedAt == null }, "Older readers only see active PRs")
             val target = Fixture()
             target.database.seedExercise("bench", "Bench Press")
             target.database.seedExercise("squat", "Squat")
@@ -906,6 +926,17 @@ class DataBackupCompletenessTest {
 
             assertEquals("routine note", target.queries.getSessionNotes("live-portal-routine").executeAsOne().notes)
             assertEquals("standalone note", target.queries.getSessionNotes("live-standalone-session").executeAsOne().notes)
+
+            val mixedEnvelope = envelope.copy(data = envelope.data.copy(
+                personalRecords = envelope.data.personalRecords + envelope.data.personalRecordTombstones,
+                personalRecordTombstones = emptyList(),
+            ))
+            val interimTarget = Fixture()
+            interimTarget.database.seedExercise("bench", "Bench Press")
+            interimTarget.database.seedExercise("squat", "Squat")
+            val interimResult = interimTarget.manager.importFromJson(testJson.encodeToString(mixedEnvelope)).getOrThrow()
+            assertEquals(0, interimResult.entitiesWithErrors)
+            assertEquals(299L, interimTarget.queries.selectPersonalRecordsByExerciseId("squat").executeAsOne().deletedAt)
         }
 
         // Verify orphan SessionNotes (missing or soft-deleted parent WorkoutSession) are rejected and do not dirty.

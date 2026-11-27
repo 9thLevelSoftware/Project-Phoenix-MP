@@ -8,6 +8,7 @@ import com.devil.phoenixproject.data.local.SupplementalCatalogSeed
 import com.devil.phoenixproject.data.sync.CustomExerciseSyncDto
 import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.Exercise
+import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.ExerciseCableIntent
 import com.devil.phoenixproject.domain.model.liveUnifiedAccessoryDisplayMultiplier
 import com.devil.phoenixproject.presentation.components.exercisepicker.ExercisePickerFilterState
@@ -1650,12 +1651,19 @@ class SqlDelightExerciseRepositoryTest {
             profile_id = "default",
         )
 
+        SqlDelightWorkoutRepository(database, repository).saveSession(
+            WorkoutSession(id = "garage-workout", exerciseId = customId),
+        )
+        assertEquals(customId, queries.selectExerciseLastPerformed("default").executeAsOne().exerciseId)
+
         // Delete custom exercise -> must soft-delete instead of hard-deleting
         assertTrue(repository.deleteCustomExercise(customId).isSuccess)
 
         val rawRow = queries.selectExerciseById(customId).executeAsOneOrNull()
         assertNotNull(rawRow, "Historical Exercise row must remain in DB")
         assertNotNull(rawRow.deletedAt, "deletedAt tombstone must be stamped")
+        assertEquals(1L, rawRow.archived)
+        assertTrue(queries.selectExerciseLastPerformed("default").executeAsList().isEmpty())
         assertNotNull(rawRow.updatedAt, "updatedAt must be stamped")
 
         // Child rows must NOT be cascade-deleted

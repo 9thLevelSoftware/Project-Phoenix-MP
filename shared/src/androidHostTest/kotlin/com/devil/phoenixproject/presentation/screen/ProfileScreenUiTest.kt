@@ -71,7 +71,6 @@ class ProfileScreenUiTest {
                 velocityRepository = velocityRepo,
                 assessmentRepository = assessmentRepo,
                 workoutRepository = workoutRepo,
-                exerciseRepository = exerciseRepo,
             ),
             externalMeasurements = measurementsRepo,
         )

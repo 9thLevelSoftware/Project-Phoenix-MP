@@ -397,7 +397,7 @@ Er enthält keine Authentifizierungs-/Sitzungstokens, Supabase-Konfiguration ode
 
     <!-- ==================== Assessment Wizard ==================== -->
     <string name="wizard_step_of">Schritt %1$d von %2$d</string>
-    <string name="actual_weight_label">Tatsächlich verwendetes Gewicht (kg)</string>
+    <string name="actual_weight_label">Tatsächlich verwendetes Gewicht (%1$s)</string>
     <string name="mean_velocity_label">Durchschnittsgeschwindigkeit (m/s)</string>
     <string name="cancel_assessment">Krafttest abbrechen</string>
     <string name="assessment_save_failed">Der Krafttest konnte nicht gespeichert werden. Versuche es erneut.</string>
@@ -1808,7 +1808,7 @@ Erstelle zuerst eine Routine, um Trainingstage hinzuzufügen.</string>
     <string name="assessment_completed_sets">Abgeschlossene Sätze</string>
     <string name="assessment_velocity_ms">%1$s m/s</string>
     <string name="assessment_velocity_threshold_stop">Geschwindigkeitsschwelle erreicht – Test abgeschlossen</string>
-    <string name="assessment_set_machine_to">Gerät auf %1$s einstellen</string>
+    <string name="assessment_set_machine_to">Stelle die Maschine auf %1$s (%2$s) ein</string>
     <string name="assessment_capture_instructions">Führe 3 Wdh. mit maximaler Hub-Geschwindigkeit aus.\nTippe auf Satz starten und hebe dann.</string>
     <string name="assessment_start_set">Satz starten</string>
     <string name="assessment_capturing_velocity">Geschwindigkeit wird erfasst...</string>
@@ -2143,4 +2143,7 @@ Erstelle zuerst eine Routine, um Trainingstage hinzuzufügen.</string>
     <string name="rpe_rir_1">1 RiR</string>
     <string name="rpe_rir_0">0 RiR</string>
     <string name="analytics_pr_reps">%1$d Wdh.</string>
+    <string name="assessment_suggested_weight_per_cable">Empfohlenes Gewicht (Pro Kabel)</string>
+    <string name="assessment_load_total">Gesamt</string>
+    <string name="assessment_load_per_cable">Pro Kabel</string>
 </resources>

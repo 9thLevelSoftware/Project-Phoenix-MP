@@ -11,6 +11,7 @@ import com.devil.phoenixproject.testutil.FakeProfilePreferenceSyncRepository
 import com.devil.phoenixproject.testutil.FakeRepMetricRepository
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.devil.phoenixproject.testutil.FakeVelocityOneRepMaxRepository
+import com.devil.phoenixproject.testutil.seedExercise
 import com.devil.phoenixproject.testutil.createTestDriver
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.russhwolf.settings.MapSettings
@@ -79,8 +80,12 @@ class MultiProfileSyncIntegrationTest {
         tokenStorage.setRoutineGroupRepairCursor(profileB, 0L)
         tokenStorage.markRoutineCyclePrRepairPushDone(userId)
         api = RecordingPortalApi()
-        manager = SyncManager(
-            apiClient = api,
+        manager = syncManager(api)
+    }
+
+    private fun syncManager(client: PortalApiClient) =
+        SyncManager(
+            apiClient = client,
             tokenStorage = tokenStorage,
             syncRepository = syncRepository,
             gamificationRepository = SqlDelightGamificationRepository(database),
@@ -92,6 +97,50 @@ class MultiProfileSyncIntegrationTest {
             isProfilePreferenceMigrationReady = { true },
             completedSetRepository = FakeCompletedSetRepository(),
         )
+
+    @Test
+    fun customExerciseIdsSurviveUntilTheCatalogPageArrives() = runTest {
+        val client = FakePortalApiClient()
+        val sessionId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        val prIds = listOf("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "cccccccc-cccc-4ccc-8ccc-cccccccccccc")
+        val name = "Garage Press"
+        val exerciseIds = listOf("custom_garage_1", "custom_garage_2")
+        database.seedExercise("stock-press", name = name)
+        val session = PullWorkoutSessionDto(
+            id = sessionId,
+            userId = userId,
+            startedAt = kotlin.time.Instant.fromEpochMilliseconds(baseTime).toString(),
+            exercises = listOf(
+                PullExerciseDto(id = "garage-set", sessionId = sessionId, name = name, exerciseId = exerciseIds.first()),
+            ),
+        )
+        val firstPage = PortalSyncPullResponse(
+            syncTime = baseTime,
+            hasMore = true,
+            nextCursor = "catalog",
+            sessions = listOf(session),
+            personalRecords = prIds.mapIndexed { index, id ->
+                PullPersonalRecordDto(id = id, userId = userId, exerciseName = name, exerciseId = exerciseIds[index], value = 20.0)
+            },
+        )
+        val catalogPage = PortalSyncPullResponse(
+            syncTime = baseTime,
+            hasMore = false,
+            customExercises = exerciseIds.map { PullCustomExerciseDto(clientId = it, name = name) },
+        )
+        client.pullResultsQueue = mutableListOf(
+            Result.success(firstPage),
+            Result.success(catalogPage),
+            Result.success(PortalSyncPullResponse(syncTime = baseTime, hasMore = false)),
+        )
+
+        assertTrue(syncManager(client).sync().isSuccess)
+        val queries = database.phoenixDatabaseQueries
+        assertEquals(exerciseIds.first(), queries.selectSessionById("garage-set").executeAsOne().exerciseId)
+        prIds.forEachIndexed { index, id ->
+            assertEquals(exerciseIds[index], queries.selectPersonalRecordByUuid(id, profileA).executeAsOne().exerciseId)
+            assertEquals(name, queries.selectExerciseById(exerciseIds[index]).executeAsOne().name)
+        }
     }
 
     // ===== 1. A non-active profile's edit is pushed in the same loop =====

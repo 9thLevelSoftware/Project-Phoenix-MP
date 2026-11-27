@@ -20,6 +20,7 @@ import com.devil.phoenixproject.util.BackupJsonWriter
 import com.devil.phoenixproject.util.BaseDataBackupManager
 import com.devil.phoenixproject.util.ImportResult
 import com.devil.phoenixproject.util.OneRepMaxCalculator
+import com.devil.phoenixproject.util.PersonalRecordBackup
 import com.devil.phoenixproject.util.WorkoutSessionBackup
 import com.russhwolf.settings.MapSettings
 import java.io.File
@@ -946,6 +947,23 @@ class MigrationManagerTest {
     }
 
     @Test
+    fun `personal record history repair ignores soft deleted workouts`() = runTest {
+        insertMinimalExercise("deleted-history-exercise", "Bench Press")
+        insertMinimalSession(
+            id = "deleted-history-session", routineSessionId = null, routineName = null,
+            exerciseId = "deleted-history-exercise", exerciseName = "Bench Press", workingReps = 5L,
+            weightPerCableKg = 80.0, heaviestLiftKg = 80.0,
+        )
+        database.phoenixDatabaseQueries.softDeleteSession(
+            1_700_000_100_000L, 1_700_000_100_000L, "deleted-history-session",
+        )
+        migrationManager.runMigrationsNow()
+        assertTrue(database.phoenixDatabaseQueries.selectPersonalRecordsByExerciseId("deleted-history-exercise")
+            .executeAsList().isEmpty())
+        assertEquals(NonCriticalRepairState.Ready, migrationManager.nonCriticalRepairState.value)
+    }
+
+    @Test
     fun `repair personal records from workout history backfills achieved load and stays idempotent`() {
         val queries = database.phoenixDatabaseQueries
         insertMinimalExercise(id = "deadlift", name = "Conventional Deadlift")
@@ -1141,6 +1159,14 @@ class MigrationManagerTest {
             exportedAt = "2026-01-01T00:00:00Z",
             appVersion = "0.9.0",
             data = BackupContent(
+                personalRecordTombstones = listOf(
+                    PersonalRecordBackup(
+                        exerciseId = "bench", exerciseName = "Bench Press", weight = 40f, reps = 10,
+                        oneRepMax = 53.33f, achievedAt = 1_700_000_000_000L, workoutMode = "Old School",
+                        profileId = "default", uuid = "deleted-history-pr", updatedAt = 1_700_000_100_000L,
+                        deletedAt = 1_700_000_100_000L,
+                    ),
+                ),
                 workoutSessions = listOf(
                     WorkoutSessionBackup(
                         id = "restored-legacy-session",
@@ -1187,6 +1213,18 @@ class MigrationManagerTest {
         assertEquals("Old School", repaired.mode)
         assertNull(repaired.routineSessionId)
         assertNull(repaired.routineName)
+        val tombstone = queries.selectPRIncludingDeleted("bench", "Old School", "MAX_WEIGHT", "COMBINED", "default")
+            .executeAsOne()
+        assertEquals(1_700_000_100_000L, tombstone.deletedAt, "Replaying restored history must preserve a deleted PR")
+        assertNotNull(
+            queries.selectPR("bench", "Old School", "MAX_VOLUME", "COMBINED", "default").executeAsOneOrNull(),
+            "The unrelated missing volume slot should still be backfilled",
+        )
+        com.devil.phoenixproject.data.repository.SqlDelightPersonalRecordRepository(database).updatePRsIfBetter(
+            "bench", 45f, 45f, 10, "Old School", 1_700_000_200_000L, "default", 2,
+        ).getOrThrow()
+        assertNull(queries.selectPRIncludingDeleted("bench", "Old School", "MAX_WEIGHT", "COMBINED", "default")
+            .executeAsOne().deletedAt, "A genuinely new lift may establish a PR again")
         expectedRepairKeys.forEach { key ->
             assertNotNull(queries.selectAppliedDataRepair(key).executeAsOneOrNull(), "Re-run must re-record $key")
         }

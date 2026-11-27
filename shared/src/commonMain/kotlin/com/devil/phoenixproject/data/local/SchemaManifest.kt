@@ -749,6 +749,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 rangeOfMotionMm REAL NOT NULL,
                 peakPowerWatts REAL NOT NULL,
                 avgPowerWatts REAL NOT NULL,
+                power_method TEXT,
                 updatedAt INTEGER,
                 serverId TEXT,
                 metric_unit_version INTEGER NOT NULL DEFAULT 1 CHECK(metric_unit_version IN (1, 2)),
@@ -2034,6 +2035,11 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
         "MetricSample",
         "metric_unit_version",
         "ALTER TABLE MetricSample ADD COLUMN metric_unit_version INTEGER NOT NULL DEFAULT 1 CHECK(metric_unit_version IN (1, 2))",
+    ),
+    SchemaHealOperation(
+        "RepMetric",
+        "power_method",
+        "ALTER TABLE RepMetric ADD COLUMN power_method TEXT",
     ),
     SchemaHealOperation(
         "RepMetric",

@@ -69,22 +69,24 @@ jobs:
 
       # This workflow may build a historical tag, whose checkout predates the helper.
       # Fetch it from the immutable workflow revision rather than the build checkout.
-      - name: Fetch pinned iOS release helper
+      - name: Fetch pinned iOS release helpers
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          curl --fail --silent --show-error \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            "https://raw.githubusercontent.com/${{ github.repository }}/${{ github.workflow_sha }}/.github/scripts/ios-release.py" \
-            --output "$RUNNER_TEMP/ios-release.py"
-          python3 -m py_compile "$RUNNER_TEMP/ios-release.py"
+          for script in ios-release.py ios_supabase_config.py tvos-release.py; do
+            curl --fail --silent --show-error \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              "https://raw.githubusercontent.com/${{ github.repository }}/${{ github.workflow_sha }}/.github/scripts/$script" \
+              --output "$RUNNER_TEMP/$script"
+            python3 -m py_compile "$RUNNER_TEMP/$script"
+          done
 
       - name: Write Supabase.xcconfig from secrets
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
-          python3 .github/scripts/ios_supabase_config.py write-xcconfig \
+          python3 "$RUNNER_TEMP/ios_supabase_config.py" write-xcconfig \
             --output iosApp/PhoenixApp/Config/Supabase.xcconfig
 
       - name: Validate release app icons
@@ -196,7 +198,7 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
-          python3 .github/scripts/ios_supabase_config.py verify-plist \
+          python3 "$RUNNER_TEMP/ios_supabase_config.py" verify-plist \
             --plist "$RUNNER_TEMP/PhoenixApp.xcarchive/Products/Applications/PhoenixApp.app/Info.plist"
 
       - name: Export .ipa

@@ -531,6 +531,7 @@ class SqlDelightGamificationRepositoryTest {
             avgPowerWatts = peakPowerWatts / 2,
             updatedAt = null,
             serverId = null,
+            power_method = null,
         )
     }
 

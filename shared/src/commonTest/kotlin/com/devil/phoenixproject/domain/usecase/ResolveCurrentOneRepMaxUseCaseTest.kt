@@ -2,11 +2,8 @@ package com.devil.phoenixproject.domain.usecase
 
 import com.devil.phoenixproject.data.repository.MAX_RECENT_EXERCISE_SESSIONS
 import com.devil.phoenixproject.data.repository.VelocityOneRepMaxEntity
-import com.devil.phoenixproject.domain.model.Exercise
-import com.devil.phoenixproject.domain.model.ExerciseCableIntent
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.testutil.FakeAssessmentRepository
-import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.FakeVelocityOneRepMaxRepository
 import com.devil.phoenixproject.testutil.FakeWorkoutRepository
 import kotlin.coroutines.cancellation.CancellationException
@@ -20,36 +17,7 @@ class ResolveCurrentOneRepMaxUseCaseTest {
     private val velocity = FakeVelocityOneRepMaxRepository()
     private val assessments = FakeAssessmentRepository()
     private val workouts = FakeWorkoutRepository()
-    private val exercises = FakeExerciseRepository().apply {
-        addExercise(
-            Exercise(
-                id = "bench",
-                name = "Bench Press",
-                muscleGroup = "Chest",
-                equipment = "BAR",
-                cableIntent = ExerciseCableIntent.DUAL,
-            ),
-        )
-        addExercise(
-            Exercise(
-                id = "single-curl",
-                name = "Single Arm Curl",
-                muscleGroup = "Arms",
-                equipment = "HANDLES",
-                cableIntent = ExerciseCableIntent.SINGLE,
-            ),
-        )
-        addExercise(
-            Exercise(
-                id = "either-press",
-                name = "Either Press",
-                muscleGroup = "Shoulders",
-                equipment = "BAR",
-                cableIntent = ExerciseCableIntent.EITHER,
-            ),
-        )
-    }
-    private val resolver = ResolveCurrentOneRepMaxUseCase(velocity, assessments, workouts, exercises)
+    private val resolver = ResolveCurrentOneRepMaxUseCase(velocity, assessments, workouts)
 
     @Test
     fun `velocity wins over assessment and session`() = runTest {
@@ -90,14 +58,14 @@ class ResolveCurrentOneRepMaxUseCaseTest {
     }
 
     @Test
-    fun `assessment normalization respects exercise displayMultiplier for single dual and unknown cables`() = runTest {
+    fun `legacy assessments retain combined total basis across single dual and unknown cables`() = runTest {
         seedAssessment(totalKg = 40f, exerciseId = "single-curl")
         seedAssessment(totalKg = 80f, exerciseId = "bench")
         seedAssessment(totalKg = 40f, exerciseId = "either-press")
 
-        assertEquals(40f, resolver("single-curl", "athlete-a")?.perCableKg)
+        assertEquals(20f, resolver("single-curl", "athlete-a")?.perCableKg)
         assertEquals(40f, resolver("bench", "athlete-a")?.perCableKg)
-        assertEquals(40f, resolver("either-press", "athlete-a")?.perCableKg)
+        assertEquals(20f, resolver("either-press", "athlete-a")?.perCableKg)
     }
 
     @Test

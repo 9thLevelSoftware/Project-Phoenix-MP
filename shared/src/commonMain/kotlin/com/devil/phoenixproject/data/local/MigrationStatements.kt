@@ -1813,6 +1813,10 @@ WHERE gs.rowid = (
         "CREATE INDEX IF NOT EXISTS idx_session_server_id ON WorkoutSession(serverId)",
     )
 
+    70 -> listOf(
+        "ALTER TABLE RepMetric ADD COLUMN power_method TEXT",
+    )
+
     else -> emptyList()
 }
 

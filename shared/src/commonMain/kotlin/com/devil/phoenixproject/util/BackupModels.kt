@@ -798,6 +798,8 @@ data class BackupContent(
     val routineExercises: List<RoutineExerciseBackup> = emptyList(),
     val supersets: List<SupersetBackup> = emptyList(),
     val personalRecords: List<PersonalRecordBackup> = emptyList(),
+    // Older readers ignore this section instead of reviving tombstones as active PRs.
+    val personalRecordTombstones: List<PersonalRecordBackup> = emptyList(),
     // KMP extensions
     val trainingCycles: List<TrainingCycleBackup> = emptyList(),
     val cycleDays: List<CycleDayBackup> = emptyList(),

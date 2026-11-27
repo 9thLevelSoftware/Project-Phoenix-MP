@@ -384,7 +384,7 @@
 
     <!-- ==================== Assessment Wizard ==================== -->
     <string name="wizard_step_of">Step %1$d of %2$d</string>
-    <string name="actual_weight_label">Actual Weight Used (kg)</string>
+    <string name="actual_weight_label">Actual Weight Used (%1$s)</string>
     <string name="mean_velocity_label">Mean Velocity (m/s)</string>
     <string name="cancel_assessment">Cancel Assessment</string>
     <string name="assessment_save_failed">Couldn’t save the assessment. Try again.</string>
@@ -1791,7 +1791,7 @@
     <string name="assessment_completed_sets">Completed Sets</string>
     <string name="assessment_velocity_ms">%1$s m/s</string>
     <string name="assessment_velocity_threshold_stop">Velocity threshold reached - assessment complete</string>
-    <string name="assessment_set_machine_to">Set the machine to %1$s</string>
+    <string name="assessment_set_machine_to">Set the machine to %1$s (%2$s)</string>
     <string name="assessment_capture_instructions">Perform 3 reps with maximum concentric intent.\nTap Start Set, then begin lifting.</string>
     <string name="assessment_start_set">Start Set</string>
     <string name="assessment_capturing_velocity">Capturing velocity...</string>
@@ -2126,4 +2126,7 @@
     <string name="rpe_rir_1">1 RiR</string>
     <string name="rpe_rir_0">0 RiR</string>
     <string name="analytics_pr_reps">%1$d Reps</string>
+    <string name="assessment_suggested_weight_per_cable">Suggested Weight (Per cable)</string>
+    <string name="assessment_load_total">Total</string>
+    <string name="assessment_load_per_cable">Per cable</string>
 </resources>

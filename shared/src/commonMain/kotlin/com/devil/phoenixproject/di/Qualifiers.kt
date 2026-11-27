@@ -1,5 +1,7 @@
 package com.devil.phoenixproject.di
 
+import co.touchlab.kermit.Logger
+import com.russhwolf.settings.Settings
 import org.koin.core.qualifier.named
 
 /**
@@ -14,4 +16,17 @@ import org.koin.core.qualifier.named
  * Used by PortalTokenStorage for JWT, refresh token, and user identity.
  */
 val SecureSettingsQualifier = named("secureSettings")
+
+/** Removes credentials left by the retired v1.1.1 direct Intervals export. */
+internal fun purgeRetiredDirectExportSecrets(settings: Settings) {
+    try {
+        val retiredKeys = settings.keys.filter { key ->
+            key == "intervals.installationId" || key.startsWith("intervals.apiKey.")
+        }
+        retiredKeys.forEach(settings::remove)
+    } catch (_: Exception) {
+        // The secure binding retries on the next launch. Keep auth and startup usable.
+        Logger.w("SecureSettings") { "Retired Intervals credential cleanup will retry next launch" }
+    }
+}
 

@@ -315,6 +315,7 @@ abstract class BaseDataBackupManager(
             "polarBeatSamples",
             "polarEcgSegments",
             "personalRecords",
+            "personalRecordTombstones",
             "progressionEvents",
             "earnedBadges",
             "streakHistory",
@@ -348,6 +349,7 @@ abstract class BaseDataBackupManager(
             "completedSets",
             "polarBeatSamples",
             "polarEcgSegments",
+            "personalRecordTombstones",
             "personalRecords",
             // After every section that names exercises (routine exercises, sessions, PRs): a
             // baseline row carries only an id, so a retired catalogue id that maps by name alone
@@ -530,7 +532,8 @@ abstract class BaseDataBackupManager(
                 routines = routines.map { mapRoutineToBackup(it) },
                 routineExercises = routineExercises.map { mapRoutineExerciseToBackup(it) },
                 supersets = supersets.map { mapSupersetToBackup(it) },
-                personalRecords = personalRecords,
+                personalRecords = personalRecords.filter { it.deletedAt == null },
+                personalRecordTombstones = personalRecords.filter { it.deletedAt != null },
                 trainingCycles = trainingCycles.map { mapTrainingCycleToBackup(it) },
                 cycleDays = cycleDays,
                 cycleProgress = cycleProgress.map { mapCycleProgressToBackup(it) },
@@ -809,6 +812,9 @@ abstract class BaseDataBackupManager(
             "polarBeatSamples" -> json.decodeFromString<PolarBeatSampleBackup>(raw)
             "polarEcgSegments" -> json.decodeFromString<PolarEcgSegmentBackup>(raw)
             "personalRecords" -> json.decodeFromString<PersonalRecordBackup>(raw)
+            "personalRecordTombstones" -> requireNotNull(json.decodeFromString<PersonalRecordBackup>(raw).deletedAt) {
+                "Personal record tombstone must have a deletion timestamp"
+            }
             "progressionEvents" -> json.decodeFromString<ProgressionEventBackup>(raw)
             "earnedBadges" -> json.decodeFromString<EarnedBadgeBackup>(raw)
             "streakHistory" -> json.decodeFromString<StreakHistoryBackup>(raw)
@@ -2105,7 +2111,7 @@ abstract class BaseDataBackupManager(
                                 }
 
                                 // --- personalRecords ---
-                                "personalRecords" -> {
+                                "personalRecords", "personalRecordTombstones" -> {
                                     committedTransaction {
                                         nav.beginArray()
                                         while (nav.hasNextInArray()) {
@@ -3270,7 +3276,9 @@ abstract class BaseDataBackupManager(
         writer.write(",")
 
         val personalRecords = queries.selectAllRecordsSync().executeAsList()
-        writeJsonArray(writer, "personalRecords", personalRecords.map { json.encodeToString(PersonalRecordBackup.serializer(), mapPersonalRecordToBackup(it)) })
+        writeJsonArray(writer, "personalRecords", personalRecords.filter { it.deletedAt == null }.map { json.encodeToString(PersonalRecordBackup.serializer(), mapPersonalRecordToBackup(it)) })
+        writer.write(",")
+        writeJsonArray(writer, "personalRecordTombstones", personalRecords.filter { it.deletedAt != null }.map { json.encodeToString(PersonalRecordBackup.serializer(), mapPersonalRecordToBackup(it)) })
         writer.write(",")
 
         val trainingCycles = queries.selectAllTrainingCyclesSync().executeAsList()

@@ -62,6 +62,7 @@ import com.devil.phoenixproject.domain.model.RackItemBehavior
 import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.RepEvent
+import com.devil.phoenixproject.domain.model.PAIRED_CABLE_POWER_METHOD
 import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.RepType
 import com.devil.phoenixproject.domain.model.Routine
@@ -219,7 +220,7 @@ private class ExecutionBiomechanicsContext(
     val engine: BiomechanicsEngine,
     var velocityThresholdAlertEmitted: Boolean = false,
     var consecutiveThresholdReps: Int = 0,
-    val activeRepJobs: kotlinx.coroutines.flow.MutableStateFlow<List<Job>> = kotlinx.coroutines.flow.MutableStateFlow(emptyList()),
+    val activeRepJobs: BiomechanicsRepJobs = BiomechanicsRepJobs(),
 )
 
 private data class PendingTeardownReadyContinuation(
@@ -4665,18 +4666,10 @@ class ActiveSessionEngine(
     }
 
     private fun hasActiveBiomechanicsJobs(lease: ExecutionLease): Boolean =
-        biomechanicsContextFor(lease)?.activeRepJobs?.value?.any { it.isActive } == true
+        biomechanicsContextFor(lease)?.activeRepJobs?.hasUnfinishedJobs() == true
 
     private suspend fun awaitBiomechanicsJobs(lease: ExecutionLease) {
-        while (true) {
-            val activeJobs = biomechanicsContextFor(lease)
-                ?.activeRepJobs
-                ?.value
-                ?.filter { it.isActive }
-                .orEmpty()
-            if (activeJobs.isEmpty()) return
-            activeJobs.forEach { it.join() }
-        }
+        biomechanicsContextFor(lease)?.activeRepJobs?.awaitCompletion()
     }
 
     private fun dispatchWorkoutComplete(eventLease: ExecutionLease, event: RepEvent) {
@@ -6578,6 +6571,7 @@ class ActiveSessionEngine(
             rangeOfMotionMm = rom,
             peakPowerWatts = peakPowerWatts,
             avgPowerWatts = avgPowerWatts,
+            powerMethod = PAIRED_CABLE_POWER_METHOD,
         )
 
         // Accumulate rep metric data for persistence at set completion
@@ -6719,10 +6713,7 @@ class ActiveSessionEngine(
                 Logger.e(e) { "Biomechanics processing failed for rep $repNumber" }
             }
         }
-        context.activeRepJobs.update { jobs -> jobs.filter { it.isActive } + repJob }
-        repJob.invokeOnCompletion {
-            context.activeRepJobs.update { jobs -> jobs.filter { it !== repJob && it.isActive } }
-        }
+        context.activeRepJobs.track(repJob)
         repJob.start()
     }
 

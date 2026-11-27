@@ -398,13 +398,8 @@ object PortalPullAdapter {
         return PersonalRecordSyncDto(
             clientId = pr.id,
             serverId = pr.id,
-            // Portal personal_records has no exercise_id column (only
-            // exercise_name), so the catalog exercise id is resolved by
-            // name/muscle group at the call site and passed in. Falling back to
-            // pr.id (the PR row id) only when there is no catalog match — the
-            // previous unconditional `exerciseId = pr.id` broke exercise linkage
-            // and made every pulled PR a unique idx_pr_unique key that never
-            // deduped against local PRs (audit F021).
+            // Older pulls can omit the catalogue ID. Keep the PR row ID as a last
+            // resort only when neither the portal nor the local catalogue identifies it.
             exerciseId = resolvedExerciseId?.takeIf { it.isNotBlank() }
                 ?: pr.exerciseId?.takeIf { it.isNotBlank() }
                 ?: pr.id,

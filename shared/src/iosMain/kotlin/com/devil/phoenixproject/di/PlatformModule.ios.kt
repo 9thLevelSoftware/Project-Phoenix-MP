@@ -68,6 +68,7 @@ actual val platformModule: Module = module {
         val keychainSettings = KeychainSettings(service = KEYCHAIN_SERVICE_NAME)
         val legacySettings: Settings = get() // NSUserDefaults
         migrateTokensToKeychain(legacySettings, keychainSettings)
+        purgeRetiredDirectExportSecrets(keychainSettings)
         keychainSettings
     }
     single { OAuthLauncher() }

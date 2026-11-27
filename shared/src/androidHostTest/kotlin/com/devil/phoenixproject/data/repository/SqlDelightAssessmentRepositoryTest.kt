@@ -42,7 +42,6 @@ class SqlDelightAssessmentRepositoryTest {
             database,
             workoutRepository,
             baselineRepository,
-            exerciseRepository,
         )
         database.phoenixDatabaseQueries.insertProfile("athlete-a", "Athlete A", 0L, 1L, 1L)
         database.phoenixDatabaseQueries.insertProfile("athlete-b", "Athlete B", 1L, 2L, 0L)
@@ -177,7 +176,6 @@ class SqlDelightAssessmentRepositoryTest {
             database,
             failingWorkoutRepository,
             baselineRepository,
-            exerciseRepository,
         )
 
         assertFailsWith<IllegalStateException> {
@@ -214,7 +212,6 @@ class SqlDelightAssessmentRepositoryTest {
             database,
             workoutWithConcurrentManualUpdate,
             failingBaselineRepository,
-            exerciseRepository,
         )
 
         assertFailsWith<IllegalStateException> {
@@ -281,7 +278,6 @@ class SqlDelightAssessmentRepositoryTest {
             database,
             pausingWorkoutRepository,
             failingBaselineRepository,
-            exerciseRepository,
         )
         val save = async {
             runCatching {
@@ -344,7 +340,6 @@ class SqlDelightAssessmentRepositoryTest {
                 database,
                 workoutRepository,
                 serializingBaselineRepository,
-                exerciseRepository,
                 ioDispatcher,
             )
             val first = async {
@@ -521,7 +516,6 @@ class SqlDelightAssessmentRepositoryTest {
             database,
             workoutRepository,
             pausingBaselineRepository,
-            exerciseRepository,
             ioDispatcher,
         )
         val save = async {
@@ -572,13 +566,12 @@ class SqlDelightAssessmentRepositoryTest {
             database,
             workoutRepository,
             failingBaselineRepository,
-            exerciseRepository,
             ioDispatcher,
         )
     }
 
     @Test
-    fun `saveAssessmentSession stores single-cable baseline without halving`() = runTest {
+    fun `saveAssessmentSession retains total storage and normalizes single-cable baseline`() = runTest {
         insertExercise(
             id = "single-curl",
             name = "Single Arm Curl",
@@ -590,7 +583,7 @@ class SqlDelightAssessmentRepositoryTest {
         repository.saveAssessmentSession(
             exerciseId = "single-curl",
             exerciseName = "Single Arm Curl",
-            estimatedOneRepMaxKg = 40f,
+            estimatedOneRepMaxKg = 80f,
             loadVelocityDataJson = "[]",
             userOverrideKg = null,
             totalReps = 9,
@@ -599,6 +592,7 @@ class SqlDelightAssessmentRepositoryTest {
             profileId = "athlete-a",
         )
 
+        assertEquals(80f, repository.getLatestAssessment("single-curl", "athlete-a")?.estimatedOneRepMaxKg)
         assertEquals(
             40f,
             baselineRepository.get("athlete-a", "single-curl")?.oneRepMaxPerCableKg,

@@ -6,6 +6,7 @@ import com.devil.phoenixproject.domain.model.CycleProgression
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.PAIRED_CABLE_POWER_METHOD
 import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.RepMetricSummary
 import com.devil.phoenixproject.domain.model.Routine
@@ -577,10 +578,11 @@ object PortalSyncAdapter {
 
         return summaries.map { rep ->
             val bio = biomechanicsMap[rep.repNumber]
-            val canEmitPairedPower = rep.metricUnitVersion >= METRIC_UNIT_VERSION_MM &&
+            val canEmitPairedPower = rep.powerMethod == PAIRED_CABLE_POWER_METHOD &&
+                rep.metricUnitVersion >= METRIC_UNIT_VERSION_MM &&
                 rep.avgPowerWatts.isFinite() &&
                 rep.peakPowerWatts.isFinite()
-            val powerMethod = if (canEmitPairedPower) "PAIRED_CABLE_WORK_V1" else "UNAVAILABLE"
+            val powerMethod = if (canEmitPairedPower) PAIRED_CABLE_POWER_METHOD else "UNAVAILABLE"
             val powerWatts = if (canEmitPairedPower) rep.avgPowerWatts else null
             val peakPowerWatts = if (canEmitPairedPower) rep.peakPowerWatts else null
 

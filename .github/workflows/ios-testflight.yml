@@ -70,12 +70,24 @@ jobs:
         with:
           ref: ${{ inputs.source_ref || github.ref }}
 
+      - name: Fetch pinned iOS release helpers
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for script in ios-release.py ios_supabase_config.py tvos-release.py; do
+            curl --fail --silent --show-error \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              "https://raw.githubusercontent.com/${{ github.repository }}/${{ github.workflow_sha }}/.github/scripts/$script" \
+              --output "$RUNNER_TEMP/$script"
+            python3 -m py_compile "$RUNNER_TEMP/$script"
+          done
+
       - name: Write Supabase.xcconfig from secrets
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
-          python3 .github/scripts/ios_supabase_config.py write-xcconfig \
+          python3 "$RUNNER_TEMP/ios_supabase_config.py" write-xcconfig \
             --output iosApp/PhoenixApp/Config/Supabase.xcconfig
 
       - name: Validate release app icons
@@ -104,7 +116,7 @@ jobs:
       - name: Auto-increment build number
         id: build_number
         run: |
-          python3 .github/scripts/ios-release.py bump-build-number \
+          python3 "$RUNNER_TEMP/ios-release.py" bump-build-number \
             --run-number "${{ github.run_number }}" \
             --pbxproj "$PROJECT_PATH/project.pbxproj"
 
@@ -147,7 +159,7 @@ jobs:
           if grep -q 'iosArm64/xcodeFramework' "$PROJECT_PATH/project.pbxproj"; then
             iosApp/install-xcode-framework.sh release
           else
-            python3 .github/scripts/ios-release.py install-legacy-framework
+            python3 "$RUNNER_TEMP/ios-release.py" install-legacy-framework
           fi
 
       - name: Install certificate and profile
@@ -156,7 +168,7 @@ jobs:
           P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
           PROVISION_PROFILE_BASE64: ${{ secrets.PROVISION_PROFILE_BASE64 }}
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
-        run: python3 .github/scripts/ios-release.py install-signing
+        run: python3 "$RUNNER_TEMP/ios-release.py" install-signing
 
       - name: Archive app
         run: |
@@ -182,7 +194,7 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
-          python3 .github/scripts/ios_supabase_config.py verify-plist \
+          python3 "$RUNNER_TEMP/ios_supabase_config.py" verify-plist \
             --plist "$RUNNER_TEMP/PhoenixApp.xcarchive/Products/Applications/PhoenixApp.app/Info.plist"
 
       - name: Export .ipa
@@ -215,6 +227,18 @@ jobs:
         with:
           ref: ${{ inputs.source_ref || github.ref }}
           fetch-depth: 0
+
+      - name: Fetch pinned iOS release helpers
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for script in ios-release.py ios_supabase_config.py tvos-release.py; do
+            curl --fail --silent --show-error \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              "https://raw.githubusercontent.com/${{ github.repository }}/${{ github.workflow_sha }}/.github/scripts/$script" \
+              --output "$RUNNER_TEMP/$script"
+            python3 -m py_compile "$RUNNER_TEMP/$script"
+          done
 
       - name: Download IPA from Xcode 26 build
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -287,8 +311,8 @@ jobs:
           # Verify the upload actually reached Apple
           echo "=== Verifying upload reached App Store Connect ==="
           sleep 30
-          VERIFY_JWT=$(python3 .github/scripts/ios-release.py generate_jwt)
-          if ! python3 .github/scripts/ios-release.py verify-asc-upload --build-version "$BUILD_VERSION" --jwt "$VERIFY_JWT"; then
+          VERIFY_JWT=$(python3 "$RUNNER_TEMP/ios-release.py" generate_jwt)
+          if ! python3 "$RUNNER_TEMP/ios-release.py" verify-asc-upload --build-version "$BUILD_VERSION" --jwt "$VERIFY_JWT"; then
             echo ""
             echo "============================================"
             echo "WARNING: Build not found in App Store Connect 30s after upload."
@@ -307,7 +331,7 @@ jobs:
           TESTFLIGHT_GROUP_NAME: ${{ secrets.TESTFLIGHT_GROUP_NAME }}  # e.g., "Internal Testers"
           BUILD_VERSION: ${{ needs.build.outputs.build_number }}
           FAIL_ON_DISTRIBUTION_ERROR: ${{ inputs.fail_on_distribution_error }}
-        run: python3 .github/scripts/ios-release.py distribute-testflight
+        run: python3 "$RUNNER_TEMP/ios-release.py" distribute-testflight
 
       - name: Tag build for release notes tracking
         run: |

@@ -11,6 +11,7 @@ import kotlin.coroutines.cancellation.CancellationException
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
+import kotlinx.serialization.decodeFromString
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -145,21 +146,49 @@ class AssessmentViewModelProfileScopeTest {
 
         val initial = assertIs<AssessmentStep.ProgressiveLoading>(viewModel.currentStep.value)
         assertEquals(10f, initial.suggestedWeightKg)
+        assertEquals(false, initial.isTotalLoad)
 
         // With LoadCeiling.PER_CABLE (110 kg), suggested next weight after 100 kg stays <= 110f (not 220f).
         viewModel.recordSet(100f, 0.8f)
         val next = assertIs<AssessmentStep.ProgressiveLoading>(viewModel.currentStep.value)
         assertEquals(110f, next.suggestedWeightKg)
+        assertEquals(false, next.isTotalLoad)
 
         // Finish at high load -> acceptResult stores per-cable weight without halving.
         viewModel.recordSet(110f, 0.25f)
-        assertIs<AssessmentStep.Results>(viewModel.currentStep.value)
+        val results = assertIs<AssessmentStep.Results>(viewModel.currentStep.value)
         viewModel.acceptResult(profileId = "athlete-a", overrideKg = 115f)
         advanceUntilIdle()
 
         val saved = assessmentRepository.savedSessions.single()
         assertEquals(105f, saved.weightPerCableKg)
-        assertEquals(115f, saved.userOverrideTotalKg)
+        assertEquals(230f, saved.userOverrideTotalKg)
+        assertEquals(results.estimatedOneRepMaxKg * 2f, saved.estimatedOneRepMaxTotalKg)
+        val result = assessmentRepository.getLatestAssessment("single-curl", "athlete-a")!!
+        val points = kotlinx.serialization.json.Json.decodeFromString<List<Map<String, String>>>(result.loadVelocityData)
+        assertEquals(listOf("200.0", "220.0"), points.map { it.getValue("loadKg") })
+        assertEquals(115f, (viewModel.currentStep.value as AssessmentStep.Complete).finalOneRepMaxKg)
+    }
+
+    @Test
+    fun startingLoadBasis_matchesSingleIndependentDualUnifiedAndUnknownExercises() = runTest {
+        val configurations = listOf(
+            Triple(ExerciseCableIntent.SINGLE, "HANDLES", false),
+            Triple(ExerciseCableIntent.DUAL, "HANDLES", false),
+            Triple(ExerciseCableIntent.DUAL, "BAR", true),
+            Triple(ExerciseCableIntent.EITHER, "BAR", false),
+        )
+        for ((intent, equipment, expectedTotal) in configurations) {
+            val exercise = Exercise(id = "test", name = "Test", muscleGroup = "Arms", equipment = equipment, cableIntent = intent)
+            val exercises = FakeExerciseRepository().apply { addExercise(exercise) }
+            val viewModel = readyViewModel(FakeAssessmentRepository(), exercises)
+            advanceUntilIdle()
+            viewModel.selectExerciseById("test")
+            advanceUntilIdle()
+            val step = assertIs<AssessmentStep.ProgressiveLoading>(viewModel.currentStep.value)
+            assertEquals(expectedTotal, step.isTotalLoad)
+            assertEquals(if (expectedTotal) 20f else 10f, step.suggestedWeightKg)
+        }
     }
 
     private fun readyViewModel(

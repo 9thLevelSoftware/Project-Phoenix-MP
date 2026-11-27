@@ -9,6 +9,7 @@ import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RackItemBehavior
 import com.devil.phoenixproject.domain.model.RepCountTiming
+import com.devil.phoenixproject.domain.model.PAIRED_CABLE_POWER_METHOD
 import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.RepMetricSummary
 import com.devil.phoenixproject.domain.model.Routine
@@ -375,7 +376,7 @@ class PortalSyncAdapterTest {
     }
 
     @Test
-    fun `rep summary emits PAIRED_CABLE_WORK_V1 for v2 paired cable work and UNAVAILABLE with null watts for legacy v1 or non-finite`() {
+    fun `rep summary requires explicit paired power provenance even for millimetre rows`() {
         // Asymmetric cable paired-work calculation: (loadA * velA + loadB * velB) / 1000 * 9.81
         val loadA = 40f
         val velA = 600f
@@ -398,6 +399,7 @@ class PortalSyncAdapterTest {
             concentricDurationMs = 800L,
             eccentricDurationMs = 1_000L,
             metricUnitVersion = METRIC_UNIT_VERSION_MM,
+            powerMethod = PAIRED_CABLE_POWER_METHOD,
         )
         val v1LegacyRep = v2Rep.copy(
             repNumber = 2,
@@ -419,13 +421,13 @@ class PortalSyncAdapterTest {
                 totalReps = 3,
                 exerciseName = "Cable Press",
             ),
-            repSummaries = listOf(v2Rep, v1LegacyRep, nanRep),
+            repSummaries = listOf(v2Rep, v1LegacyRep, nanRep, v2Rep.copy(repNumber = 4, powerMethod = null)),
         )
 
         val repSummaries = PortalSyncAdapter.toPortalWorkoutSessions(listOf(swr), "user-1")
             .single().exercises.single().sets.single().repSummaries
 
-        assertEquals(3, repSummaries.size)
+        assertEquals(4, repSummaries.size)
         assertEquals("PAIRED_CABLE_WORK_V1", repSummaries[0].powerMethod)
         assertFloatEquals(pairedAvgPower, repSummaries[0].powerWatts!!)
         assertFloatEquals(pairedPeakPower, repSummaries[0].peakPowerWatts!!)
@@ -438,6 +440,10 @@ class PortalSyncAdapterTest {
         assertEquals("UNAVAILABLE", repSummaries[2].powerMethod)
         assertNull(repSummaries[2].powerWatts)
         assertNull(repSummaries[2].peakPowerWatts)
+
+        assertEquals("UNAVAILABLE", repSummaries[3].powerMethod)
+        assertNull(repSummaries[3].powerWatts)
+        assertNull(repSummaries[3].peakPowerWatts)
     }
 
     @Test
@@ -1889,6 +1895,7 @@ class PortalSyncAdapterTest {
         rangeOfMotionMm = rangeOfMotionMm,
         peakPowerWatts = avgPowerWatts * 1.5f,
         avgPowerWatts = avgPowerWatts,
+        powerMethod = PAIRED_CABLE_POWER_METHOD,
     )
 
     private fun makeRoutineExercise(

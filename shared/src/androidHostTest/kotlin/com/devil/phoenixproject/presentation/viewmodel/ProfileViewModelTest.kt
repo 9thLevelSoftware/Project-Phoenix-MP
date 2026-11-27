@@ -1983,7 +1983,6 @@ class ProfileViewModelTest {
             velocityRepository = velocity,
             assessmentRepository = assessments,
             workoutRepository = workouts,
-            exerciseRepository = exercises,
         ),
         externalMeasurements = externalMeasurements,
     )

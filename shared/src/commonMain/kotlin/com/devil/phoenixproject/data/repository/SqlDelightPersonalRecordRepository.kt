@@ -225,6 +225,22 @@ class SqlDelightPersonalRecordRepository(
         }
     }
 
+    internal suspend fun repairPRsFromHistory(
+        exerciseId: String,
+        weightPRWeightPerCableKg: Float,
+        volumePRWeightPerCableKg: Float,
+        reps: Int,
+        workoutMode: String,
+        timestamp: Long,
+        profileId: String,
+    ): List<PRType> = withContext(Dispatchers.IO) {
+        updatePRsIfBetterInternal(
+            exerciseId, weightPRWeightPerCableKg, volumePRWeightPerCableKg, reps,
+            workoutMode, timestamp, WorkoutPhase.COMBINED, profileId,
+            restoreDeletedRecords = false,
+        )
+    }
+
     /**
      * Internal implementation that checks and updates both weight and volume PRs
      * for a specific phase (COMBINED, CONCENTRIC, or ECCENTRIC).
@@ -239,6 +255,7 @@ class SqlDelightPersonalRecordRepository(
         phase: WorkoutPhase,
         profileId: String,
         cableCount: Int? = null,
+        restoreDeletedRecords: Boolean = true,
     ): List<PRType> {
         require(profileId.isNotBlank()) { "PR profileId must not be blank" }
         require(exerciseId.isNotBlank()) { "PR exerciseId must not be blank" }
@@ -310,7 +327,7 @@ class SqlDelightPersonalRecordRepository(
         // (e.g., weight PR upsert succeeds but volume PR or 1RM sync throws) doesn't
         // leave the DB in an inconsistent state while reporting Result.failure to the caller.
         db.transaction {
-            if (isNewWeightPR) {
+            if (isNewWeightPR && (restoreDeletedRecords || storedWeightPR?.deletedAt == null)) {
                 Logger.i { "PR_SAVE: Writing WEIGHT PR for exercise=$exerciseId, weight=${weightPRWeightPerCableKg}kg, profile=$effectiveProfileId" }
                 val weightUuid = storedWeightPR?.uuid ?: generateUUID()
                 queries.updatePRFromLocalLift(
@@ -348,7 +365,7 @@ class SqlDelightPersonalRecordRepository(
                 brokenPRs.add(PRType.MAX_WEIGHT)
             }
 
-            if (isNewVolumePR) {
+            if (isNewVolumePR && (restoreDeletedRecords || storedVolumePR?.deletedAt == null)) {
                 Logger.i { "PR_SAVE: Writing VOLUME PR for exercise=$exerciseId, volume=$volumeForVolumePR, profile=$effectiveProfileId" }
                 val volumeUuid = storedVolumePR?.uuid ?: generateUUID()
                 queries.updatePRFromLocalLift(

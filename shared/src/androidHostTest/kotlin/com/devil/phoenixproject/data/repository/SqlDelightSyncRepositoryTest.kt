@@ -3,6 +3,8 @@ package com.devil.phoenixproject.data.repository
 import com.devil.phoenixproject.data.local.ExerciseImporter
 import com.devil.phoenixproject.data.sync.PersonalRecordSyncDto
 import com.devil.phoenixproject.data.sync.PortalSyncAdapter
+import com.devil.phoenixproject.data.sync.PortalPullAdapter
+import com.devil.phoenixproject.data.sync.PullPersonalRecordDto
 import com.devil.phoenixproject.data.sync.PortalSyncPayload
 import com.devil.phoenixproject.data.sync.PullCycleDayDto
 import com.devil.phoenixproject.data.sync.PullRoutineDto
@@ -3641,6 +3643,149 @@ class SqlDelightSyncRepositoryTest {
         ).executeAsOne()
         assertEquals(60.0, afterStale.weight)
         assertEquals(2_000L, afterStale.updatedAt)
+    }
+
+    @Test
+    fun `pull preserves dirty personal best for both matching and colliding remote UUIDs`() = runTest {
+        val queries = database.phoenixDatabaseQueries
+        for (sameUuid in listOf(true, false)) {
+            val exerciseId = "dirty-pr-$sameUuid"
+            val localUuid = "local-$sameUuid"
+            queries.insertPRFromMergeIgnore(
+                exerciseId, "Bench", 100.0, 5L, 112.5, 300L, "Pump", "MAX_WEIGHT", 500.0,
+                "COMBINED", null, "server-before-lift", null, "active-profile", 2L, localUuid,
+            )
+            val before = queries.selectPersonalRecordByUuid(localUuid, "active-profile").executeAsOne()
+            repository.mergePersonalRecords(
+                listOf(
+                    PersonalRecordSyncDto(
+                        clientId = if (sameUuid) localUuid else "remote-$sameUuid",
+                        serverId = "remote-server", exerciseId = exerciseId, exerciseName = "Bench",
+                        weight = 80f, reps = 5, oneRepMax = 90f, achievedAt = 100L,
+                        workoutMode = "Pump", prType = "MAX_WEIGHT", phase = "COMBINED", volume = 400f,
+                        createdAt = 100L, updatedAt = 200L,
+                    ),
+                ),
+                "active-profile",
+            )
+            assertEquals(before, queries.selectPersonalRecordByUuid(localUuid, "active-profile").executeAsOne())
+            assertTrue(repository.getFullPRsModifiedSince(250L, "active-profile").any { it.uuid == localUuid })
+        }
+    }
+
+    @Test
+    fun `pull moves legacy record type mode by UUID before updating its canonical slot`() = runTest {
+        val queries = database.phoenixDatabaseQueries
+        for (hasTargetSlot in listOf(false, true)) {
+            val exerciseId = "legacy-mode-$hasTargetSlot"
+            val serverUuid = "legacy-server-$hasTargetSlot"
+            queries.insertPRFromMergeIgnore(
+                exerciseId, "Bench", 50.0, 5L, 56.25, 100L, "MAX_WEIGHT", "MAX_WEIGHT", 250.0,
+                "COMBINED", 100L, serverUuid, null, "active-profile", 2L, serverUuid,
+            )
+            val sourceId = queries.selectPersonalRecordByUuid(serverUuid, "active-profile").executeAsOne().id
+            if (hasTargetSlot) {
+                queries.insertPRFromMergeIgnore(
+                    exerciseId, "Bench", 40.0, 5L, 45.0, 50L, "Pump", "MAX_WEIGHT", 200.0,
+                    "COMBINED", 50L, "other", null, "active-profile", 2L, "target-$hasTargetSlot",
+                )
+            }
+            repository.mergePersonalRecords(
+                listOf(
+                    PersonalRecordSyncDto(
+                        clientId = serverUuid, serverId = serverUuid, exerciseId = exerciseId,
+                        exerciseName = "Bench", weight = 60f, reps = 5, oneRepMax = 67.5f, achievedAt = 200L,
+                        workoutMode = "Pump", prType = "MAX_WEIGHT", phase = "COMBINED", volume = 300f,
+                        createdAt = 100L, updatedAt = 200L,
+                    ),
+                ),
+                "active-profile",
+            )
+            val rows = queries.selectPersonalRecordsByExerciseId(exerciseId).executeAsList()
+            assertEquals(1, rows.size)
+            assertEquals(sourceId, rows.single().id)
+            assertEquals(serverUuid, rows.single().uuid)
+            assertEquals("Pump", rows.single().workoutMode)
+            assertEquals(60.0, rows.single().weight)
+        }
+    }
+
+    @Test
+    fun `pull never steals a dirty UUID in another mode with the same achieved time`() = runTest {
+        val queries = database.phoenixDatabaseQueries
+        queries.insertPRFromMergeIgnore(
+            "dirty-other-mode", "Bench", 100.0, 5L, 112.5, 100L, "Echo", "MAX_WEIGHT", 500.0,
+            "COMBINED", null, null, null, "active-profile", 2L, "dirty-echo-uuid",
+        )
+        val before = queries.selectPersonalRecordByUuid("dirty-echo-uuid", "active-profile").executeAsOne()
+        repository.mergePersonalRecords(
+            listOf(PersonalRecordSyncDto(
+                clientId = "pump-server-uuid", serverId = "pump-server-uuid", exerciseId = "dirty-other-mode",
+                exerciseName = "Bench", weight = 50f, reps = 5, oneRepMax = 56.25f, achievedAt = 100L,
+                workoutMode = "Pump", prType = "MAX_WEIGHT", phase = "COMBINED", volume = 250f,
+                createdAt = 100L, updatedAt = 200L,
+            )),
+            "active-profile",
+        )
+        assertEquals(before, queries.selectPersonalRecordByUuid("dirty-echo-uuid", "active-profile").executeAsOne())
+        val incoming = queries.selectPersonalRecordByUuid("pump-server-uuid", "active-profile").executeAsOne()
+        assertEquals("Pump", incoming.workoutMode)
+        assertEquals(50.0, incoming.weight)
+    }
+
+    @Test
+    fun `dirty UUID in a legacy mode preserves both rows when the canonical slot is occupied`() = runTest {
+        val queries = database.phoenixDatabaseQueries
+        queries.insertPRFromMergeIgnore(
+            "dirty-legacy", "Bench", 100.0, 5L, 112.5, 300L, "MAX_WEIGHT", "MAX_WEIGHT", 500.0,
+            "COMBINED", null, null, null, "active-profile", 2L, "dirty-legacy-uuid",
+        )
+        queries.insertPRFromMergeIgnore(
+            "dirty-legacy", "Bench", 40.0, 5L, 45.0, 100L, "Pump", "MAX_WEIGHT", 200.0,
+            "COMBINED", 100L, "canonical-server", null, "active-profile", 2L, "canonical-uuid",
+        )
+        val before = queries.selectPersonalRecordsByExerciseId("dirty-legacy").executeAsList()
+        repository.mergePersonalRecords(
+            listOf(PersonalRecordSyncDto(
+                clientId = "dirty-legacy-uuid", serverId = "dirty-legacy-uuid", exerciseId = "dirty-legacy",
+                exerciseName = "Bench", weight = 50f, reps = 5, oneRepMax = 56.25f, achievedAt = 100L,
+                workoutMode = "Pump", prType = "MAX_WEIGHT", phase = "COMBINED", volume = 250f,
+                createdAt = 100L, updatedAt = 200L,
+            )),
+            "active-profile",
+        )
+        assertEquals(before, queries.selectPersonalRecordsByExerciseId("dirty-legacy").executeAsList())
+    }
+
+    @Test
+    fun `mode-less known UUID tombstone deletes only its own mode even beside a dirty fallback slot`() = runTest {
+        val queries = database.phoenixDatabaseQueries
+        for (fallbackUpdatedAt in listOf(null, 100L)) {
+            val exerciseId = "mode-less-delete-$fallbackUpdatedAt"
+            val pumpUuid = "pump-delete-$fallbackUpdatedAt"
+            val oldSchoolUuid = "old-school-keep-$fallbackUpdatedAt"
+            queries.insertPRFromMergeIgnore(
+                exerciseId, "Bench", 80.0, 5L, 90.0, 100L, "Pump", "MAX_WEIGHT", 400.0,
+                "COMBINED", 100L, pumpUuid, null, "active-profile", 2L, pumpUuid,
+            )
+            queries.insertPRFromMergeIgnore(
+                exerciseId, "Bench", 100.0, 5L, 112.5, 100L, "Old School", "MAX_WEIGHT", 500.0,
+                "COMBINED", fallbackUpdatedAt, oldSchoolUuid, null, "active-profile", 2L, oldSchoolUuid,
+            )
+            val pumpBefore = queries.selectPersonalRecordByUuid(pumpUuid, "active-profile").executeAsOne()
+            val oldSchoolBefore = queries.selectPersonalRecordByUuid(oldSchoolUuid, "active-profile").executeAsOne()
+            val tombstone = PortalPullAdapter.toPersonalRecordSyncDto(PullPersonalRecordDto(
+                id = pumpUuid, exerciseId = exerciseId, recordType = "MAX_WEIGHT",
+                updatedAt = "1970-01-01T00:00:00.200Z", deletedAt = "1970-01-01T00:00:00.200Z",
+            ))
+            repository.mergePersonalRecords(listOf(tombstone), "active-profile")
+            assertEquals(oldSchoolBefore, queries.selectPersonalRecordByUuid(oldSchoolUuid, "active-profile").executeAsOne())
+            assertEquals(
+                pumpBefore.copy(deletedAt = 200L, updatedAt = 200L),
+                queries.selectPersonalRecordByUuid(pumpUuid, "active-profile").executeAsOne(),
+            )
+            assertEquals(2, queries.selectPersonalRecordsByExerciseId(exerciseId).executeAsList().size)
+        }
     }
 
     @Test

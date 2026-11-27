@@ -383,7 +383,7 @@
 
     <!-- ==================== Assessment Wizard ==================== -->
     <string name="wizard_step_of">Étape %1$d sur %2$d</string>
-    <string name="actual_weight_label">Poids réellement utilisé (kg)</string>
+    <string name="actual_weight_label">Charge réellement utilisée (%1$s)</string>
     <string name="mean_velocity_label">Vitesse moyenne (m/s)</string>
     <string name="cancel_assessment">Annuler l'évaluation</string>
     <string name="assessment_save_failed">Impossible d'enregistrer l'évaluation. Réessayez.</string>
@@ -1781,7 +1781,7 @@
     <string name="assessment_completed_sets">Séries terminées</string>
     <string name="assessment_velocity_ms">%1$s m/s</string>
     <string name="assessment_velocity_threshold_stop">Seuil de vitesse atteint — évaluation terminée</string>
-    <string name="assessment_set_machine_to">Réglez la machine sur %1$s</string>
+    <string name="assessment_set_machine_to">Réglez la machine sur %1$s (%2$s)</string>
     <string name="assessment_capture_instructions">Effectuez 3 répétitions avec une intention concentrique maximale.\nAppuyez sur Démarrer la série puis commencez.</string>
     <string name="assessment_start_set">Démarrer la série</string>
     <string name="assessment_capturing_velocity">Capture de la vitesse...</string>
@@ -2116,4 +2116,7 @@
     <string name="rpe_rir_1">1 RiR</string>
     <string name="rpe_rir_0">0 RiR</string>
     <string name="analytics_pr_reps">%1$d réps</string>
+    <string name="assessment_suggested_weight_per_cable">Poids suggéré (Par câble)</string>
+    <string name="assessment_load_total">Total</string>
+    <string name="assessment_load_per_cable">Par câble</string>
 </resources>

@@ -248,11 +248,14 @@ class DataBackupManagerRoutineNameTest {
         val legacyBackup = backupManager.exportAllData()
         val streamedBackup = testJson.decodeFromString<BackupData>(backupManager.exportToJson())
 
-        assertEquals(listOf("active-pr", "deleted-pr"), legacyBackup.data.personalRecords.map { it.exerciseId })
-        assertEquals(listOf("active-pr", "deleted-pr"), streamedBackup.data.personalRecords.map { it.exerciseId })
-        assertNull(legacyBackup.data.personalRecords.first { it.exerciseId == "active-pr" }.deletedAt)
-        assertEquals(1_700_000_123_000L, legacyBackup.data.personalRecords.first { it.exerciseId == "deleted-pr" }.deletedAt)
-        assertEquals(1_700_000_123_000L, streamedBackup.data.personalRecords.first { it.exerciseId == "deleted-pr" }.deletedAt)
+        for (backup in listOf(legacyBackup, streamedBackup)) {
+            val active = backup.data.personalRecords.single()
+            assertEquals("active-pr", active.exerciseId)
+            assertNull(active.deletedAt)
+            val deletedRecord = backup.data.personalRecordTombstones.single()
+            assertEquals("deleted-pr", deletedRecord.exerciseId)
+            assertEquals(1_700_000_123_000L, deletedRecord.deletedAt)
+        }
     }
 
     @Test
