@@ -126,7 +126,7 @@ jobs:
           sha256sum build/phoenix-tests-fenix7.prg > "$RUNNER_TEMP/phoenix-prg.sha256"
           sha256sum --check "$RUNNER_TEMP/phoenix-prg.sha256"
           sha256sum build/phoenix-tests-fenix7.prg
-          sudo apt-get update && sudo apt-get install -y x11-utils x11-apps imagemagick
+          sudo apt-get update && sudo apt-get install -y x11-utils x11-apps imagemagick python3-pyatspi at-spi2-core
 
       - name: Run simulator protocol/input checks (monkeydo -t)
         id: phoenix
@@ -180,6 +180,36 @@ jobs:
           bash "$RUNNER_TEMP/selected.sh" "$GITHUB_WORKSPACE/build/phoenix-tests-fenix7.prg" fenix7 | tee "$RUNNER_TEMP/selected.log"
           grep -Eq '^Executing test testHelloContract([.( ]|$)' "$RUNNER_TEMP/selected.log"
           grep -Eq '^PASSED \(passed=1, failed=0, errors=0\)[[:space:]]*$' "$RUNNER_TEMP/selected.log"
+
+      # Never use this instrumented copy for the real matrix or upload it as an app.
+      # Compare marker location on PR vs push; same target and SDK on both events.
+      - name: Isolate Phoenix test discovery in a disposable build
+        if: failure() && matrix.device == 'fenix7' && steps.phoenix.outcome == 'failure'
+        shell: bash
+        env:
+          MARKER_DIR: ${{ github.event_name == 'pull_request' && 'tests' || 'source' }}
+        run: |
+          diag="$RUNNER_TEMP/discovery"
+          cp -R garmin "$diag"
+          cp upstream-smoke/tests/simulator/source/Smoke.mc "$diag/$MARKER_DIR/Discovery.mc"
+          python3 - "$diag/$MARKER_DIR/Discovery.mc" <<'PY'
+          from pathlib import Path
+          import sys
+          p = Path(sys.argv[1]); code = p.read_text()
+          p.write_text('import Toybox.Lang;\nimport Toybox.Test;\n' + code[code.index('(:test)'):])
+          PY
+          monkeyc -f "$diag/monkey.jungle" -d fenix7 -o "$diag/discovery.prg" -y "$RUNNER_TEMP/developer_key.der" -t
+          for symbols in build/phoenix-tests-fenix7.prg.debug.xml "$diag/discovery.prg.debug.xml"; do
+            if test -f "$symbols"; then
+              grep -E 'name="(testHelloContract|simulatorSmoke|PhoenixApp)"' "$symbols" || true
+            fi
+          done
+          # Keep the selector copy's envelope, without changing the original wrapper.
+          sed 's/-t testHelloContract 2>/-t simulatorSmoke 2>/' "$RUNNER_TEMP/selected.sh" > "$diag/probe.sh"
+          bash "$diag/probe.sh" "$diag/discovery.prg" fenix7 | tee "$diag/discovery.log"
+          grep -Fq SETUP_CONNECTIQ_SIMULATOR_SMOKE_EXECUTED "$diag/discovery.log"
+          grep -Eq '^Executing test simulatorSmoke([.( ]|$)' "$diag/discovery.log"
+          grep -Eq '^PASSED \(passed=1, failed=0, errors=0\)[[:space:]]*$' "$diag/discovery.log"
 
       - name: Upload CI artifact
         uses: actions/upload-artifact@v4

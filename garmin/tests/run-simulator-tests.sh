@@ -112,6 +112,7 @@ exec timeout --signal=TERM --kill-after=10s 480s \
             if [[ "$device" == fenix7 && -n "${RUNNER_TEMP:-}" ]] && command -v xwd >/dev/null && command -v convert >/dev/null; then
                 if xwininfo -name Error >/dev/null 2>&1; then
                     timeout 5s xwd -silent -name Error | convert xwd:- "$RUNNER_TEMP/phoenix-simulator-error.png"
+                    timeout 10s /usr/bin/python3 garmin/tests/read-simulator-dialog.py
                 fi
             fi
             tree=$(pstree -Tp "$$")
