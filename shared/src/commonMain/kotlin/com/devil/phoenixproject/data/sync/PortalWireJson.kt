@@ -18,7 +18,7 @@ internal data class EncodedPortalSyncPayload(
     val preferenceElementSpans: List<RawJsonSpan>,
 ) {
     fun preferenceElementByteCount(span: RawJsonSpan): Int =
-        raw.substring(span.start, span.endExclusive).encodeToByteArray().size
+        raw.encodeToByteArray(startIndex = span.start, endIndex = span.endExclusive).size
 }
 
 internal fun encodePortalSyncPayload(payload: PortalSyncPayload): EncodedPortalSyncPayload {
@@ -108,7 +108,7 @@ private class PortalSyncPayloadRawScanner(
     private fun parseValue() {
         skipWhitespace()
         when (peek()) {
-            '"' -> parseString()
+            '"' -> skipString()
             '{' -> parseObject()
             '[' -> parseArray()
             't' -> parseLiteral("true")
@@ -127,7 +127,7 @@ private class PortalSyncPayloadRawScanner(
         while (true) {
             skipWhitespace()
             if (peek() != '"') fail(INVALID_JSON_STRUCTURE)
-            parseString()
+            skipString()
             skipWhitespace()
             if (!consume(':')) fail(INVALID_JSON_STRUCTURE)
             parseValue()
@@ -177,6 +177,32 @@ private class PortalSyncPayloadRawScanner(
         fail(INVALID_JSON_STRUCTURE)
     }
 
+    private fun skipString() {
+        if (!consume('"')) fail(INVALID_JSON_STRUCTURE)
+        val length = raw.length
+        while (index < length) {
+            val character = raw[index++]
+            when {
+                character == '"' -> return
+                character == '\\' -> skipEscape()
+                character.code < 0x20 -> fail(INVALID_JSON_STRUCTURE)
+            }
+        }
+        fail(INVALID_JSON_STRUCTURE)
+    }
+
+    private fun skipEscape() {
+        if (index >= raw.length) fail(INVALID_JSON_STRUCTURE)
+        when (raw[index++]) {
+            '"', '\\', '/', 'b', 'f', 'n', 'r', 't' -> Unit
+            'u' -> {
+                if (index + 4 > raw.length) fail(INVALID_JSON_STRUCTURE)
+                repeat(4) { hexValue(raw[index++]) }
+            }
+            else -> fail(INVALID_JSON_STRUCTURE)
+        }
+    }
+
     private fun parseEscape(): Char {
         if (index >= raw.length) fail(INVALID_JSON_STRUCTURE)
         return when (val escaped = raw[index++]) {
@@ -210,10 +236,9 @@ private class PortalSyncPayloadRawScanner(
     }
 
     private fun parseLiteral(literal: String) {
-        if (index + literal.length > raw.length ||
-            raw.substring(index, index + literal.length) != literal
-        ) {
-            fail(INVALID_JSON_STRUCTURE)
+        if (index + literal.length > raw.length) fail(INVALID_JSON_STRUCTURE)
+        for (i in literal.indices) {
+            if (raw[index + i] != literal[i]) fail(INVALID_JSON_STRUCTURE)
         }
         index += literal.length
     }

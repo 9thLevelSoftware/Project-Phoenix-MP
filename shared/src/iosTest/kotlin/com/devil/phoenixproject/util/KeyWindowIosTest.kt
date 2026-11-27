@@ -3,13 +3,12 @@
 package com.devil.phoenixproject.util
 
 import kotlin.test.Test
-import kotlin.test.assertEquals
+import kotlin.test.assertNull
 
 class KeyWindowIosTest {
 
     @Test
-    fun keyWindowRootViewControllerMatchesKeyWindowRoot() {
-        val window = keyWindow()
-        assertEquals(window?.rootViewController, keyWindowRootViewController())
+    fun keyWindowRootViewControllerReturnsNullWhenKeyWindowUnavailable() {
+        assertNull(keyWindowRootViewController(keyWindowProvider = { null }))
     }
 }

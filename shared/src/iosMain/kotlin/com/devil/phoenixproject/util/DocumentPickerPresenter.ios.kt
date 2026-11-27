@@ -3,6 +3,7 @@ package com.devil.phoenixproject.util
 import co.touchlab.kermit.Logger
 import kotlinx.cinterop.ExperimentalForeignApi
 import platform.UIKit.UIDocumentPickerViewController
+import platform.UIKit.UIViewController
 
 /**
  * Presents [picker] from the top of the key window's presented-controller chain.
@@ -19,8 +20,9 @@ internal fun presentDocumentPicker(
     picker: UIDocumentPickerViewController,
     delegate: DocumentPickerDelegate,
     log: Logger,
+    rootViewControllerProvider: () -> UIViewController? = ::keyWindowRootViewController,
 ) {
-    var presenter = keyWindowRootViewController() ?: run {
+    var presenter = rootViewControllerProvider() ?: run {
         log.e { "Could not get root view controller" }
         delegate.onCancelled()
         return

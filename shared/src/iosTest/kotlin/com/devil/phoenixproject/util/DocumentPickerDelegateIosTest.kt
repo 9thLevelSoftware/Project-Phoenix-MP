@@ -45,9 +45,12 @@ class DocumentPickerDelegateIosTest {
             kind = DocumentPickerKind.Directory,
         )
         val picker = UIDocumentPickerViewController(forOpeningContentTypes = listOf(UTTypeFolder))
-        if (keyWindowRootViewController() == null) {
-            presentDocumentPicker(picker, delegate, Logger.withTag("DocumentPickerDelegateIosTest"))
-            assertEquals(1, cancelled)
-        }
+        presentDocumentPicker(
+            picker = picker,
+            delegate = delegate,
+            log = Logger.withTag("DocumentPickerDelegateIosTest"),
+            rootViewControllerProvider = { null },
+        )
+        assertEquals(1, cancelled)
     }
 }

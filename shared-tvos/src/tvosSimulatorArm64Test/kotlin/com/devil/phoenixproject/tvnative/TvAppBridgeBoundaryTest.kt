@@ -359,8 +359,12 @@ class TvAppBridgeBoundaryTest {
             // Reconnect transport without acknowledging; the safety barrier must still block new sets.
             f.connection.value = ConnectionState.Connected("Vee_Boundary", "boundary")
             runCurrent()
+            f.bridge.stopActiveSet()
+            f.awaitStopped()
             f.bridge.startNextJustLiftSet()
-            withContext(Dispatchers.Default) { delay(50) }
+            withContext(Dispatchers.Default) {
+                withTimeout(5_000) { f.main.workoutState.first { it is WorkoutState.Idle } }
+            }
             runCurrent()
             assertEquals(programsAfterStart, f.programCommands.size, "Safety barrier must block set start until acknowledged")
 
@@ -388,7 +392,6 @@ class TvAppBridgeBoundaryTest {
         withBridge { f ->
             f.startCableSet()
             val programsAfterStart = f.programCommands.size
-            val stopCallsBefore = f.stopCalls
 
             f.connection.value = ConnectionState.Disconnected
             f.reconnectionRequests.tryEmit(
@@ -419,10 +422,14 @@ class TvAppBridgeBoundaryTest {
 
             f.connection.value = ConnectionState.Connected("Vee_Boundary", "boundary")
             runCurrent()
+            f.bridge.stopActiveSet()
+            f.awaitStopped()
+            val stopCallsAfterTeardown = f.stopCalls
             f.bridge.startNextJustLiftSet()
             withContext(Dispatchers.Default) {
                 withTimeout(5_000) {
                     f.main.machineSafetyUiState.first { it is MachineSafetyUiState.Visible }
+                    f.main.workoutState.first { it is WorkoutState.Idle }
                 }
             }
             runCurrent()
@@ -441,7 +448,7 @@ class TvAppBridgeBoundaryTest {
             runCurrent()
 
             val afterRecovery = f.bridge.snapshot()
-            assertEquals(stopCallsBefore + 1, f.stopCalls)
+            assertEquals(stopCallsAfterTeardown + 1, f.stopCalls)
             assertEquals("RELEASE_REQUEST_SENT", afterRecovery.safetyHazardPhase)
             assertEquals("MATCHING_READY", afterRecovery.safetyHazardConnectResult)
             assertEquals("TRANSPORT_ACK", afterRecovery.safetyHazardWriteResult)

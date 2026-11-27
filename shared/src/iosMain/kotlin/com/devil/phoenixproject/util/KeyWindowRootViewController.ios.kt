@@ -23,6 +23,8 @@ internal fun keyWindow(): UIWindow? {
  * Root [UIViewController] of the key window on the first connected [UIWindowScene].
  */
 @OptIn(ExperimentalForeignApi::class)
-internal fun keyWindowRootViewController(): UIViewController? {
-    return keyWindow()?.rootViewController
+internal fun keyWindowRootViewController(
+    keyWindowProvider: () -> UIWindow? = ::keyWindow,
+): UIViewController? {
+    return keyWindowProvider()?.rootViewController
 }
