@@ -124,7 +124,7 @@ jobs:
         id: phoenix
         run: |
           bash garmin/tests/run-simulator-tests.sh \
-            "build/phoenix-tests-${{ matrix.device }}.prg" \
+            "$GITHUB_WORKSPACE/build/phoenix-tests-${{ matrix.device }}.prg" \
             "${{ matrix.device }}"
 
       # Compare on the same runner after a failed real suite. The wrapper
