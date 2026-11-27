@@ -7,6 +7,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.minutes
 import kotlinx.atomicfu.locks.reentrantLock
 import kotlinx.atomicfu.locks.withLock
 import kotlinx.coroutines.Dispatchers
@@ -918,13 +919,15 @@ class RepCounterFromMachineTest {
     }
 
     @Test
-    fun `concurrent process updatePhaseFromPosition getRepRanges and reset never throws or deadlocks`() = runTest {
+    fun `concurrent process updatePhaseFromPosition getRepRanges and reset never throws or deadlocks`() = runTest(timeout = 3.minutes) {
         withContext(Dispatchers.Default) {
-            withTimeout(30_000L) {
-                val errorLock = reentrantLock()
-                val errors = mutableListOf<String>()
+            val errorLock = reentrantLock()
+            val errors = mutableListOf<String>()
 
-                repeat(5) { trial ->
+            repeat(5) { trial ->
+                // Bound each contention trial, rather than benchmarking all five against
+                // one wall-clock deadline on slower Kotlin/Native simulator runners.
+                withTimeout(30_000L) {
                     val counter = RepCounterFromMachine()
                     counter.configure(
                         warmupTarget = 0,
@@ -1031,9 +1034,9 @@ class RepCounterFromMachineTest {
                         }
                     }
                 }
-
-                assertTrue(errors.isEmpty(), "Expected 0 concurrency errors, got ${errors.size}: ${errors.take(5)}")
             }
+
+            assertTrue(errors.isEmpty(), "Expected 0 concurrency errors, got ${errors.size}: ${errors.take(5)}")
         }
     }
 
