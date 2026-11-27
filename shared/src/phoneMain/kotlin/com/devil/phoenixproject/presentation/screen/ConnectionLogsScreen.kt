@@ -1,10 +1,9 @@
 package com.devil.phoenixproject.presentation.screen
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
@@ -13,9 +12,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -23,14 +25,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -45,7 +46,6 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -64,10 +64,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.devil.phoenixproject.data.local.ConnectionLogEntity
 import com.devil.phoenixproject.data.repository.LogLevel
-import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
+import com.devil.phoenixproject.presentation.components.DestructiveConfirmDialog
+import com.devil.phoenixproject.presentation.components.PhoenixModalDialogFrame
+import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
+import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
 import com.devil.phoenixproject.presentation.viewmodel.ConnectionLogsViewModel
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
@@ -105,7 +107,7 @@ fun ConnectionLogsScreen(
     val filter by logsViewModel.filter.collectAsState()
     val isAutoScrollEnabled by logsViewModel.isAutoScrollEnabled.collectAsState()
     val isLoggingEnabled by logsViewModel.isLoggingEnabled.collectAsState()
-    val useCompactAccessibility = isCompactAccessibilityLayout()
+    val contentMaxWidth = ResponsiveDimensions.contentMaxWidth()
 
     val listState = rememberLazyListState()
 
@@ -142,9 +144,14 @@ fun ConnectionLogsScreen(
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.TopCenter,
+    ) {
         Column(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .then(if (contentMaxWidth != null) Modifier.widthIn(max = contentMaxWidth) else Modifier)
+                .fillMaxSize(),
         ) {
             // Search bar
             OutlinedTextField(
@@ -171,206 +178,113 @@ fun ConnectionLogsScreen(
                     }
                 },
                 singleLine = true,
-                shape = MaterialTheme.shapes.extraSmall,
+                shape = MaterialTheme.shapes.medium,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
             )
 
-            // Critical filter chips wrap under iOS Bold Text so every level remains visible.
-            if (useCompactAccessibility) {
-                FlowRow(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    LogLevelFilterChip(
-                        level = LogLevel.DEBUG,
-                        selected = filter.showDebug,
-                        count = logs.count { it.level == LogLevel.DEBUG.name },
-                        onClick = { logsViewModel.toggleLevel(LogLevel.DEBUG) },
-                    )
-                    LogLevelFilterChip(
-                        level = LogLevel.INFO,
-                        selected = filter.showInfo,
-                        count = logs.count { it.level == LogLevel.INFO.name },
-                        onClick = { logsViewModel.toggleLevel(LogLevel.INFO) },
-                    )
-                    LogLevelFilterChip(
-                        level = LogLevel.WARNING,
-                        selected = filter.showWarning,
-                        count = logs.count { it.level == LogLevel.WARNING.name },
-                        onClick = { logsViewModel.toggleLevel(LogLevel.WARNING) },
-                    )
-                    LogLevelFilterChip(
-                        level = LogLevel.ERROR,
-                        selected = filter.showError,
-                        count = logs.count { it.level == LogLevel.ERROR.name },
-                        onClick = { logsViewModel.toggleLevel(LogLevel.ERROR) },
-                    )
-                    FilterChip(
-                        selected = filter.hrmOnly,
-                        onClick = { logsViewModel.toggleHrmOnly() },
-                        label = { Text("HRM") },
-                    )
-                }
-            } else {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState())
-                        .padding(horizontal = 16.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    LogLevelFilterChip(
-                        level = LogLevel.DEBUG,
-                        selected = filter.showDebug,
-                        count = logs.count { it.level == LogLevel.DEBUG.name },
-                        onClick = { logsViewModel.toggleLevel(LogLevel.DEBUG) },
-                    )
-                    LogLevelFilterChip(
-                        level = LogLevel.INFO,
-                        selected = filter.showInfo,
-                        count = logs.count { it.level == LogLevel.INFO.name },
-                        onClick = { logsViewModel.toggleLevel(LogLevel.INFO) },
-                    )
-                    LogLevelFilterChip(
-                        level = LogLevel.WARNING,
-                        selected = filter.showWarning,
-                        count = logs.count { it.level == LogLevel.WARNING.name },
-                        onClick = { logsViewModel.toggleLevel(LogLevel.WARNING) },
-                    )
-                    LogLevelFilterChip(
-                        level = LogLevel.ERROR,
-                        selected = filter.showError,
-                        count = logs.count { it.level == LogLevel.ERROR.name },
-                        onClick = { logsViewModel.toggleLevel(LogLevel.ERROR) },
-                    )
-                    FilterChip(
-                        selected = filter.hrmOnly,
-                        onClick = { logsViewModel.toggleHrmOnly() },
-                        label = { Text("HRM") },
-                    )
-                }
+            // Filter chips wrap cleanly with FlowRow across all screen widths and font scales
+            FlowRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                LogLevelFilterChip(
+                    level = LogLevel.DEBUG,
+                    selected = filter.showDebug,
+                    count = logs.count { it.level == LogLevel.DEBUG.name },
+                    onClick = { logsViewModel.toggleLevel(LogLevel.DEBUG) },
+                )
+                LogLevelFilterChip(
+                    level = LogLevel.INFO,
+                    selected = filter.showInfo,
+                    count = logs.count { it.level == LogLevel.INFO.name },
+                    onClick = { logsViewModel.toggleLevel(LogLevel.INFO) },
+                )
+                LogLevelFilterChip(
+                    level = LogLevel.WARNING,
+                    selected = filter.showWarning,
+                    count = logs.count { it.level == LogLevel.WARNING.name },
+                    onClick = { logsViewModel.toggleLevel(LogLevel.WARNING) },
+                )
+                LogLevelFilterChip(
+                    level = LogLevel.ERROR,
+                    selected = filter.showError,
+                    count = logs.count { it.level == LogLevel.ERROR.name },
+                    onClick = { logsViewModel.toggleLevel(LogLevel.ERROR) },
+                )
+                FilterChip(
+                    selected = filter.hrmOnly,
+                    onClick = { logsViewModel.toggleHrmOnly() },
+                    modifier = Modifier.heightIn(min = 48.dp),
+                    label = { Text("HRM") },
+                )
             }
 
-            // Action bar
-            if (useCompactAccessibility) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
+            // Action bar wrapped in FlowRow so controls never clip or require horizontal scrolling
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
+                    itemVerticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
                         text = "${logs.size} logs",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(end = 4.dp),
                     )
 
-                    FlowRow(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        FilterChip(
-                            selected = isAutoScrollEnabled,
-                            onClick = { logsViewModel.toggleAutoScroll() },
-                            label = { Text(stringResource(Res.string.auto_scroll)) },
-                            leadingIcon = {
-                                Icon(
-                                    Icons.Default.KeyboardArrowDown,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp),
-                                )
-                            },
-                        )
+                    FilterChip(
+                        selected = isAutoScrollEnabled,
+                        onClick = { logsViewModel.toggleAutoScroll() },
+                        modifier = Modifier.heightIn(min = 48.dp),
+                        label = { Text(stringResource(Res.string.auto_scroll)) },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.KeyboardArrowDown,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        },
+                    )
 
-                        FilterChip(
-                            selected = isLoggingEnabled,
-                            onClick = { logsViewModel.setLoggingEnabled(!isLoggingEnabled) },
-                            label = { Text(if (isLoggingEnabled) "Logging ON" else "Logging OFF") },
-                        )
+                    FilterChip(
+                        selected = isLoggingEnabled,
+                        onClick = { logsViewModel.setLoggingEnabled(!isLoggingEnabled) },
+                        modifier = Modifier.heightIn(min = 48.dp),
+                        label = { Text(if (isLoggingEnabled) "Logging ON" else "Logging OFF") },
+                    )
 
-                        IconButton(onClick = {
+                    IconButton(
+                        onClick = {
                             exportContent = logsViewModel.exportLogsAsText()
                             showExportDialog = true
-                        }) {
-                            Icon(
-                                Icons.Default.Share,
-                                contentDescription = stringResource(Res.string.cd_export_logs),
-                            )
-                        }
-
-                        IconButton(onClick = { showClearDialog = true }) {
-                            Icon(
-                                Icons.Default.Delete,
-                                contentDescription = stringResource(Res.string.cd_clear_logs),
-                            )
-                        }
+                        },
+                        modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
+                    ) {
+                        Icon(
+                            Icons.Default.Share,
+                            contentDescription = stringResource(Res.string.cd_export_logs),
+                        )
                     }
-                }
-            } else {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = "${logs.size} logs",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(end = 8.dp),
-                    )
 
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier
-                            .weight(1f, fill = false)
-                            .horizontalScroll(rememberScrollState()),
+                    IconButton(
+                        onClick = { showClearDialog = true },
+                        modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
                     ) {
-                        // Auto-scroll toggle
-                        FilterChip(
-                            selected = isAutoScrollEnabled,
-                            onClick = { logsViewModel.toggleAutoScroll() },
-                            label = { Text(stringResource(Res.string.auto_scroll)) },
-                            leadingIcon = {
-                                Icon(
-                                    Icons.Default.KeyboardArrowDown,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp),
-                                )
-                            },
+                        Icon(
+                            Icons.Default.Delete,
+                            contentDescription = stringResource(Res.string.cd_clear_logs),
                         )
-
-                        // Logging toggle
-                        FilterChip(
-                            selected = isLoggingEnabled,
-                            onClick = { logsViewModel.setLoggingEnabled(!isLoggingEnabled) },
-                            label = { Text(if (isLoggingEnabled) "Logging ON" else "Logging OFF") },
-                        )
-
-                        // Export button
-                        IconButton(onClick = {
-                            exportContent = logsViewModel.exportLogsAsText()
-                            showExportDialog = true
-                        }) {
-                            Icon(
-                                Icons.Default.Share,
-                                contentDescription = stringResource(Res.string.cd_export_logs),
-                            )
-                        }
-
-                        // Clear button
-                        IconButton(onClick = { showClearDialog = true }) {
-                            Icon(
-                                Icons.Default.Delete,
-                                contentDescription = stringResource(Res.string.cd_clear_logs),
-                            )
-                        }
                     }
                 }
             }
@@ -401,8 +315,8 @@ fun ConnectionLogsScreen(
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    contentPadding = PaddingValues(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     items(logs, key = { it.id }) { log ->
                         LogEntryCard(log)
@@ -420,83 +334,57 @@ fun ConnectionLogsScreen(
 
     // Export dialog
     if (showExportDialog) {
-        AlertDialog(
-            onDismissRequest = { showExportDialog = false },
-            title = { Text(stringResource(Res.string.export_logs)) },
-            text = {
-                Column {
-                    Text(stringResource(Res.string.logs_ready_to_export, logs.size))
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Log content preview:",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    BoxWithConstraints {
-                        val previewHeight = (maxHeight * 0.4f).coerceIn(150.dp, 400.dp)
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(previewHeight)
-                                .padding(top = 8.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant,
-                            shape = RoundedCornerShape(4.dp),
-                        ) {
-                            Text(
-                                text =
-                                    exportContent.take(2000) +
-                                        if (exportContent.length > 2000) "\n..." else "",
-                                modifier = Modifier.padding(8.dp),
-                                style = MaterialTheme.typography.bodySmall.copy(
-                                    fontSize = 10.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                ),
-                            )
-                        }
-                    }
-                }
+        PhoenixModalDialogFrame(
+            title = stringResource(Res.string.export_logs),
+            onDismiss = { showExportDialog = false },
+            confirmLabel = stringResource(Res.string.copy_to_clipboard),
+            dismissLabel = stringResource(Res.string.action_cancel),
+            onConfirm = {
+                // Issue #112 fix: Actually copy to clipboard
+                clipboardManager.setText(AnnotatedString(exportContent))
+                showCopiedMessage = true
+                showExportDialog = false
             },
-            confirmButton = {
-                TextButton(onClick = {
-                    // Issue #112 fix: Actually copy to clipboard
-                    clipboardManager.setText(AnnotatedString(exportContent))
-                    showCopiedMessage = true
-                    showExportDialog = false
-                }) {
-                    Text(stringResource(Res.string.copy_to_clipboard))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showExportDialog = false }) {
-                    Text(stringResource(Res.string.action_cancel))
-                }
-            },
-        )
+        ) {
+            Text(stringResource(Res.string.logs_ready_to_export, logs.size))
+            Text(
+                text = "Log content preview:",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            val previewHeight = (LocalWindowSizeClass.current.heightDp * 0.35f).coerceIn(140.dp, 320.dp)
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(previewHeight),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                shape = MaterialTheme.shapes.small,
+            ) {
+                Text(
+                    text = exportContent.take(2000) +
+                        if (exportContent.length > 2000) "\n..." else "",
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(8.dp),
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontFamily = FontFamily.Monospace,
+                    ),
+                )
+            }
+        }
     }
 
     // Clear confirmation dialog
     if (showClearDialog) {
-        AlertDialog(
-            onDismissRequest = { showClearDialog = false },
-            title = { Text(stringResource(Res.string.clear_logs_title)) },
-            text = { Text(stringResource(Res.string.clear_logs_message, logs.size)) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        logsViewModel.clearAllLogs()
-                        showClearDialog = false
-                    },
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error,
-                    ),
-                ) {
-                    Text(stringResource(Res.string.clear_all))
-                }
+        DestructiveConfirmDialog(
+            title = stringResource(Res.string.clear_logs_title),
+            message = stringResource(Res.string.clear_logs_message, logs.size),
+            confirmText = stringResource(Res.string.clear_all),
+            onConfirm = {
+                logsViewModel.clearAllLogs()
+                showClearDialog = false
             },
-            dismissButton = {
-                TextButton(onClick = { showClearDialog = false }) {
-                    Text(stringResource(Res.string.action_cancel))
-                }
-            },
+            onDismiss = { showClearDialog = false },
         )
     }
 }
@@ -506,6 +394,7 @@ private fun LogLevelFilterChip(level: LogLevel, selected: Boolean, count: Int, o
     FilterChip(
         selected = selected,
         onClick = onClick,
+        modifier = Modifier.heightIn(min = 48.dp),
         label = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
@@ -530,47 +419,56 @@ private fun LogEntryCard(log: ConnectionLogEntity) {
 
     Card(
         modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(
-            containerColor = levelColor.copy(alpha = 0.05f),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
         ),
+        border = BorderStroke(1.dp, levelColor.copy(alpha = 0.4f)),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(12.dp),
         ) {
-            // Header row: timestamp + level + event type
+            // Header row: level + event type + optional tag (weighted) alongside timestamp
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
                     // Level indicator
                     Box(
                         modifier = Modifier
                             .size(10.dp)
                             .background(levelColor, RoundedCornerShape(5.dp)),
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
                     // Event type
                     Text(
                         text = log.eventType,
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
                         color = levelColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
                     )
                     if (log.tag != null) {
-                        Spacer(modifier = Modifier.width(6.dp))
                         Surface(
                             color = MaterialTheme.colorScheme.secondaryContainer,
                             shape = MaterialTheme.shapes.extraSmall,
                         ) {
                             Text(
                                 text = log.tag,
-                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                             )
                         }
                     }
@@ -582,6 +480,8 @@ private fun LogEntryCard(log: ConnectionLogEntity) {
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                    softWrap = false,
                 )
             }
 
@@ -609,15 +509,17 @@ private fun LogEntryCard(log: ConnectionLogEntity) {
             if (log.details != null) {
                 Spacer(modifier = Modifier.height(4.dp))
                 Surface(
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                    shape = RoundedCornerShape(4.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    shape = MaterialTheme.shapes.small,
                 ) {
                     Text(
                         text = log.details,
-                        modifier = Modifier.padding(8.dp),
-                        style = MaterialTheme.typography.bodySmall,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 11.sp,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(8.dp),
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontFamily = FontFamily.Monospace,
+                        ),
                         maxLines = 5,
                         overflow = TextOverflow.Ellipsis,
                     )

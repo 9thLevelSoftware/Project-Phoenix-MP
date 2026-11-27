@@ -1061,6 +1061,8 @@ class SchemaManifestTest {
         driver.execute(null, "CREATE TABLE RepMetric (id INTEGER PRIMARY KEY AUTOINCREMENT, sessionId TEXT NOT NULL, repNumber INTEGER NOT NULL)", 0)
         driver.execute(null, "CREATE TABLE RepBiomechanics (id INTEGER PRIMARY KEY AUTOINCREMENT, sessionId TEXT NOT NULL, repNumber INTEGER NOT NULL, mcvMmS REAL NOT NULL, peakVelocityMmS REAL NOT NULL, velocityZone TEXT NOT NULL, velocityLossPercent REAL, estimatedRepsRemaining INTEGER, shouldStopSet INTEGER NOT NULL DEFAULT 0, normalizedForceN TEXT NOT NULL, normalizedPositionPct TEXT NOT NULL, stickingPointPct REAL, strengthProfile TEXT NOT NULL, asymmetryPercent REAL NOT NULL, dominantSide TEXT NOT NULL, avgLoadA REAL NOT NULL, avgLoadB REAL NOT NULL, timestamp INTEGER NOT NULL)", 0)
         driver.execute(null, "CREATE TABLE ExerciseSignature (id INTEGER PRIMARY KEY AUTOINCREMENT, exerciseId TEXT NOT NULL)", 0)
+        driver.execute(null, "CREATE TABLE WorkoutCompletionJournal (profile_id TEXT NOT NULL, local_kind TEXT NOT NULL, completion_id TEXT NOT NULL, PRIMARY KEY (profile_id, local_kind, completion_id))", 0)
+        driver.execute(null, "CREATE TABLE WorkoutCompletionJournalChild (journal_profile_id TEXT NOT NULL, journal_local_kind TEXT NOT NULL, journal_completion_id TEXT NOT NULL, child_key TEXT NOT NULL, PRIMARY KEY (journal_profile_id, journal_local_kind, journal_completion_id, child_key), FOREIGN KEY (journal_profile_id, journal_local_kind, journal_completion_id) REFERENCES WorkoutCompletionJournal(profile_id, local_kind, completion_id) ON DELETE CASCADE)", 0)
         driver.execute(null, "CREATE TABLE CycleDay (id TEXT PRIMARY KEY, cycle_id TEXT NOT NULL, day_number INTEGER NOT NULL)", 0)
         driver.execute(null, "CREATE TABLE CycleProgress (id TEXT PRIMARY KEY, cycle_id TEXT NOT NULL UNIQUE, current_day_number INTEGER NOT NULL DEFAULT 1)", 0)
         driver.execute(null, "CREATE TABLE PlannedSet (id TEXT PRIMARY KEY, routine_exercise_id TEXT NOT NULL, set_number INTEGER NOT NULL)", 0)
@@ -1081,8 +1083,10 @@ class SchemaManifestTest {
             "Schema reconciliation must heal the issue #1383 candidate-window index",
         )
 
-        // Migration 56: a leftover signature table is dropped and not recreated.
+        // Migrations 56 & 66: leftover retired tables are dropped and not recreated.
         assertFalse(tableExists(driver, "ExerciseSignature"))
+        assertFalse(tableExists(driver, "WorkoutCompletionJournalChild"))
+        assertFalse(tableExists(driver, "WorkoutCompletionJournal"))
 
         // Bootstrap tables should be created (they didn't exist before)
         assertTrue(report.created > 0, "Expected at least some CREATED results")

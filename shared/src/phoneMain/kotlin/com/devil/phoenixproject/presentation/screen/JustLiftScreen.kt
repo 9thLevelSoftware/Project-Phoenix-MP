@@ -1,6 +1,8 @@
 package com.devil.phoenixproject.presentation.screen
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.EaseInOutQuad
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -25,6 +27,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -105,12 +108,17 @@ import com.devil.phoenixproject.presentation.components.ProgressionSlider
 import com.devil.phoenixproject.presentation.components.RestTimePickerDialog
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.util.DurationFormatter
+import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
+import com.devil.phoenixproject.presentation.util.LocalWeightTextScale
 import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
+import com.devil.phoenixproject.presentation.util.currentEffectiveWeightTextScale
 import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
+import com.devil.phoenixproject.presentation.util.scaledForWeightValue
 import com.devil.phoenixproject.presentation.util.useStackedWeightCardsLayout
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.Spacing
+import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import com.devil.phoenixproject.util.CommandLimits
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
@@ -308,11 +316,8 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel) {
     }
 
     val useCompactAccessibility = isCompactAccessibilityLayout()
-    // Issue #571: Stack the Weight per Cable and Weight Change Per Rep cards only when the
-    // device is short as well (iPhone landscape 740x390, or compact height with accessibility
-    // settings). On iPhone portrait with default Dynamic Type + Bold Text OFF, keep them
-    // side-by-side so the iOS CompactNumberPicker wheel cannot eat drags intended for the
-    // ProgressionSlider.
+    // Issue #571: Responsive gate distinguishing short/compact layouts that stack the weight
+    // cards from tall/regular screens so gestures remain decoupled from the ProgressionSlider.
     val stackWeightCards = useStackedWeightCardsLayout()
     val contentScrollState = rememberScrollState()
     var showRestTimerDialog by remember { mutableStateOf(false) }
@@ -320,7 +325,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surface),
+            .background(screenBackgroundBrush()),
     ) {
         Column(
             modifier = Modifier
@@ -333,11 +338,22 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel) {
                 .verticalScroll(contentScrollState),
             verticalArrangement = Arrangement.spacedBy(Spacing.small),
         ) {
-            // Garmin watch-controls Arm strip (issue #1391). Compact band; the workout
-            // controls, rep counter and weight readout below are unchanged.
+            // Garmin watch-controls Arm strip (issue #1391).
             GarminControlsArmStrip(modifier = Modifier.fillMaxWidth())
 
-            // Pinned header: auto-start status + workout mode (never clipped by lower content)
+            // D-5: Pin active workout status above the fold so controls/state stay visible immediately
+            if (workoutState !is WorkoutState.Idle) {
+                ActiveStatusCard(
+                    workoutState = workoutState,
+                    currentMetric = currentMetric,
+                    repCount = repCount,
+                    weightUnit = weightUnit,
+                    formatWeight = viewModel::formatWeight,
+                    onStopWorkout = { viewModel.stopWorkout() },
+                )
+            }
+
+            // Pinned header: auto-start/stop status + workout mode (never clipped by lower content)
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
@@ -351,7 +367,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel) {
                         .padding(Spacing.small),
                     verticalArrangement = Arrangement.spacedBy(Spacing.small),
                 ) {
-                    if (workoutState is WorkoutState.Idle) {
+                    if (workoutState is WorkoutState.Idle || workoutState is WorkoutState.Active) {
                         val autoStartCountdown by viewModel.autoStartCountdown.collectAsState()
                         AutoStartStopCard(
                             workoutState = workoutState,
@@ -363,7 +379,10 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel) {
                         )
 
                         val justLiftRestCountdown by viewModel.justLiftRestCountdown.collectAsState()
-                        if (justLiftRestCountdown != null && justLiftRestCountdown!! > 0) {
+                        if (workoutState is WorkoutState.Idle &&
+                            justLiftRestCountdown != null &&
+                            justLiftRestCountdown!! > 0
+                        ) {
                             JustLiftRestCountdownRow(secondsRemaining = justLiftRestCountdown!!)
                         }
 
@@ -513,6 +532,9 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel) {
                         val maxWeight = viewModel.kgToDisplay(maxWeightKg, weightUnit)
                         val weightStep = viewModel.kgToDisplay(userPreferences.effectiveWeightIncrementKg, weightUnit)
                         val displayWeight = viewModel.kgToDisplay(weightPerCable, weightUnit)
+                        val weightTextScale = LocalWeightTextScale.current
+                        val effectiveWeightScale = currentEffectiveWeightTextScale(weightTextScale)
+                        val pickerMaxWidth = if (effectiveWeightScale > 1.0f) 360.dp else 220.dp
 
                         Box(
                             modifier = Modifier
@@ -531,8 +553,9 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel) {
                                 suffix = weightSuffix,
                                 compactWheel = true,
                                 modifier = Modifier
-                                    .widthIn(max = 220.dp)
+                                    .widthIn(max = pickerMaxWidth)
                                     .fillMaxWidth(),
+                                applySelectorScale = true,
                             )
                         }
 
@@ -572,10 +595,13 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel) {
                             color = MaterialTheme.colorScheme.onSurface,
                         )
 
+                        val maxProgression = kotlin.math.floor(
+                            viewModel.kgToDisplay(CommandLimits.MAX_PROGRESSION_KG, weightUnit),
+                        ).toInt().toFloat()
                         ProgressionSlider(
-                            value = weightChangePerRep.toFloat(),
+                            value = weightChangePerRep.toFloat().coerceIn(-maxProgression, maxProgression),
                             onValueChange = { weightChangePerRep = it.roundToInt() },
-                            valueRange = -10f..10f,
+                            valueRange = -maxProgression..maxProgression,
                             modifier = Modifier.fillMaxWidth(),
                         )
                     }
@@ -668,6 +694,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel) {
                                             echoLevel = level
                                             selectedMode = WorkoutMode.Echo(level)
                                         },
+                                        modifier = Modifier.heightIn(min = 48.dp),
                                         label = { Text(echoLevelLabel(level)) },
                                     )
                                 }
@@ -686,8 +713,13 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel) {
                                             selectedMode = WorkoutMode.Echo(level)
                                         },
                                         selected = echoLevel == level,
+                                        modifier = Modifier.heightIn(min = 48.dp),
                                     ) {
-                                        Text(echoLevelLabel(level), maxLines = 1)
+                                        Text(
+                                            echoLevelLabel(level),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
                                     }
                                 }
                             }
@@ -750,33 +782,30 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel) {
                         },
                         trailing = {
                             Surface(
-                                modifier = Modifier.clickable { showRestTimerDialog = true },
+                                modifier = Modifier
+                                    .widthIn(min = 48.dp)
+                                    .heightIn(min = 48.dp)
+                                    .clip(MaterialTheme.shapes.medium)
+                                    .clickable { showRestTimerDialog = true },
                                 shape = MaterialTheme.shapes.medium,
-                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                             ) {
-                                Text(
-                                    text = if (restSeconds == 0) "Off" else "${restSeconds}s",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontWeight = FontWeight.Medium,
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                )
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                                ) {
+                                    Text(
+                                        text = if (restSeconds == 0) "Off" else "${restSeconds}s",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                }
                             }
                         },
                     )
                 }
-            }
-
-            // Active workout status (replaces mode cards when active)
-            if (workoutState !is WorkoutState.Idle) {
-                ActiveStatusCard(
-                    workoutState = workoutState,
-                    currentMetric = currentMetric,
-                    repCount = repCount,
-                    weightUnit = weightUnit,
-                    formatWeight = viewModel::formatWeight,
-                    onStopWorkout = { viewModel.stopWorkout() },
-                )
             }
 
             if (showRestTimerDialog) {
@@ -817,22 +846,34 @@ private fun ActiveStatusCard(
     formatWeight: (Float, WeightUnit) -> String,
     onStopWorkout: () -> Unit,
 ) {
-    // Live pulse animation
-    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-    val alpha by infiniteTransition.animateFloat(
-        initialValue = 0.5f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(1000), RepeatMode.Reverse),
-        label = "alpha",
-    )
+    val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
+    val isActiveState = workoutState is WorkoutState.Active
+    // Live pulse animation (skipped when reduceMotion is active)
+    val alpha = if (reduceMotion || !isActiveState) {
+        1f
+    } else {
+        val infiniteTransition = rememberInfiniteTransition(label = "pulse")
+        val animatedAlpha by infiniteTransition.animateFloat(
+            initialValue = 0.5f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(tween(1000), RepeatMode.Reverse),
+            label = "alpha",
+        )
+        animatedAlpha
+    }
+    val headerContentColor = if (isActiveState) {
+        MaterialTheme.colorScheme.onPrimaryContainer
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = if (workoutState is WorkoutState.Active) {
-                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.9f)
+            containerColor = if (isActiveState) {
+                MaterialTheme.colorScheme.primaryContainer
             } else {
-                MaterialTheme.colorScheme.surfaceVariant
+                MaterialTheme.colorScheme.surfaceContainerHigh
             },
         ),
         shape = MaterialTheme.shapes.medium,
@@ -855,28 +896,39 @@ private fun ActiveStatusCard(
                     },
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    color = headerContentColor,
+                    modifier = Modifier.weight(1f),
                 )
 
-                Spacer(Modifier.weight(1f))
-
-                if (workoutState is WorkoutState.Active) {
-                    Box(
-                        modifier = Modifier
-                            .size(12.dp)
-                            .background(AccessibilityTheme.colors.success.copy(alpha = alpha), CircleShape),
-                    )
-                    Spacer(Modifier.width(4.dp))
-                    Text(
-                        stringResource(Res.string.label_live),
-                        style = MaterialTheme.typography.labelSmall,
+                if (isActiveState) {
+                    Spacer(Modifier.width(Spacing.small))
+                    Surface(
+                        shape = MaterialTheme.shapes.small,
                         color = AccessibilityTheme.colors.success,
-                        fontWeight = FontWeight.Bold,
-                    )
+                        contentColor = AccessibilityTheme.colors.onSuccess,
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .background(AccessibilityTheme.colors.onSuccess.copy(alpha = alpha), CircleShape),
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                stringResource(Res.string.label_live),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = AccessibilityTheme.colors.onSuccess,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                    }
                 }
             }
 
-            if (workoutState is WorkoutState.Active) {
+            if (isActiveState) {
                 Spacer(modifier = Modifier.height(Spacing.medium))
 
                 // BIG Rep Counter
@@ -894,7 +946,7 @@ private fun ActiveStatusCard(
                         text = "REPS",
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
                 }
 
@@ -909,12 +961,12 @@ private fun ActiveStatusCard(
                         Text(
                             "Load",
                             style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
                         )
                         val loadText = currentMetric?.let { formatWeight(it.totalLoad, weightUnit) } ?: "--"
                         Text(
                             loadText,
-                            style = MaterialTheme.typography.titleMedium,
+                            style = MaterialTheme.typography.titleMedium.scaledForWeightValue(LocalWeightTextScale.current),
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
                         )
@@ -927,10 +979,11 @@ private fun ActiveStatusCard(
                     onClick = onStopWorkout,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(56.dp),
+                        .heightIn(min = 56.dp),
                     shape = MaterialTheme.shapes.medium,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError,
                     ),
                     elevation = ButtonDefaults.buttonElevation(
                         defaultElevation = 4.dp,
@@ -943,6 +996,8 @@ private fun ActiveStatusCard(
                         "Finish Set",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
@@ -973,41 +1028,49 @@ private fun AutoStartStopCard(
     // Only show when relevant
     if (!isIdle && !isActive) return
 
-    // Infinite transition for continuous animations
-    val infiniteTransition = rememberInfiniteTransition(label = "autoStart")
+    val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
 
-    // Pulse animation for "ready" state
-    val pulseScale by infiniteTransition.animateFloat(
-        initialValue = 1f,
-        targetValue = 1.05f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1200, easing = EaseInOutQuad),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "pulse",
-    )
-
-    // Glow intensity animation
-    val glowAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.4f,
-        targetValue = 0.8f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1500, easing = EaseInOutQuad),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "glow",
-    )
-
-    // Rotating ring animation for countdown
-    val ringRotation by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2500, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
-        label = "rotation",
-    )
+    // Infinite transition for continuous animations (skipped when reduceMotion is active)
+    val pulseScale: Float
+    val glowAlpha: Float
+    val ringRotation: Float
+    if (reduceMotion) {
+        pulseScale = 1f
+        glowAlpha = 0.7f
+        ringRotation = 0f
+    } else {
+        val infiniteTransition = rememberInfiniteTransition(label = "autoStart")
+        val animatedPulseScale by infiniteTransition.animateFloat(
+            initialValue = 1f,
+            targetValue = 1.05f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(1200, easing = EaseInOutQuad),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "pulse",
+        )
+        val animatedGlowAlpha by infiniteTransition.animateFloat(
+            initialValue = 0.4f,
+            targetValue = 0.8f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(1500, easing = EaseInOutQuad),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "glow",
+        )
+        val animatedRingRotation by infiniteTransition.animateFloat(
+            initialValue = 0f,
+            targetValue = 360f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(2500, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart,
+            ),
+            label = "rotation",
+        )
+        pulseScale = animatedPulseScale
+        glowAlpha = animatedGlowAlpha
+        ringRotation = animatedRingRotation
+    }
 
     // Determine colors based on state (from AccessibilityTheme)
     val autoStartGreen = AccessibilityTheme.colors.success
@@ -1107,8 +1170,12 @@ private fun AutoStartStopCard(
                     AnimatedContent(
                         targetState = countValue,
                         transitionSpec = {
-                            (scaleIn(initialScale = 1.3f, animationSpec = tween(200)) + fadeIn())
-                                .togetherWith(scaleOut(targetScale = 0.7f) + fadeOut())
+                            if (reduceMotion) {
+                                EnterTransition.None togetherWith ExitTransition.None
+                            } else {
+                                (scaleIn(initialScale = 1.3f, animationSpec = tween(200)) + fadeIn())
+                                    .togetherWith(scaleOut(targetScale = 0.7f) + fadeOut())
+                            }
                         },
                         label = "countdown",
                     ) { count ->
@@ -1278,12 +1345,14 @@ private fun JustLiftModeSegmentRow(
                 shape = SegmentedButtonDefaults.itemShape(index = index, count = modes.size),
                 onClick = { onModeSelected(mode) },
                 selected = isModeSelected(mode),
+                modifier = Modifier.heightIn(min = 48.dp),
                 icon = {},
             ) {
                 Text(
                     text = label,
                     style = MaterialTheme.typography.labelMedium,
                     maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }

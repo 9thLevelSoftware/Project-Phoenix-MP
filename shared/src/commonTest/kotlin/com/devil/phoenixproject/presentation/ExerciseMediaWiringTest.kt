@@ -109,7 +109,8 @@ class ExerciseMediaWiringTest {
     // T6: Phase 1 adds NO migration. Two guards, both history-aware (SD14):
     // (a) the migration set must not grow past the implementation base's latest
     //     (64.sqm at 6f95247) — bump this ratchet only when a real migration lands
-    //     (65: issue #1400 metric-unit x10);
+    //     (65: issue #1400 metric-unit x10; 66: retire direct outbound sync tables;
+    //     67: record the workout completion for portal sync);
     // (b) the only migration allowed to mention ExerciseImage is 43.sqm, the
     //     historical migration that CREATED the table; nothing may ALTER/DROP it.
     @Test
@@ -123,14 +124,11 @@ class ExerciseMediaWiringTest {
             maxSeen = maxOf(maxSeen, n)
             if (src.contains("ExerciseImage")) mentions.add("$n.sqm")
         }
-        // Baseline 65: #1392's power-loss tier-1 companions added 64.sqm and #1400's
-        // metric-unit x10 fix added 65.sqm AFTER this gate was written against 63. The
-        // gate means "media Phase 1 adds no migration of its own" — ExerciseImage schema
-        // is separately pinned to 43.sqm below. Unrelated schema work moves the base;
-        // media additions must not.
+        // Unrelated schema migrations advance the baseline; media's own schema remains
+        // separately pinned to 43.sqm below.
         assertTrue(
-            maxSeen <= 65,
-            "Phase 1 adds no schema migration — found $maxSeen.sqm beyond the base 65.sqm (T6/AC13).",
+            maxSeen <= 67,
+            "Phase 1 adds no schema migration — found $maxSeen.sqm beyond the base 67.sqm (T6/AC13).",
         )
         assertTrue(
             mentions == listOf("43.sqm"),

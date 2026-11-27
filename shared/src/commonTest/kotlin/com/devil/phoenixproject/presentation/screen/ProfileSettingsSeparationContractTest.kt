@@ -181,6 +181,8 @@ class ProfileSettingsSeparationContractTest {
                 onBackupDestinationChange: (BackupDestination) -> Unit,
                 selectedLanguage: String,
                 onLanguageChange: (String) -> Unit,
+                weightTextScale: WeightTextScale,
+                onWeightTextScaleChange: (WeightTextScale) -> Unit,
                 modifier: Modifier = Modifier,
             )
         """.trimIndent()
@@ -293,6 +295,17 @@ class ProfileSettingsSeparationContractTest {
             }
 
         assertContains(settings, "private fun GlobalSettingsSectionCard(")
+        val weightTextStrings = source("src/commonMain/composeResources/values/strings.xml")
+        assertContains(
+            weightTextStrings,
+            "<string name=\"settings_weight_text_size\">Workout control size</string>",
+            message = "Settings label must be renamed to Workout control size",
+        )
+        listOf("settings_weight_text_size_help_1", "settings_weight_text_size_help_2").forEach { removedKey ->
+            assertTrue(!settings.contains(removedKey), "SettingsTab must not reference $removedKey")
+            assertTrue(!weightTextStrings.contains(removedKey), "strings.xml must not contain $removedKey")
+        }
+        assertContains(functionSource(settings, "WeightTextSizeSelector"), "Role.RadioButton")
         val switchRow = functionSource(settings, "GlobalSettingsSwitchRow")
         listOf("defaultMinSize(minHeight = 48.dp)", ".toggleable(", "role = Role.Switch")
             .forEach { contract -> assertContains(switchRow, contract) }
@@ -366,6 +379,7 @@ class ProfileSettingsSeparationContractTest {
             "backupStats = backupStats",
             "backupDestination = globalSettings.backupDestination",
             "selectedLanguage = globalSettings.language",
+            "weightTextScale = globalSettings.weightTextScale",
             "connectionError = connectionError",
         ).forEach { assignment ->
             assertTrue(
@@ -385,6 +399,7 @@ class ProfileSettingsSeparationContractTest {
             "onOpenBackupFolder" to "openBackupFolder",
             "onBackupDestinationChange" to "setBackupDestination",
             "onLanguageChange" to "setLanguage",
+            "onWeightTextScaleChange" to "setWeightTextScale",
         ).forEach { (parameter, method) -> assertViewModelCallback(call, parameter, method) }
         listOf(
             "onThemeModeChange = onThemeModeChange",
@@ -432,6 +447,7 @@ class ProfileSettingsSeparationContractTest {
         listOf(
             "setEnableVideoPlayback",
             "setBleCompatibilityMode",
+            "setWeightTextScale",
             "setAutoBackupEnabled",
             "setBackupDestination",
             "setLanguage",
@@ -459,6 +475,7 @@ class ProfileSettingsSeparationContractTest {
                 includeRawTelemetryInBackups = includeRawTelemetryInBackups,
                 backupDestination = backupDestination,
                 language = language,
+                weightTextScale = weightTextScale,
             )
         """.trimIndent()
         assertEquals(compactKotlin(expectedMapper), compactKotlin(mapper))

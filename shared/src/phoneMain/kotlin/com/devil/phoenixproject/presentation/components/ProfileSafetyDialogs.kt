@@ -11,37 +11,36 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BasicAlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -55,11 +54,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -69,8 +68,8 @@ import com.devil.phoenixproject.domain.voice.SafeWordListener
 import com.devil.phoenixproject.domain.voice.SafeWordListenerFactory
 import com.devil.phoenixproject.domain.voice.SafeWordState
 import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
+import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.ExpressiveMotion
-import com.devil.phoenixproject.ui.theme.ForgeGreen
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.openAppSettings
 import org.jetbrains.compose.resources.stringResource
@@ -138,64 +137,74 @@ fun SafeWordCalibrationDialog(
         }
     }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        shape = MaterialTheme.shapes.medium,
-        title = {
-            Text(
-                stringResource(Res.string.settings_calibration_title),
-                fontWeight = FontWeight.Bold,
-            )
-        },
-        text = {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(Spacing.medium),
+    PhoenixModalDialogFrame(
+        title = stringResource(Res.string.settings_calibration_title),
+        onDismiss = onDismiss,
+        actions = {
+            OutlinedButton(
+                onClick = onDismiss,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .heightIn(min = 56.dp),
+                shape = MaterialTheme.shapes.extraLarge,
             ) {
-                if (micError) {
-                    Text(
-                        stringResource(Res.string.settings_calibration_mic_error),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                    OutlinedButton(
-                        onClick = { openAppSettings() },
-                        shape = MaterialTheme.shapes.small,
-                    ) {
-                        Text(stringResource(Res.string.settings_calibration_open_settings))
-                    }
-                } else {
-                    Text(
-                        stringResource(Res.string.settings_calibration_prompt),
-                        style = MaterialTheme.typography.bodyLarge,
-                    )
-                    Text(
-                        safeWord,
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                    CalibrationProgress(detectionCount)
-                    Text(
-                        stringResource(Res.string.settings_calibration_listening),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
+                Text(
+                    text = stringResource(Res.string.action_cancel),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        },
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(Spacing.medium),
+        ) {
+            if (micError) {
+                Text(
+                    stringResource(Res.string.settings_calibration_mic_error),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    textAlign = TextAlign.Center,
+                )
+                OutlinedButton(
+                    onClick = { openAppSettings() },
+                    modifier = Modifier.heightIn(min = 48.dp),
+                    shape = MaterialTheme.shapes.small,
+                ) {
+                    Text(stringResource(Res.string.settings_calibration_open_settings))
                 }
+            } else {
+                Text(
+                    stringResource(Res.string.settings_calibration_prompt),
+                    style = MaterialTheme.typography.bodyLarge,
+                    textAlign = TextAlign.Center,
+                )
+                Text(
+                    safeWord,
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                    textAlign = TextAlign.Center,
+                )
+                CalibrationProgress(detectionCount)
+                Text(
+                    stringResource(Res.string.settings_calibration_listening),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    textAlign = TextAlign.Center,
+                )
             }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(Res.string.action_cancel))
-            }
-        },
-    )
+        }
+    }
 }
 
 @Composable
 private fun CalibrationProgress(detectionCount: Int) {
     val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
+    val accessibilityColors = AccessibilityTheme.colors
     Row(
         horizontalArrangement = Arrangement.spacedBy(Spacing.medium),
         modifier = Modifier.padding(vertical = Spacing.small),
@@ -203,7 +212,7 @@ private fun CalibrationProgress(detectionCount: Int) {
         repeat(3) { index ->
             val filled = index < detectionCount
             val circleColor by animateColorAsState(
-                targetValue = if (filled) ForgeGreen else MaterialTheme.colorScheme.surfaceVariant,
+                targetValue = if (filled) accessibilityColors.success else MaterialTheme.colorScheme.surfaceVariant,
                 animationSpec = if (reduceMotion) snap() else ExpressiveMotion.SpringBouncyColor,
                 label = "circleColor$index",
             )
@@ -231,7 +240,7 @@ private fun CalibrationProgress(detectionCount: Int) {
                     } else {
                         null
                     },
-                    tint = Color.White,
+                    tint = accessibilityColors.onSuccess,
                     modifier = Modifier.size(24.dp).scale(checkScale).alpha(checkScale),
                 )
             }
@@ -242,23 +251,6 @@ private fun CalibrationProgress(detectionCount: Int) {
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
-}
-
-@Composable
-private fun AdultModeDialogCard(
-    content: @Composable () -> Unit,
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth().shadow(8.dp, MaterialTheme.shapes.medium),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-        ),
-        shape = MaterialTheme.shapes.medium,
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
-    ) {
-        content()
-    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -275,11 +267,23 @@ fun AdultsOnlyConfirmDialog(
         properties = DialogProperties(
             dismissOnBackPress = !isSubmitting,
             dismissOnClickOutside = !isSubmitting,
+            usePlatformDefaultWidth = false,
         ),
     ) {
-        AdultModeDialogCard {
+        Surface(
+            modifier = Modifier
+                .padding(horizontal = Spacing.medium, vertical = Spacing.large)
+                .widthIn(max = 560.dp)
+                .fillMaxWidth(),
+            shape = MaterialTheme.shapes.large,
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            tonalElevation = 6.dp,
+        ) {
             Column(
-                modifier = Modifier.fillMaxWidth().padding(Spacing.large),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(Spacing.large),
                 verticalArrangement = Arrangement.spacedBy(Spacing.medium),
             ) {
                 Surface(
@@ -313,7 +317,7 @@ fun AdultsOnlyConfirmDialog(
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     shape = MaterialTheme.shapes.small,
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
                 ) {
                     Text(
                         stringResource(Res.string.settings_adults_only_compliance_footer),
@@ -333,7 +337,7 @@ fun AdultsOnlyConfirmDialog(
                 Button(
                     onClick = onConfirm,
                     enabled = !isSubmitting,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
                     shape = MaterialTheme.shapes.extraLarge,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.primary,
@@ -349,7 +353,7 @@ fun AdultsOnlyConfirmDialog(
                 OutlinedButton(
                     onClick = onDecline,
                     enabled = !isSubmitting,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
                     shape = MaterialTheme.shapes.extraLarge,
                 ) {
                     Text(
@@ -362,140 +366,166 @@ fun AdultsOnlyConfirmDialog(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DominatrixUnlockDialog(onDismiss: () -> Unit) {
-    LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(4000)
-        onDismiss()
-    }
-    var isVisible by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { isVisible = true }
+    val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
+    var isVisible by remember(reduceMotion) { mutableStateOf(reduceMotion) }
+    LaunchedEffect(reduceMotion) { isVisible = true }
     val scale by animateFloatAsState(
-        targetValue = if (isVisible) 1f else 0f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMedium,
-        ),
+        targetValue = if (isVisible || reduceMotion) 1f else 0f,
+        animationSpec = if (reduceMotion) {
+            snap()
+        } else {
+            spring(
+                dampingRatio = Spring.DampingRatioMediumBouncy,
+                stiffness = Spring.StiffnessMedium,
+            )
+        },
         label = "dominatrix_dialog_scale",
     )
 
-    BasicAlertDialog(onDismissRequest = onDismiss, modifier = Modifier.scale(scale)) {
-        AdultModeDialogCard {
-            Column(
-                modifier = Modifier.fillMaxWidth().padding(Spacing.large),
-                horizontalAlignment = Alignment.CenterHorizontally,
+    PhoenixModalDialogFrame(
+        title = stringResource(Res.string.settings_dominatrix_unlock_toast),
+        onDismiss = onDismiss,
+        modifier = Modifier.scale(scale),
+        actions = {
+            Button(
+                onClick = onDismiss,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .heightIn(min = 56.dp),
+                shape = MaterialTheme.shapes.extraLarge,
             ) {
-                Surface(
-                    modifier = Modifier.size(72.dp),
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text("👑", style = MaterialTheme.typography.displayMedium)
-                    }
-                }
-                Spacer(modifier = Modifier.height(Spacing.medium))
                 Text(
-                    stringResource(Res.string.settings_dominatrix_unlock_toast),
-                    style = MaterialTheme.typography.titleLarge,
+                    text = stringResource(Res.string.action_ok),
                     fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                 )
-                Spacer(modifier = Modifier.height(Spacing.small))
-                Text(
-                    stringResource(Res.string.settings_dominatrix_mode_description),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
-                )
-                Spacer(modifier = Modifier.height(Spacing.large))
-                Button(
-                    onClick = onDismiss,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                ) {
-                    Text(stringResource(Res.string.action_ok))
+            }
+        },
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(Spacing.medium),
+        ) {
+            Surface(
+                modifier = Modifier.size(72.dp),
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.primaryContainer,
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text("👑", style = MaterialTheme.typography.displayMedium)
                 }
             }
+            Text(
+                stringResource(Res.string.settings_dominatrix_mode_description),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
         }
     }
 }
 
 @Composable
 fun DiscoModeUnlockDialog(onDismiss: () -> Unit) {
-    LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(4000)
-        onDismiss()
-    }
-    var isVisible by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { isVisible = true }
+    val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
+    var isVisible by remember(reduceMotion) { mutableStateOf(reduceMotion) }
+    LaunchedEffect(reduceMotion) { isVisible = true }
     val scale by animateFloatAsState(
-        targetValue = if (isVisible) 1f else 0f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMedium,
-        ),
+        targetValue = if (isVisible || reduceMotion) 1f else 0f,
+        animationSpec = if (reduceMotion) {
+            snap()
+        } else {
+            spring(
+                dampingRatio = Spring.DampingRatioMediumBouncy,
+                stiffness = Spring.StiffnessMedium,
+            )
+        },
         label = "disco_dialog_scale",
     )
-    val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
-    val transition = rememberInfiniteTransition(label = "disco")
-    val rotation by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = if (reduceMotion) 0f else 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1920, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
-        label = "disco_rotation",
-    )
-    val glowAlpha by transition.animateFloat(
-        initialValue = 0.3f,
-        targetValue = if (reduceMotion) 0.3f else 0.8f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(400, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "disco_glow",
-    )
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
+    val rotation: Float
+    val glowAlpha: Float
+    if (reduceMotion) {
+        rotation = 0f
+        glowAlpha = 0.45f
+    } else {
+        val transition = rememberInfiniteTransition(label = "disco")
+        val animatedRotation by transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 360f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(1920, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart,
+            ),
+            label = "disco_rotation",
+        )
+        val animatedGlowAlpha by transition.animateFloat(
+            initialValue = 0.3f,
+            targetValue = 0.8f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(400, easing = LinearEasing),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "disco_glow",
+        )
+        rotation = animatedRotation
+        glowAlpha = animatedGlowAlpha
+    }
+
+    PhoenixModalDialogFrame(
+        title = stringResource(Res.string.profile_disco_unlocked_title),
+        onDismiss = onDismiss,
         modifier = Modifier.scale(scale),
-        title = {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Box(
-                    modifier = Modifier.size(80.dp).rotate(rotation).background(
-                        Brush.radialGradient(
-                            listOf(Color.White.copy(alpha = glowAlpha), Color.Transparent),
-                        ),
-                        RoundedCornerShape(40.dp),
-                    ),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text("🪩", style = MaterialTheme.typography.displayLarge)
-                }
+        actions = {
+            Button(
+                onClick = onDismiss,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .heightIn(min = 56.dp),
+                shape = MaterialTheme.shapes.extraLarge,
+            ) {
                 Text(
-                    stringResource(Res.string.profile_disco_unlocked_title),
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.ExtraBold,
-                    textAlign = TextAlign.Center,
+                    text = stringResource(Res.string.profile_disco_unlocked_action),
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         },
-        text = {
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(Spacing.medium),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(80.dp)
+                    .rotate(rotation)
+                    .background(
+                        Brush.radialGradient(
+                            listOf(
+                                MaterialTheme.colorScheme.primary.copy(alpha = glowAlpha),
+                                Color.Transparent,
+                            ),
+                        ),
+                        RoundedCornerShape(40.dp),
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("🪩", style = MaterialTheme.typography.displayLarge)
+            }
             Text(
                 stringResource(Res.string.profile_disco_unlocked_body),
                 style = MaterialTheme.typography.bodyMedium,
                 textAlign = TextAlign.Center,
             )
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) {
-                Text(
-                    stringResource(Res.string.profile_disco_unlocked_action),
-                    fontWeight = FontWeight.Bold,
-                )
-            }
-        },
-    )
+        }
+    }
 }

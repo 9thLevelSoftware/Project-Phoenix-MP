@@ -74,6 +74,7 @@ data class PortalWorkoutSessionDto(
      * the push adapter. Resolves audit item #1.
      */
     val updatedAt: String? = null,
+    val completedAt: String? = null,
     val durationSeconds: Int = 0,
     val totalVolume: Float = 0f, // per-cable kg
     val setCount: Int = 0,

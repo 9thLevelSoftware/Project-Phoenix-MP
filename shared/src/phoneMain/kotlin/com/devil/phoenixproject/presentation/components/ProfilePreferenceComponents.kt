@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -21,15 +22,16 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
@@ -331,9 +333,10 @@ private fun MeasurementsPreferenceCard(
                 },
             ),
         )
-        Row(
+        FlowRow(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End,
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             TextButton(
                 onClick = {
@@ -342,6 +345,7 @@ private fun MeasurementsPreferenceCard(
                     onCoreChange(core.copy(bodyWeightKg = 0f))
                 },
                 enabled = enabled && authoritativeBodyWeight > 0f,
+                modifier = Modifier.heightIn(min = 48.dp),
             ) {
                 Text(stringResource(Res.string.action_clear))
             }
@@ -352,6 +356,7 @@ private fun MeasurementsPreferenceCard(
                     }
                 },
                 enabled = enabled && !bodyWeightInvalid,
+                modifier = Modifier.heightIn(min = 48.dp),
             ) {
                 Text(stringResource(Res.string.action_save))
             }
@@ -452,11 +457,7 @@ private fun WorkoutPreferenceCard(
         )
         PreferenceSwitchRow(
             label = stringResource(Res.string.settings_voice_stop_enable),
-            supporting = if (workout.voiceStopEnabled) {
-                stringResource(Res.string.settings_voice_stop_description)
-            } else {
-                null
-            },
+            supporting = stringResource(Res.string.settings_voice_stop_description),
             checked = workout.voiceStopEnabled,
             enabled = enabled,
             onCheckedChange = { onWorkoutChange(workout.copy(voiceStopEnabled = it)) },
@@ -497,20 +498,23 @@ private fun LedPreferenceCard(
 
     PreferenceCard(
         title = stringResource(Res.string.profile_led),
-        titleModifier = Modifier.clickable(enabled = enabled && !led.discoModeUnlocked) {
-            val now = KmpUtils.currentTimeMillis()
-            if (firstTapAt == 0L || now - firstTapAt > 2000L) {
-                firstTapAt = now
-                tapCount = 1
-            } else {
-                tapCount += 1
+        titleModifier = Modifier
+            .clickable(enabled = enabled && !led.discoModeUnlocked) {
+                val now = KmpUtils.currentTimeMillis()
+                if (firstTapAt == 0L || now - firstTapAt > 2000L) {
+                    firstTapAt = now
+                    tapCount = 1
+                } else {
+                    tapCount += 1
+                }
+                if (tapCount >= 7) {
+                    onUnlockDiscoMode()
+                    tapCount = 0
+                    firstTapAt = 0L
+                }
             }
-            if (tapCount >= 7) {
-                onUnlockDiscoMode()
-                tapCount = 0
-                firstTapAt = 0L
-            }
-        },
+            .heightIn(min = 48.dp)
+            .padding(vertical = 8.dp),
     ) {
         Text(
             text = stringResource(Res.string.profile_led_selected_scheme, selectedSchemeName),
@@ -525,10 +529,13 @@ private fun LedPreferenceCard(
                 val selected = selectedScheme == index
                 val schemeDescription = stringResource(Res.string.cd_select_led_scheme, label)
                 val scheme = ColorSchemes.ALL[index]
+                val isNone = index == ColorSchemes.ALL.lastIndex
                 val gradient = Brush.linearGradient(
                     colors = scheme.colors.map { Color(it.r, it.g, it.b) },
                 )
-                val offCrossColor = MaterialTheme.colorScheme.onSurface
+                val centerStop = scheme.colors[scheme.colors.size / 2]
+                val checkTint = profileInitialsColor(Color(centerStop.r, centerStop.g, centerStop.b))
+                val offCrossColor = MaterialTheme.colorScheme.onSurfaceVariant
                 Box(
                     modifier = Modifier.size(48.dp)
                         .semantics { contentDescription = schemeDescription }
@@ -543,7 +550,13 @@ private fun LedPreferenceCard(
                     Box(
                         modifier = Modifier.size(40.dp)
                             .clip(CircleShape)
-                            .background(gradient)
+                            .then(
+                                if (isNone) {
+                                    Modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                                } else {
+                                    Modifier.background(gradient)
+                                },
+                            )
                             .border(
                                 width = if (selected) 3.dp else 1.dp,
                                 color = if (selected) {
@@ -554,7 +567,7 @@ private fun LedPreferenceCard(
                                 shape = CircleShape,
                             ),
                     )
-                    if (index == ColorSchemes.ALL.lastIndex) {
+                    if (isNone) {
                         Canvas(Modifier.size(28.dp)) {
                             drawLine(
                                 color = offCrossColor,
@@ -564,12 +577,12 @@ private fun LedPreferenceCard(
                             )
                         }
                     }
-                    if (selected) {
+                    if (selected && !isNone) {
                         Icon(
                             imageVector = Icons.Default.Check,
                             contentDescription = null,
                             modifier = Modifier.size(24.dp),
-                            tint = Color.White,
+                            tint = checkTint,
                         )
                     }
                 }
@@ -639,7 +652,7 @@ private fun VbtPreferenceCard(
                 dominatrixTapCount = 0
                 dominatrixFirstTapAt = 0L
             }
-        },
+        }.heightIn(min = 48.dp).padding(vertical = 8.dp),
     ) {
         PreferenceSwitchRow(
             label = stringResource(Res.string.profile_vbt_enabled),
@@ -760,13 +773,6 @@ private fun SafetyPreferenceCard(
     LaunchedEffect(profileId, authoritativeSafeWord) { safeWordDraft = authoritativeSafeWord }
 
     PreferenceCard(title = stringResource(Res.string.profile_safety)) {
-        if (voiceStopEnabled) {
-            Text(
-                stringResource(Res.string.settings_voice_stop_description),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
         OutlinedTextField(
             safeWordDraft,
             { safeWordDraft = it.take(40) },
@@ -776,13 +782,15 @@ private fun SafetyPreferenceCard(
             label = { Text(stringResource(Res.string.settings_safe_word_label)) },
             placeholder = { Text(stringResource(Res.string.settings_safe_word_hint)) },
         )
-        Row(
+        FlowRow(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             OutlinedButton(
                 onClick = { showCalibrationDialog = true },
                 enabled = enabled && safeWordDraft.isNotBlank(),
+                modifier = Modifier.heightIn(min = 48.dp),
             ) {
                 Text(stringResource(Res.string.settings_calibrate_button))
             }
@@ -798,6 +806,7 @@ private fun SafetyPreferenceCard(
                     )
                 },
                 enabled = enabled,
+                modifier = Modifier.heightIn(min = 48.dp),
             ) {
                 Text(stringResource(Res.string.action_save))
             }
@@ -840,20 +849,14 @@ private fun PreferenceCard(
     titleModifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                modifier = titleModifier.fillMaxWidth().heightIn(min = 48.dp)
-                    .padding(vertical = 12.dp),
-            )
-            content()
-        }
+    PhoenixSectionCard(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            modifier = titleModifier.fillMaxWidth(),
+        )
+        content()
     }
 }
 
@@ -866,8 +869,17 @@ private fun PreferenceSwitchRow(
     supporting: String? = null,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .defaultMinSize(minHeight = 48.dp)
+            .toggleable(
+                value = checked,
+                enabled = enabled,
+                role = Role.Switch,
+            ) { onCheckedChange(it) }
+            .padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Column(Modifier.weight(1f)) {
             Text(label, style = MaterialTheme.typography.bodyLarge)
@@ -879,7 +891,7 @@ private fun PreferenceSwitchRow(
                 )
             }
         }
-        Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
+        Switch(checked = checked, onCheckedChange = null, enabled = enabled)
     }
 }
 
@@ -920,11 +932,22 @@ private fun IntegerChoiceRow(
     Row(
         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(label, modifier = Modifier.weight(1f))
         Box {
-            TextButton(onClick = { expanded = true }, enabled = enabled) {
+            TextButton(
+                onClick = { expanded = true },
+                enabled = enabled,
+                modifier = Modifier.heightIn(min = 48.dp),
+            ) {
                 Text(valueLabel(value))
+                Spacer(Modifier.width(4.dp))
+                Icon(
+                    imageVector = Icons.Default.ArrowDropDown,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                )
             }
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                 options.forEach { option ->

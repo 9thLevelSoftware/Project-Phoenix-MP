@@ -9,7 +9,7 @@ import androidx.compose.ui.graphics.Color
 
 // --- CORE BRAND COLORS ---
 // Primary: "Phoenix Flame" - Used for FABs, Main Actions, Active States
-internal val PhoenixOrangeLight = Color(0xFFE65100) // Deep energetic orange (light mode)
+internal val PhoenixOrangeLight = Color(0xFFBF360C) // Deep energetic orange (light mode, >= 5.6:1 with White)
 private val PhoenixOrangeDark = Color(0xFFFF9149) // Vibrant orange (dark mode) - was too pink/salmon
 
 // Fire gradient colors for Just Lift button
@@ -41,7 +41,8 @@ val ForgeGreen = Color(0xFF10B981) // Phoenix Forge Green — brand success/cali
 // --- SIGNAL COLORS (Status) ---
 // Intentionally NOT orange to avoid confusion with primary
 internal val SignalSuccess = Color(0xFF22C55E) // Green
-internal val SignalError = Color(0xFFEF4444) // Red
+internal val SignalError = Color(0xFFEF4444) // Red (dark mode)
+internal val SignalErrorLight = Color(0xFFB91C1C) // Red (light mode, >= 4.5:1 on white/slate)
 internal val SignalWarning = Color(0xFFF59E0B) // Amber
 
 // --- MATERIAL 3 DARK MODE TOKENS ---
@@ -58,9 +59,16 @@ internal val OnSecondaryContainerDark = Color(0xFFFFE06F)
 internal val Tertiary80 = AshBlueDark
 internal val Tertiary20 = Color(0xFF003546)
 
+internal val ErrorContainerDark = Color(0xFF7F1D1D)
+internal val OnErrorContainerDark = Color(0xFFFECACA)
+
 // --- MATERIAL 3 LIGHT MODE TOKENS ---
 internal val PrimaryContainerLight = Color(0xFFFFDBCF)
 internal val OnPrimaryContainerLight = Color(0xFF380D00)
+internal val SecondaryContainerLight = Color(0xFFFEF08A)
+internal val TertiaryContainerLight = Color(0xFFDFF4FC)
+internal val ErrorContainerLight = Color(0xFFFEE2E2)
+internal val OnErrorContainerLight = Color(0xFF7F1D1D)
 
 // --- SURFACE CONTAINERS (Dark Mode) ---
 // Using Slate scale for depth without opacity hacks
@@ -72,10 +80,10 @@ internal val OnSurfaceDark = Slate200
 internal val OnSurfaceVariantDark = Slate400
 
 // --- SURFACE CONTAINERS (Light Mode) ---
-internal val SurfaceDimLight = Color(0xFFDED8E1)
-internal val SurfaceBrightLight = Color(0xFFFDF8FF)
-internal val SurfaceContainerLowestLight = Color(0xFFFFFFFF)
-internal val SurfaceContainerLowLight = Color(0xFFF7F2FA)
-internal val SurfaceContainerLight = Slate50
+internal val SurfaceDimLight = Color(0xFFCBD5E1)
+internal val SurfaceBrightLight = Color.White
+internal val SurfaceContainerLowestLight = Color.White
+internal val SurfaceContainerLowLight = Color(0xFFF8FAFC)
+internal val SurfaceContainerLight = Color(0xFFF1F5F9)
 internal val SurfaceContainerHighLight = Slate200
-internal val SurfaceContainerHighestLight = Color(0xFFE6E0E9)
+internal val SurfaceContainerHighestLight = Color(0xFFDCE3EC)

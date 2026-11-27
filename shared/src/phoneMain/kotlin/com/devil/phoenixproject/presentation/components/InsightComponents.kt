@@ -63,8 +63,8 @@ fun InsightSectionHeader(title: String, subtitle: String, modifier: Modifier = M
 
 /**
  * Metadata block describing an insight metric: definition, timeframe badge, and a
- * "So what?" action line. When [title] is non-null an additional bold title [Text] is
- * prepended above the definition, [TimeframeBadge], and action line.
+ * consumer-facing key takeaway line. When [title] is non-null an additional bold title [Text] is
+ * prepended above the definition, [TimeframeBadge], and takeaway line.
  */
 @Composable
 fun InsightContextBlock(
@@ -89,7 +89,7 @@ fun InsightContextBlock(
         )
         TimeframeBadge(timeframe)
         Text(
-            text = "So what? $soWhat",
+            text = soWhat,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.primary,
             fontWeight = FontWeight.Medium,

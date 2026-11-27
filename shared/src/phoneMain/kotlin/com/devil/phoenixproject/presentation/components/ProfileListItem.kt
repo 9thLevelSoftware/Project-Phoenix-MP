@@ -42,9 +42,13 @@ fun ProfileListItem(
             .then(
                 Modifier.selectable(
                     selected = isActive,
-                    enabled = enabled && !switching && !isActive,
+                    enabled = enabled && !switching,
                     role = Role.RadioButton,
-                    onClick = onClick,
+                    onClick = {
+                        if (!isActive) {
+                            onClick()
+                        }
+                    },
                 ),
             )
             .semantics {

@@ -22,8 +22,11 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.devil.phoenixproject.presentation.util.LocalWeightTextScale
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
+import com.devil.phoenixproject.presentation.util.effectiveWeightTextScale
+import com.devil.phoenixproject.presentation.util.scaledForWeightValue
 import com.devil.phoenixproject.ui.theme.Spacing
 import kotlin.math.roundToInt
 import org.jetbrains.compose.resources.stringResource
@@ -47,6 +50,9 @@ fun SliderWithButtons(
     enabled: Boolean = true,
     deltaText: String? = null,
     isDeltaPositive: Boolean = true,
+    // Issue #1367 SD5: explicit weight-only opt-in. Weight selection sites pass true and
+    // get the weight-text-size treatment; rep/secondary sites stay byte-identical.
+    isWeightValue: Boolean = false,
 ) {
     // Calculate number of discrete steps for the slider
     // steps = number of intervals - 1 (excluding start and end)
@@ -54,7 +60,21 @@ fun SliderWithButtons(
     val sliderSteps = ((range / step).roundToInt() - 1).coerceAtLeast(0)
     val windowSizeClass = LocalWindowSizeClass.current
     val fontScale = LocalDensity.current.fontScale
-    val shouldStackHeader = windowSizeClass.widthSizeClass == WindowWidthSizeClass.Compact && fontScale >= 1.15f
+    // Issue #1367 SD1/SD7: the weight value text is scaled with the rendered-cap helper,
+    // and E (not A/M) drives header stacking at compact width even at OS fontScale 1.0.
+    val weightTextScale = LocalWeightTextScale.current
+    val valueStyle = if (isWeightValue) {
+        MaterialTheme.typography.titleMedium.scaledForWeightValue(weightTextScale, fontScale)
+    } else {
+        MaterialTheme.typography.titleMedium
+    }
+    val effectiveScale = if (isWeightValue) {
+        effectiveWeightTextScale(weightTextScale, fontScale)
+    } else {
+        1.0f
+    }
+    val shouldStackHeader = windowSizeClass.widthSizeClass == WindowWidthSizeClass.Compact &&
+        (fontScale >= 1.15f || (isWeightValue && effectiveScale > 1.0f))
     // KD-9: the range can be narrower than the incoming value (a stored 105 kg/cable set on a
     // 100 kg V-Form). Label what the slider actually represents, not the out-of-range value.
     val formattedValue = formatValue(value.coerceIn(valueRange))
@@ -78,7 +98,7 @@ fun SliderWithButtons(
                 )
                 Text(
                     text = formattedValue,
-                    style = MaterialTheme.typography.titleMedium,
+                    style = valueStyle,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary,
                 )
@@ -101,7 +121,7 @@ fun SliderWithButtons(
                 )
                 Text(
                     text = formattedValue,
-                    style = MaterialTheme.typography.titleMedium,
+                    style = valueStyle,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary,
                     maxLines = 1,

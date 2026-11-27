@@ -5,12 +5,17 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -36,14 +41,9 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.local.DatabaseMigrationFailureCode
-import com.devil.phoenixproject.data.integration.intervals.IntervalsConnectionStore
-import com.devil.phoenixproject.data.integration.intervals.IntervalsExportCoordinator
-import com.devil.phoenixproject.data.integration.intervals.WorkoutCompletionFinalizer
 import com.devil.phoenixproject.data.migration.MigrationManager
 import com.devil.phoenixproject.data.migration.RequiredMigrationState
-import com.devil.phoenixproject.data.repository.ActiveProfileContext
 import com.devil.phoenixproject.data.repository.ExerciseRepository
-import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.presentation.screen.EnhancedMainScreen
 import com.devil.phoenixproject.presentation.screen.EulaScreen
@@ -51,8 +51,13 @@ import com.devil.phoenixproject.presentation.screen.SplashScreen
 import com.devil.phoenixproject.presentation.viewmodel.EulaViewModel
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.presentation.viewmodel.ThemeViewModel
+import com.devil.phoenixproject.ui.theme.AccessibilityTheme
+import com.devil.phoenixproject.ui.theme.ApplyStatusBarAppearance
 import com.devil.phoenixproject.ui.theme.PhoenixTheme
 import com.devil.phoenixproject.ui.theme.isDynamicColorAvailable
+import com.devil.phoenixproject.ui.theme.rememberPlatformSystemDark
+import com.devil.phoenixproject.ui.theme.resolveUseDarkColors
+import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import com.devil.phoenixproject.util.CrashLog
 import com.devil.phoenixproject.util.CrashReportAnswer
 import com.devil.phoenixproject.util.deleteDatabaseExportArchive
@@ -142,9 +147,7 @@ internal fun encodeMailtoComponent(value: String): String = buildString {
 /**
  * Actions offered on the persisted-file startup failure screen. A database conflict stays
  * fail-closed (Phoenix never picks or deletes a copy itself), so the user gets a read-only export
- * of the files and a support route instead of a dead end. The export action itself is subject
- * to the raw-database-share suppression (signoff decision 5, issue #1384 P3): it can only
- * offer verified non-sensitive diagnostics, never raw DB/WAL/quarantine bytes.
+ * of the files and a support route instead of a dead end.
  */
 internal fun startupFailureActions(failure: StartupDependencyResolution.Failed): List<StartupFailureAction> = buildList {
     if (failure.diagnosticCode == DUAL_DATABASES_DIAGNOSTIC_CODE) {
@@ -154,56 +157,6 @@ internal fun startupFailureActions(failure: StartupDependencyResolution.Failed):
         add(StartupFailureAction.CONTACT_SUPPORT)
     }
     if (failure.retryAllowed) add(StartupFailureAction.RETRY)
-}
-
-/**
- * INDEPENDENT Intervals.icu recovery (issue #1384 P3, integration-model §7): replays
- * admitted-but-unfinished completion journals and signals one bounded export drain. Runs at
- * initial ready startup and on every ON_RESUME after the startup prerequisites — outside
- * every portal success/auth/debounce gate. Never awaits network: [WorkoutCompletionFinalizer.
- * finalizePending] is local-only replay, and [IntervalsExportCoordinator.signalForeground]
- * just enqueues a coalesced signal into the coordinator's own scope. Non-fatal on error and
- * on missing dependencies: both singletons resolve lazily via Koin `getOrNull`, so this is a
- * safe no-op even before the Intervals module lands.
- */
-internal suspend fun runIntervalsRecovery() {
-    try {
-        val koin = runCatching { KoinPlatform.getKoin() }.getOrNull() ?: return
-        // DB replay is real I/O (SQLDelight reads + one transaction per pending
-        // completion) and this runs from lifecycle/Main scopes: never on the main thread.
-        withContext(Dispatchers.IO) {
-            val connectionStore = runCatching { koin.getOrNull<IntervalsConnectionStore>() }.getOrNull()
-            if (connectionStore != null) {
-                val profileRepo = runCatching { koin.getOrNull<UserProfileRepository>() }.getOrNull()
-                val profileId = (profileRepo?.activeProfileContext?.value as? ActiveProfileContext.Ready)?.profile?.id
-                    ?: profileRepo?.activeProfile?.value?.id
-                try {
-                    if (!profileId.isNullOrBlank()) {
-                        connectionStore.recoverForProfile(profileId)
-                    } else {
-                        connectionStore.cleanOrphanSecrets()
-                    }
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (t: Throwable) {
-                    Logger.w(t) { "Intervals connection recovery failed (non-fatal)" }
-                }
-            }
-            runCatching { koin.getOrNull<WorkoutCompletionFinalizer>() }
-                .getOrNull()
-                ?.let { finalizer ->
-                    val outcomes = finalizer.finalizePending()
-                    Logger.d { "Intervals recovery: replayed ${outcomes.size} pending completion(s)" }
-                }
-            runCatching { koin.getOrNull<IntervalsExportCoordinator>() }
-                .getOrNull()
-                ?.signalForeground()
-        }
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Throwable) {
-        Logger.e(e) { "Intervals recovery failed (non-fatal)" }
-    }
 }
 
 /**
@@ -221,20 +174,8 @@ private fun AppLifecycleObserver(
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 scope.launch {
-                    val startupReady = try {
-                        migrationManager.awaitRequiredMigrations()
-                        true
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Throwable) {
-                        Logger.e(e) { "AppLifecycleObserver: awaitRequiredMigrations failed" }
-                        false
-                    }
-                    // INDEPENDENT Intervals recovery (issue #1384 P3): after the startup
-                    // prerequisites but outside every portal success/auth/debounce gate, and
-                    // never awaited by or gating the portal sync below. Non-fatal on error.
-                    if (startupReady) runIntervalsRecovery()
                     try {
+                        migrationManager.awaitRequiredMigrations()
                         syncTriggerManager.onAppForeground()
                     } catch (e: CancellationException) {
                         throw e
@@ -264,110 +205,133 @@ internal fun PersistedFileStartupFailureScreen(
     var exporting by remember { mutableStateOf(false) }
     var exportFailed by remember { mutableStateOf(false) }
     var shareFailed by remember(failure) { mutableStateOf(false) }
-    Box(
-        modifier = Modifier.fillMaxSize().background(Color(0xFF1A1A2E)).padding(24.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.verticalScroll(rememberScrollState()),
+    PhoenixTheme {
+        val bgBrush = screenBackgroundBrush()
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(bgBrush)
+                .systemBarsPadding()
+                .padding(24.dp),
+            contentAlignment = Alignment.Center,
         ) {
-            Text("Project Phoenix", color = Color(0xFFFF6B35), fontSize = 24.sp)
-            Spacer(Modifier.height(16.dp))
-            Text(
-                stringResource(
-                    if (dualDatabases) {
-                        Res.string.startup_storage_attention_title
-                    } else {
-                        Res.string.startup_local_data_preserved_title
-                    },
-                ),
-                color = Color.White,
-                fontSize = 18.sp,
-            )
-            Spacer(Modifier.height(12.dp))
-            Text(
-                stringResource(
-                    if (dualDatabases) {
-                        Res.string.startup_dual_databases_message
-                    } else if (failure.diagnosticCode == STARTUP_INITIALIZATION_FAILED) {
-                        Res.string.startup_initialization_failed_message
-                    } else {
-                        Res.string.startup_storage_failed_message
-                    },
-                ),
-                color = Color.White.copy(alpha = 0.7f),
-                fontSize = 14.sp,
-                textAlign = TextAlign.Center,
-            )
-            Spacer(Modifier.height(16.dp))
-            Text(
-                stringResource(Res.string.startup_diagnostic_code, failure.diagnosticCode),
-                color = Color(0xFFFF6B6B),
-                fontSize = 12.sp,
-                modifier = Modifier.padding(8.dp),
-            )
-            failure.supportCode?.let { supportCode ->
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .widthIn(max = 520.dp)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+            ) {
                 Text(
-                    stringResource(Res.string.startup_support_code, supportCode),
-                    color = Color(0xFFFFD166),
-                    fontSize = 12.sp,
+                    "Project Phoenix",
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    stringResource(
+                        if (dualDatabases) {
+                            Res.string.startup_storage_attention_title
+                        } else {
+                            Res.string.startup_local_data_preserved_title
+                        },
+                    ),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    textAlign = TextAlign.Center,
+                )
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    stringResource(
+                        if (dualDatabases) {
+                            Res.string.startup_dual_databases_message
+                        } else if (failure.diagnosticCode == STARTUP_INITIALIZATION_FAILED) {
+                            Res.string.startup_initialization_failed_message
+                        } else {
+                            Res.string.startup_storage_failed_message
+                        },
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                )
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    stringResource(Res.string.startup_diagnostic_code, failure.diagnosticCode),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = AccessibilityTheme.colors.error,
+                    textAlign = TextAlign.Center,
                     modifier = Modifier.padding(8.dp),
                 )
-            }
-            if (StartupFailureAction.EXPORT_DATABASE_FILES in actions) {
-                Spacer(Modifier.height(16.dp))
-                // Signoff decision 5 (issue #1384 P3, integration-model §7): this action uses
-                // the raw-DB share path, which is suppressed build-wide. shareDatabaseFiles()
-                // offers verified non-sensitive diagnostics only (candidate file names and
-                // byte sizes) — raw DB/WAL/SHM/journal/quarantine bytes are never shared from
-                // here, including for unsafe-to-open dual databases, because DELETE cannot
-                // scrub SQLite pages/WAL. Explicit JSON training backups remain available.
-                Button(
-                    enabled = !exporting,
-                    onClick = {
-                        exporting = true
-                        exportFailed = false
-                        scope.launch {
-                            exportFailed = !shareDatabaseFiles()
-                            exporting = false
-                        }
-                    },
-                ) {
-                    Text(stringResource(Res.string.startup_export_database_files))
-                }
-                if (exportFailed) {
+                failure.supportCode?.let { supportCode ->
                     Text(
-                        stringResource(Res.string.startup_export_failed),
-                        color = Color(0xFFFF6B6B),
-                        fontSize = 12.sp,
+                        stringResource(Res.string.startup_support_code, supportCode),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = AccessibilityTheme.colors.warning,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.padding(8.dp),
                     )
                 }
-            }
-            if (StartupFailureAction.CONTACT_SUPPORT in actions) {
-                TextButton(onClick = { runCatching { uriHandler.openUri(startupSupportMailtoUri(failure)) } }) {
-                    Text(stringResource(Res.string.startup_contact_support))
+                if (StartupFailureAction.EXPORT_DATABASE_FILES in actions) {
+                    Spacer(Modifier.height(16.dp))
+                    Button(
+                        enabled = !exporting,
+                        modifier = Modifier.heightIn(min = 48.dp),
+                        onClick = {
+                            exporting = true
+                            exportFailed = false
+                            scope.launch {
+                                exportFailed = !shareDatabaseFiles()
+                                exporting = false
+                            }
+                        },
+                    ) {
+                        Text(stringResource(Res.string.startup_export_database_files))
+                    }
+                    if (exportFailed) {
+                        Text(
+                            stringResource(Res.string.startup_export_failed),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = AccessibilityTheme.colors.error,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(8.dp),
+                        )
+                    }
                 }
-            }
-            if (onShareDiagnostics != null) {
-                TextButton(onClick = { shareFailed = !onShareDiagnostics() }) {
-                    Text(stringResource(Res.string.startup_share_diagnostics))
+                if (StartupFailureAction.CONTACT_SUPPORT in actions) {
+                    TextButton(
+                        modifier = Modifier.heightIn(min = 48.dp),
+                        onClick = { runCatching { uriHandler.openUri(startupSupportMailtoUri(failure)) } },
+                    ) {
+                        Text(stringResource(Res.string.startup_contact_support))
+                    }
                 }
-                if (shareFailed) {
-                    Text(
-                        stringResource(Res.string.startup_share_diagnostics_failed),
-                        color = Color(0xFFFF6B6B),
-                        textAlign = TextAlign.Center,
-                    )
+                if (onShareDiagnostics != null) {
+                    TextButton(
+                        modifier = Modifier.heightIn(min = 48.dp),
+                        onClick = { shareFailed = !onShareDiagnostics() },
+                    ) {
+                        Text(stringResource(Res.string.startup_share_diagnostics))
+                    }
+                    if (shareFailed) {
+                        Text(
+                            stringResource(Res.string.startup_share_diagnostics_failed),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = AccessibilityTheme.colors.error,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
                 }
-            }
-            if (StartupFailureAction.RETRY in actions) {
-                Spacer(Modifier.height(16.dp))
-                // A retry may migrate files that changed; never while the export is still reading them.
-                Button(enabled = !exporting, onClick = onRetry) {
-                    Text(stringResource(Res.string.action_retry))
+                if (StartupFailureAction.RETRY in actions) {
+                    Spacer(Modifier.height(16.dp))
+                    // A retry may migrate files that changed; never while the export is still reading them.
+                    Button(
+                        enabled = !exporting,
+                        modifier = Modifier.heightIn(min = 48.dp),
+                        onClick = onRetry,
+                    ) {
+                        Text(stringResource(Res.string.action_retry))
+                    }
                 }
             }
         }
@@ -405,14 +369,33 @@ private fun CrashReportPrompt() {
 
 @Composable
 private fun MigrationRetryScreen(message: String, onRetry: () -> Unit) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+    val bgBrush = screenBackgroundBrush()
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(bgBrush)
+            .systemBarsPadding()
+            .padding(24.dp),
+        contentAlignment = Alignment.Center,
+    ) {
         Column(
-            modifier = Modifier.padding(24.dp),
+            modifier = Modifier
+                .widthIn(max = 520.dp)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text(message, textAlign = TextAlign.Center)
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                textAlign = TextAlign.Center,
+            )
             Spacer(Modifier.height(16.dp))
-            Button(onClick = onRetry) {
+            Button(
+                onClick = onRetry,
+                modifier = Modifier.heightIn(min = 48.dp),
+            ) {
                 Text(stringResource(Res.string.action_retry))
             }
         }
@@ -502,24 +485,20 @@ fun AppContent(
         }
     }
 
-    // Initial ready-startup Intervals recovery (issue #1384 P3): runs once, when the startup
-    // surface first reaches MAIN (EULA accepted + required migrations ready) — independent
-    // of the ON_RESUME path and of every portal success/auth/debounce gate. Non-fatal and
-    // network-free (see runIntervalsRecovery).
-    var intervalsRecoveryStarted by remember { mutableStateOf(false) }
-    val startupReady = startupSurface(eulaAccepted, launchSplashCompleted, migrationState) == StartupSurface.MAIN
-    LaunchedEffect(startupReady) {
-        if (startupReady && !intervalsRecoveryStarted) {
-            intervalsRecoveryStarted = true
-            runIntervalsRecovery()
-        }
-    }
-
     AppLifecycleObserver(syncTriggerManager, migrationManager)
 
     PhoenixTheme(themeMode = themeMode, dynamicColorEnabled = dynamicColorEnabled) {
+        val currentSurface = startupSurface(eulaAccepted, launchSplashCompleted, migrationState)
+        if (currentSurface != StartupSurface.SPLASH) {
+            ApplyStatusBarAppearance(
+                isDark = resolveUseDarkColors(
+                    themeMode = themeMode,
+                    systemDark = rememberPlatformSystemDark(),
+                ),
+            )
+        }
         Box(modifier = Modifier.fillMaxSize()) {
-            when (startupSurface(eulaAccepted, launchSplashCompleted, migrationState)) {
+            when (currentSurface) {
                 StartupSurface.EULA -> EulaScreen(onAccept = eulaViewModel::acceptEula)
 
                 StartupSurface.SPLASH -> SplashScreen()

@@ -5,6 +5,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -50,6 +51,35 @@ import com.devil.phoenixproject.presentation.components.charts.HistoryTimePeriod
 import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
 import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
 import com.devil.phoenixproject.ui.theme.Spacing
+import org.jetbrains.compose.resources.stringResource
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.insights_consistency_def
+import projectphoenix.shared.generated.resources.insights_consistency_so_what
+import projectphoenix.shared.generated.resources.insights_consistency_subtitle
+import projectphoenix.shared.generated.resources.insights_consistency_time
+import projectphoenix.shared.generated.resources.insights_consistency_title
+import projectphoenix.shared.generated.resources.insights_dashboard
+import projectphoenix.shared.generated.resources.insights_mode_dist_def
+import projectphoenix.shared.generated.resources.insights_mode_dist_so_what
+import projectphoenix.shared.generated.resources.insights_no_insights_message
+import projectphoenix.shared.generated.resources.insights_no_insights_title
+import projectphoenix.shared.generated.resources.insights_performance_trends
+import projectphoenix.shared.generated.resources.insights_performance_trends_def
+import projectphoenix.shared.generated.resources.insights_performance_trends_so_what
+import projectphoenix.shared.generated.resources.insights_performance_trends_subtitle
+import projectphoenix.shared.generated.resources.insights_performance_trends_time
+import projectphoenix.shared.generated.resources.insights_training_load_balance
+import projectphoenix.shared.generated.resources.insights_training_load_balance_subtitle
+import projectphoenix.shared.generated.resources.insights_training_overview
+import projectphoenix.shared.generated.resources.insights_volume_history_def
+import projectphoenix.shared.generated.resources.insights_volume_history_so_what
+import projectphoenix.shared.generated.resources.insights_weekly_snapshot
+import projectphoenix.shared.generated.resources.insights_weekly_snapshot_def
+import projectphoenix.shared.generated.resources.insights_weekly_snapshot_so_what
+import projectphoenix.shared.generated.resources.insights_weekly_snapshot_subtitle
+import projectphoenix.shared.generated.resources.insights_weekly_snapshot_time
+import projectphoenix.shared.generated.resources.insights_workload_intensity_def
+import projectphoenix.shared.generated.resources.insights_workload_intensity_so_what
 import kotlin.time.Instant
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.TimeZone
@@ -58,11 +88,11 @@ import kotlinx.datetime.minus
 import kotlinx.datetime.toLocalDateTime
 
 /**
- * Wrapper composable that constrains card width on tablets to prevent over-stretching.
+ * Wrapper composable that constrains content width on tablets to prevent over-stretching.
  */
 @Composable
 private fun ResponsiveCardWrapper(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
-    val maxWidth = ResponsiveDimensions.cardMaxWidth()
+    val maxWidth = ResponsiveDimensions.contentMaxWidth()
 
     Box(
         modifier = modifier.fillMaxWidth(),
@@ -120,105 +150,137 @@ fun InsightsTab(
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(Spacing.medium),
+            .background(MaterialTheme.colorScheme.background),
+        contentPadding = PaddingValues(
+            start = Spacing.medium,
+            end = Spacing.medium,
+            top = Spacing.medium,
+            bottom = 96.dp, // Clear floating Share FAB on AnalyticsScreen
+        ),
+        horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(Spacing.medium),
     ) {
         item {
-            Text(
-                text = "Dashboard",
-                style = MaterialTheme.typography.headlineLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "Your training overview",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            ResponsiveCardWrapper {
+                Column {
+                    Text(
+                        text = stringResource(Res.string.insights_dashboard),
+                        style = MaterialTheme.typography.headlineLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onBackground,
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = stringResource(Res.string.insights_training_overview),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
         }
 
         // Time period filter chips — scrollable for Bold Text accessibility
         item {
-            val periods = HistoryTimePeriod.entries
-            if (useCompactAccessibility) {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Row(
+            ResponsiveCardWrapper {
+                val periods = HistoryTimePeriod.entries
+                if (useCompactAccessibility) {
+                    Column(
                         modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            periods.take(2).forEach { period ->
+                                HistoryPeriodChip(
+                                    period = period,
+                                    selected = selectedPeriod == period,
+                                    onClick = { selectedPeriod = period },
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            periods.drop(2).forEach { period ->
+                                HistoryPeriodChip(
+                                    period = period,
+                                    selected = selectedPeriod == period,
+                                    onClick = { selectedPeriod = period },
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        periods.take(2).forEach { period ->
+                        periods.forEach { period ->
                             HistoryPeriodChip(
                                 period = period,
                                 selected = selectedPeriod == period,
                                 onClick = { selectedPeriod = period },
-                                modifier = Modifier.weight(1f),
                             )
                         }
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        periods.drop(2).forEach { period ->
-                            HistoryPeriodChip(
-                                period = period,
-                                selected = selectedPeriod == period,
-                                onClick = { selectedPeriod = period },
-                                modifier = Modifier.weight(1f),
-                            )
-                        }
-                    }
-                }
-            } else {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    periods.forEach { period ->
-                        HistoryPeriodChip(
-                            period = period,
-                            selected = selectedPeriod == period,
-                            onClick = { selectedPeriod = period },
-                        )
                     }
                 }
             }
         }
 
-        // 1) Snapshot
         item {
-            InsightSectionHeader("1. Snapshot", "Current status")
-        }
-
-        // This Week Summary Card - week-over-week comparison
-        item {
-            InsightContextBlock("Summary of completed sessions and personal records.", "Last 7 days vs prior 7 days", "Check if this week is on track before changing your plan.")
             ResponsiveCardWrapper {
-                ThisWeekSummaryCard(
-                    workoutSessions = workoutSessions,
-                    personalRecords = prs,
-                    weightUnit = weightUnit,
-                    modifier = Modifier.fillMaxWidth(),
+                InsightSectionHeader(
+                    stringResource(Res.string.insights_weekly_snapshot),
+                    stringResource(Res.string.insights_weekly_snapshot_subtitle),
                 )
             }
         }
 
-        // 2) Trends
+        // This Week Summary Card - week-over-week comparison
         item {
-            InsightSectionHeader("2. Trends", "How performance changed")
+            ResponsiveCardWrapper {
+                Column(verticalArrangement = Arrangement.spacedBy(Spacing.small)) {
+                    InsightContextBlock(
+                        stringResource(Res.string.insights_weekly_snapshot_def),
+                        stringResource(Res.string.insights_weekly_snapshot_time),
+                        stringResource(Res.string.insights_weekly_snapshot_so_what),
+                    )
+                    ThisWeekSummaryCard(
+                        workoutSessions = workoutSessions,
+                        personalRecords = prs,
+                        weightUnit = weightUnit,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
         }
 
-        // 1. Muscle Balance Radar Chart (Replaces linear progress bars)
+        item {
+            ResponsiveCardWrapper {
+                InsightSectionHeader(
+                    stringResource(Res.string.insights_performance_trends),
+                    stringResource(Res.string.insights_performance_trends_subtitle),
+                )
+            }
+        }
+
+        // Muscle Balance Radar Chart
         if (prs.isNotEmpty()) {
             item {
-                InsightContextBlock("Distribution of PR coverage by muscle group.", "All-time PRs", "Spot overtrained and undertrained regions before plateaus happen.")
+                ResponsiveCardWrapper {
+                    InsightContextBlock(
+                        stringResource(Res.string.insights_performance_trends_def),
+                        stringResource(Res.string.insights_performance_trends_time),
+                        stringResource(Res.string.insights_performance_trends_so_what),
+                    )
+                }
             }
             item {
                 ResponsiveCardWrapper {
@@ -231,31 +293,51 @@ fun InsightsTab(
             }
         }
 
-        // 3) Diagnostics
         item {
-            InsightSectionHeader("3. Diagnostics", "Why outcomes look this way")
-        }
-
-        // 2. Workout Consistency Gauge (Replaces circular progress)
-        item {
-            InsightContextBlock("Session frequency consistency score.", "Last 30 days", "Inconsistency usually explains stalled progress more than load choices.")
             ResponsiveCardWrapper {
-                ConsistencyGaugeCard(
-                    workoutSessions = workoutSessions,
-                    modifier = Modifier.fillMaxWidth(),
+                InsightSectionHeader(
+                    stringResource(Res.string.insights_consistency_title),
+                    stringResource(Res.string.insights_consistency_subtitle),
                 )
             }
         }
 
-        // 4) Actions
+        // Workout Consistency Gauge
         item {
-            InsightSectionHeader("4. Actions", "What to do next")
+            ResponsiveCardWrapper {
+                Column(verticalArrangement = Arrangement.spacedBy(Spacing.small)) {
+                    InsightContextBlock(
+                        stringResource(Res.string.insights_consistency_def),
+                        stringResource(Res.string.insights_consistency_time),
+                        stringResource(Res.string.insights_consistency_so_what),
+                    )
+                    ConsistencyGaugeCard(
+                        workoutSessions = workoutSessions,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
         }
 
-        // 3. Volume vs Intensity Combo Chart (New Metric)
+        item {
+            ResponsiveCardWrapper {
+                InsightSectionHeader(
+                    stringResource(Res.string.insights_training_load_balance),
+                    stringResource(Res.string.insights_training_load_balance_subtitle),
+                )
+            }
+        }
+
+        // Volume vs Intensity Combo Chart
         if (filteredSessions.isNotEmpty()) {
             item {
-                InsightContextBlock("How training load (volume) and effort (intensity) move together.", selectedPeriod.label, "If intensity rises while volume crashes, schedule a lighter recovery microcycle.")
+                ResponsiveCardWrapper {
+                    InsightContextBlock(
+                        stringResource(Res.string.insights_workload_intensity_def),
+                        selectedPeriod.label,
+                        stringResource(Res.string.insights_workload_intensity_so_what),
+                    )
+                }
             }
             item {
                 ResponsiveCardWrapper {
@@ -268,10 +350,16 @@ fun InsightsTab(
             }
         }
 
-        // 4. Total Volume Trend (User Request)
+        // Total Volume Trend
         if (filteredSessions.isNotEmpty()) {
             item {
-                InsightContextBlock("Total lifted workload trend.", selectedPeriod.label, "Increase volume gradually (5–10%) to avoid spikes and fatigue.")
+                ResponsiveCardWrapper {
+                    InsightContextBlock(
+                        stringResource(Res.string.insights_volume_history_def),
+                        selectedPeriod.label,
+                        stringResource(Res.string.insights_volume_history_so_what),
+                    )
+                }
             }
             item {
                 ResponsiveCardWrapper {
@@ -284,10 +372,16 @@ fun InsightsTab(
             }
         }
 
-        // Mode drill-down detail (kept as allocation context, not duplicate primary metric)
+        // Workout mode breakdown
         if (filteredSessions.isNotEmpty()) {
             item {
-                InsightContextBlock("Workout mode allocation drill-down.", selectedPeriod.label, "Use this as context after adjusting volume/intensity, not as a primary KPI.")
+                ResponsiveCardWrapper {
+                    InsightContextBlock(
+                        stringResource(Res.string.insights_mode_dist_def),
+                        selectedPeriod.label,
+                        stringResource(Res.string.insights_mode_dist_so_what),
+                    )
+                }
             }
             item {
                 ResponsiveCardWrapper {
@@ -323,13 +417,13 @@ fun InsightsTab(
                             )
                             Spacer(modifier = Modifier.height(16.dp))
                             Text(
-                                text = "No Insights Yet",
+                                text = stringResource(Res.string.insights_no_insights_title),
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = "Complete workouts to unlock insights",
+                                text = stringResource(Res.string.insights_no_insights_message),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )

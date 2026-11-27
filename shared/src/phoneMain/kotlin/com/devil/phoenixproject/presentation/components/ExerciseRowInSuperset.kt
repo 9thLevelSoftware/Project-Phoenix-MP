@@ -10,9 +10,11 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -48,6 +50,7 @@ fun ExerciseRowInSuperset(
     onLongPress: () -> Unit,
     onSelectionToggle: () -> Unit,
     modifier: Modifier = Modifier,
+    onRestClick: (() -> Unit)? = null,
 ) {
     // supersets-bulk-edit-14: gate selection animation on reduceMotion
     val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
@@ -119,12 +122,27 @@ fun ExerciseRowInSuperset(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
-                // Inherited rest time indicator
-                Text(
-                    "${supersetRestSeconds}s rest (superset)",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                )
+                // Inherited rest time indicator (tappable when onRestClick provided)
+                Box(
+                    modifier = if (onRestClick != null) {
+                        Modifier
+                            .heightIn(min = 48.dp)
+                            .combinedClickable(onClick = { onRestClick() })
+                    } else {
+                        Modifier
+                    },
+                    contentAlignment = Alignment.CenterStart,
+                ) {
+                    Text(
+                        "${supersetRestSeconds}s rest (superset)",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (onRestClick != null) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                        },
+                    )
+                }
             }
         }
     }

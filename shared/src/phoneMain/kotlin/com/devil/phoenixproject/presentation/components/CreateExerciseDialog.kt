@@ -133,39 +133,36 @@ fun CreateExerciseDialog(
 
     Dialog(onDismissRequest = onDismiss, properties = dialogProperties) {
         Surface(
-            modifier = Modifier.fillMaxWidth().wrapContentHeight(),
-            shape = MaterialTheme.shapes.medium,
+            modifier = Modifier
+                .widthIn(max = 560.dp)
+                .fillMaxWidth()
+                .wrapContentHeight(),
+            shape = MaterialTheme.shapes.large,
             color = MaterialTheme.colorScheme.surfaceContainerHighest,
+            tonalElevation = 6.dp,
         ) {
             Box(modifier = Modifier.fillMaxWidth().background(backgroundGradient)) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(Spacing.medium)
-                        .verticalScroll(rememberScrollState()),
+                        .padding(Spacing.medium),
                 ) {
-                    // Header
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = if (isEditMode) "Edit Exercise" else "Create Exercise",
-                            style = MaterialTheme.typography.headlineSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                        IconButton(onClick = onDismiss) {
-                            Icon(
-                                Icons.Default.Close,
-                                "Close",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
+                    PhoenixSheetHeader(
+                        title = if (isEditMode) "Edit Exercise" else "Create Exercise",
+                        onClose = onDismiss,
+                    )
 
-                    Spacer(modifier = Modifier.height(Spacing.medium))
+                    HorizontalDivider(
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+                    )
+
+                    Column(
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState())
+                            .padding(top = Spacing.medium),
+                    ) {
 
                     // Exercise Name
                     ConfirmEditTextField(
@@ -376,17 +373,22 @@ fun CreateExerciseDialog(
                             style = MaterialTheme.typography.bodySmall,
                         )
                     }
+                    }
+
+                    Spacer(modifier = Modifier.height(Spacing.small))
 
                     // Buttons
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(IntrinsicSize.Max),
                         horizontalArrangement = Arrangement.spacedBy(Spacing.small),
                     ) {
                         // Delete button (only for edit mode)
                         if (isEditMode && onDelete != null) {
                             OutlinedButton(
                                 onClick = { showDeleteConfirmation = true },
-                                modifier = Modifier.weight(1f),
+                                modifier = Modifier.weight(1f).fillMaxHeight().heightIn(min = 56.dp),
                                 colors = ButtonDefaults.outlinedButtonColors(
                                     contentColor = MaterialTheme.colorScheme.error,
                                 ),
@@ -400,7 +402,7 @@ fun CreateExerciseDialog(
                         } else {
                             OutlinedButton(
                                 onClick = onDismiss,
-                                modifier = Modifier.weight(1f),
+                                modifier = Modifier.weight(1f).fillMaxHeight().heightIn(min = 56.dp),
                                 colors = ButtonDefaults.outlinedButtonColors(
                                     contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                                 ),
@@ -476,7 +478,7 @@ fun CreateExerciseDialog(
                                 !showMediaPicker &&
                                 mediaCoordinator?.phase !is MediaPhase.Copying &&
                                 mediaCoordinator?.phase !is MediaPhase.Picking,
-                            modifier = Modifier.weight(1f).height(56.dp),
+                            modifier = Modifier.weight(1f).fillMaxHeight().heightIn(min = 56.dp),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = MaterialTheme.colorScheme.primary,
                             ),

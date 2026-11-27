@@ -131,6 +131,11 @@
 			knownRegions = (
 				en,
 				Base,
+				de,
+				es,
+				fr,
+				it,
+				nl,
 			);
 			mainGroup = DFE6BD3E2EEDF42200886589;
 			minimizedProjectReferenceProxies = 1;
@@ -349,7 +354,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.1.0;
+				MARKETING_VERSION = 1.1.1;
 				OTHER_LDFLAGS = "-ObjC";
 				PRODUCT_BUNDLE_IDENTIFIER = com.devil.phoenixproject.projectphoenix;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -387,7 +392,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.1.0;
+				MARKETING_VERSION = 1.1.1;
 				OTHER_LDFLAGS = "-ObjC";
 				PRODUCT_BUNDLE_IDENTIFIER = com.devil.phoenixproject.projectphoenix;
 				PRODUCT_NAME = "$(TARGET_NAME)";

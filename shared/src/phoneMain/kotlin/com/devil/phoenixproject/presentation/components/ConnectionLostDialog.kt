@@ -26,6 +26,11 @@ import com.devil.phoenixproject.data.repository.MachineSafetyHazardDocument
 import org.jetbrains.compose.resources.stringResource
 import projectphoenix.shared.generated.resources.Res
 import projectphoenix.shared.generated.resources.cd_bluetooth_lost
+import projectphoenix.shared.generated.resources.connection_lost_confirm_button
+import projectphoenix.shared.generated.resources.connection_lost_confirm_load_hint
+import projectphoenix.shared.generated.resources.connection_lost_reconnect_button
+import projectphoenix.shared.generated.resources.connection_lost_reconnect_hint
+import projectphoenix.shared.generated.resources.connection_lost_remind_later
 
 /**
  * Critical alert dialog shown when BLE connection is lost during an active workout, or when a
@@ -48,7 +53,7 @@ fun ConnectionLostDialog(
     onDismiss: () -> Unit,
     onAcknowledgeUnloaded: (() -> Unit)? = null,
 ) {
-    val copy = connectionLostDialogCopy(hazard)
+    val copy = localizedConnectionLostDialogCopy(hazard)
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = {
@@ -72,14 +77,14 @@ fun ConnectionLostDialog(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    CONNECTION_LOST_SECONDARY_COPY,
+                    stringResource(Res.string.connection_lost_reconnect_hint),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 if (onAcknowledgeUnloaded != null) {
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        CONNECTION_LOST_ACK_COPY,
+                        stringResource(Res.string.connection_lost_confirm_load_hint),
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
@@ -104,20 +109,20 @@ fun ConnectionLostDialog(
             ) {
                 Button(onClick = onReconnect, enabled = !copy.recoveryInProgress) {
                     Text(
-                        "Reconnect to request release",
+                        stringResource(Res.string.connection_lost_reconnect_button),
                         fontWeight = FontWeight.Bold,
                     )
                 }
                 if (onAcknowledgeUnloaded != null) {
                     OutlinedButton(onClick = onAcknowledgeUnloaded) {
-                        Text("I checked: handles at rest, clear warning")
+                        Text(stringResource(Res.string.connection_lost_confirm_button))
                     }
                 }
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Remind me later")
+                Text(stringResource(Res.string.connection_lost_remind_later))
             }
         },
     )

@@ -9,9 +9,12 @@ import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.database.PhoenixDatabase
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import platform.Foundation.NSDate
 import platform.Foundation.NSDocumentDirectory
@@ -55,6 +58,8 @@ internal class IosDataBackupManager(
     userProfileRepository: UserProfileRepository,
     portalTokenStorage: PortalTokenStorage,
     pendingProfileDeletionStore: PendingProfileDeletionStore,
+    private val folderOpener: IosFolderOpener = IosFolderOpener(),
+    private val uiScope: CoroutineScope = MainScope(),
 ) : BaseDataBackupManager(
     database,
     profilePreferencesRepository,
@@ -203,16 +208,79 @@ internal class IosDataBackupManager(
     }
 
     /**
-     * iOS does not support opening arbitrary folders in Files.app programmatically.
-     * Present a share sheet for the backup directory so the user can interact with it
-     * via any installed file manager or sharing target.
+     * Open the active backup destination folder in the Files app (issue #1423).
+     *
+     * The handoff is a `shareddocuments://` URL built via [filesHandoffUrl]
+     * (percent-encoded) and opened with the 3-argument `UIApplication.openURL`.
+     * Fixed fallback: a custom destination that cannot be resolved or handed
+     * off retries with the default folder, and when no handoff is accepted a
+     * folder document-picker browse of the target is presented instead.
+     * A share sheet is never used: iOS cannot share folders, so the old
+     * `presentShareSheet(dirURL)` always failed.
+     *
+     * Stays non-suspend for the interface; bookmark resolution runs on the
+     * manager-owned injectable main scope ([uiScope]), never `runBlocking`.
      */
     override fun openBackupFolder() {
-        val dir = getSessionBackupDirectory()
-        presentShareSheet(
-            items = listOf(NSURL.fileURLWithPath(dir)),
-            onShown = {},
-        )
+        val defaultDir = getSessionBackupDirectory()
+        val destination = preferencesManager.preferencesFlow.value.backupDestination
+        if (destination is BackupDestination.Custom) {
+            uiScope.launch {
+                val targetPath = resolveCustomFolderPath(destination) ?: defaultDir
+                handoffOrBrowse(targetPath, defaultDir)
+            }
+        } else {
+            handoffOrBrowse(defaultDir, defaultDir)
+        }
+    }
+
+    /**
+     * Resolve the custom destination folder for the handoff, treating an
+     * unresolvable bookmark like an inaccessible destination: null so the
+     * caller falls back to the default folder.
+     */
+    private suspend fun resolveCustomFolderPath(destination: BackupDestination.Custom): String? =
+        try {
+            destinationResolver.resolveFolderPath(destination)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Logger.w(e) { "Could not resolve the custom backup folder; falling back to default" }
+            null
+        }
+
+    /**
+     * Files handoff for [targetPath], then for the default folder, then a
+     * document-picker browse of [targetPath]. Never a share sheet.
+     */
+    private fun handoffOrBrowse(targetPath: String, defaultDir: String) {
+        handoff(targetPath) { accepted ->
+            if (accepted) return@handoff
+            if (targetPath == defaultDir) {
+                folderOpener.presentFolderBrowse(NSURL.fileURLWithPath(targetPath))
+            } else {
+                handoff(defaultDir) { defaultAccepted ->
+                    if (!defaultAccepted) {
+                        folderOpener.presentFolderBrowse(NSURL.fileURLWithPath(targetPath))
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Attempt the `shareddocuments://` handoff for [folderPath].
+     * [onResult] receives true only when the system accepted the handoff
+     * request — not that the folder became visible in the Files app.
+     */
+    private fun handoff(folderPath: String, onResult: (Boolean) -> Unit) {
+        val url = filesHandoffUrl(folderPath)
+        if (url == null) {
+            Logger.w { "Cannot build a Files handoff URL for $folderPath" }
+            onResult(false)
+        } else {
+            folderOpener.openFolderInFiles(url, onResult)
+        }
     }
 
     override fun createBackupWriter(): BackupJsonWriter {

@@ -33,22 +33,27 @@ fun WorkoutDayRow(workout: CycleItem.Workout, onTap: () -> Unit, dragModifier: M
                 .padding(horizontal = 12.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // Drag handle
-            Icon(
-                imageVector = Icons.Default.DragHandle,
-                contentDescription = stringResource(Res.string.cd_reorder),
-                modifier = dragModifier.size(24.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            // Drag handle (48dp touch target)
+            Box(
+                modifier = dragModifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Default.DragHandle,
+                    contentDescription = stringResource(Res.string.cd_reorder),
+                    modifier = Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
 
-            Spacer(modifier = Modifier.width(12.dp))
+            Spacer(modifier = Modifier.width(8.dp))
 
             // Content
             Column(
                 modifier = Modifier.weight(1f),
             ) {
                 Text(
-                    text = "Day ${workout.dayNumber}: ${workout.routineName}",
+                    text = stringResource(Res.string.workout_day_title, workout.dayNumber, workout.routineName),
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
@@ -63,11 +68,15 @@ fun WorkoutDayRow(workout: CycleItem.Workout, onTap: () -> Unit, dragModifier: M
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
+                val exerciseCountText = if (workout.exerciseCount == 1) {
+                    stringResource(Res.string.exercise_count_one)
+                } else {
+                    stringResource(Res.string.exercise_count_other, workout.exerciseCount)
+                }
                 Text(
-                    text = buildString {
-                        append("${workout.exerciseCount} exercises")
-                        workout.estimatedMinutes?.let { append(" • ~$it min") }
-                    },
+                    text = workout.estimatedMinutes?.let {
+                        stringResource(Res.string.workout_day_est_minutes, exerciseCountText, it)
+                    } ?: exerciseCountText,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                 )

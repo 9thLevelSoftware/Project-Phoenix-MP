@@ -14,6 +14,7 @@ class AssessmentResourceContractTest {
             "values-de",
             "values-es",
             "values-fr",
+            "values-it",
         ).forEach { directory ->
             val path = "src/commonMain/composeResources/$directory/strings.xml"
             val source = readProjectFile(path)

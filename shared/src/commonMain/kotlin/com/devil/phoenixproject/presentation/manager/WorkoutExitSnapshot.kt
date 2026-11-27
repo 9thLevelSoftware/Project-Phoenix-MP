@@ -394,9 +394,7 @@ internal data class WorkoutExitSnapshot(
     val postSaveInput: PostSaveWorkoutInput,
     /**
      * Issue #1400: explicit metric-unit contract of this snapshot's unit-bearing values
-     * (rep velocities, ROM, power). The persistent crash form ([PendingChildWrite] via
-     * CompletionJournalCodec) carries the same marker, so in-flight state recovered after
-     * the unit upgrade is scaled exactly once or rejected, never mixed with new rows.
+     * (rep velocities, ROM, power).
      */
     val metricUnitVersion: Int = METRIC_UNIT_VERSION_MM,
 )

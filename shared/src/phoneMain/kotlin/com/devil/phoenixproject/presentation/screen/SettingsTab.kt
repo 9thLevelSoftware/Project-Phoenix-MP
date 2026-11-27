@@ -7,15 +7,19 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
@@ -42,8 +46,6 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import com.devil.phoenixproject.presentation.components.LoadingIndicator
 import com.devil.phoenixproject.presentation.components.LoadingIndicatorSize
 import androidx.compose.material3.DropdownMenuItem
@@ -51,12 +53,14 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
@@ -73,25 +77,33 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.UserProfile
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.domain.model.BleCompatibilitySetting
+import com.devil.phoenixproject.domain.model.WeightTextScale
 import com.devil.phoenixproject.presentation.components.DestructiveConfirmDialog
 import com.devil.phoenixproject.presentation.components.GarminControlsSettingsCard
 import com.devil.phoenixproject.presentation.components.HrmSensorSettingsCard
+import com.devil.phoenixproject.presentation.components.PhoenixModalDialogFrame
+import com.devil.phoenixproject.presentation.components.PhoenixSectionCard
 import com.devil.phoenixproject.presentation.components.ProfileRecoverySettingsSection
+import com.devil.phoenixproject.presentation.components.ResponsiveSegmentedSelector
+import com.devil.phoenixproject.presentation.components.SectionHeaderIconBadge
+import com.devil.phoenixproject.presentation.components.SettingsActionRow
+import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
+import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
+import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
+import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
 import com.devil.phoenixproject.ui.theme.*
 import com.devil.phoenixproject.util.BackupDestination
 import com.devil.phoenixproject.util.BackupProgress
@@ -99,6 +111,7 @@ import com.devil.phoenixproject.util.BackupStats
 import com.devil.phoenixproject.util.DataBackupManager
 import com.devil.phoenixproject.util.DeviceInfo
 import com.devil.phoenixproject.util.ImportResult
+import com.devil.phoenixproject.isIosPlatform
 import com.devil.phoenixproject.util.autoBackupLocationNote
 import com.devil.phoenixproject.util.canOpenBackupFolder
 import com.devil.phoenixproject.util.defaultBackupLocationLabel
@@ -127,7 +140,6 @@ import projectphoenix.shared.generated.resources.cd_cloud_sync
 import projectphoenix.shared.generated.resources.cd_connection_logs
 import projectphoenix.shared.generated.resources.cd_delete_workouts
 import projectphoenix.shared.generated.resources.cd_developer_tools
-import projectphoenix.shared.generated.resources.cd_dynamic_color
 import projectphoenix.shared.generated.resources.cd_link_portal
 import projectphoenix.shared.generated.resources.cd_open_backup_folder
 import projectphoenix.shared.generated.resources.cd_restore_data
@@ -139,7 +151,54 @@ import projectphoenix.shared.generated.resources.import_completed
 import projectphoenix.shared.generated.resources.label_please_wait
 import projectphoenix.shared.generated.resources.language_dutch
 import projectphoenix.shared.generated.resources.language_english
+import projectphoenix.shared.generated.resources.backup_all_data
+import projectphoenix.shared.generated.resources.label_error
 import projectphoenix.shared.generated.resources.language_french
+import projectphoenix.shared.generated.resources.language_italian
+import projectphoenix.shared.generated.resources.language_system_default
+import projectphoenix.shared.generated.resources.restore_from_backup
+import projectphoenix.shared.generated.resources.settings_app_info
+import projectphoenix.shared.generated.resources.settings_app_info_description
+import projectphoenix.shared.generated.resources.settings_auto_backup_description
+import projectphoenix.shared.generated.resources.settings_auto_backup_description_with_location
+import projectphoenix.shared.generated.resources.settings_auto_backup_title
+import projectphoenix.shared.generated.resources.settings_backup_complete
+import projectphoenix.shared.generated.resources.settings_backup_file_one
+import projectphoenix.shared.generated.resources.settings_backup_file_other
+import projectphoenix.shared.generated.resources.settings_backup_location
+import projectphoenix.shared.generated.resources.settings_backup_location_default
+import projectphoenix.shared.generated.resources.settings_change_location
+import projectphoenix.shared.generated.resources.settings_cloud_sync_description
+import projectphoenix.shared.generated.resources.settings_connection_logs
+import projectphoenix.shared.generated.resources.settings_connection_logs_description
+import projectphoenix.shared.generated.resources.settings_creating_backup
+import projectphoenix.shared.generated.resources.settings_data_management
+import projectphoenix.shared.generated.resources.settings_delete_all_workouts
+import projectphoenix.shared.generated.resources.settings_developer_tools
+import projectphoenix.shared.generated.resources.settings_donate_description
+import projectphoenix.shared.generated.resources.settings_import_failed_detail
+import projectphoenix.shared.generated.resources.settings_include_raw_telemetry_description
+import projectphoenix.shared.generated.resources.settings_include_raw_telemetry_title
+import projectphoenix.shared.generated.resources.settings_integrations
+import projectphoenix.shared.generated.resources.settings_integrations_description
+import projectphoenix.shared.generated.resources.settings_language_ios_restart_hint
+import projectphoenix.shared.generated.resources.settings_like_work
+import projectphoenix.shared.generated.resources.settings_link_portal_account
+import projectphoenix.shared.generated.resources.settings_open_backup_folder
+import projectphoenix.shared.generated.resources.settings_reset_to_default
+import projectphoenix.shared.generated.resources.settings_restore_already_present
+import projectphoenix.shared.generated.resources.settings_restore_complete
+import projectphoenix.shared.generated.resources.settings_restore_failed
+import projectphoenix.shared.generated.resources.settings_restore_imported
+import projectphoenix.shared.generated.resources.settings_restore_incomplete
+import projectphoenix.shared.generated.resources.settings_restore_incomplete_detail_one
+import projectphoenix.shared.generated.resources.settings_restore_incomplete_detail_other
+import projectphoenix.shared.generated.resources.settings_restore_repaired_references
+import projectphoenix.shared.generated.resources.settings_restoring_data
+import projectphoenix.shared.generated.resources.settings_test_sounds
+import projectphoenix.shared.generated.resources.settings_test_sounds_description
+import projectphoenix.shared.generated.resources.settings_unknown_database_error
+import projectphoenix.shared.generated.resources.settings_unknown_error
 import projectphoenix.shared.generated.resources.language_german
 import projectphoenix.shared.generated.resources.language_spanish
 import projectphoenix.shared.generated.resources.restore_description
@@ -175,17 +234,23 @@ import projectphoenix.shared.generated.resources.settings_theme_system
 import projectphoenix.shared.generated.resources.settings_title
 import projectphoenix.shared.generated.resources.settings_video_behavior
 import projectphoenix.shared.generated.resources.settings_version
+import projectphoenix.shared.generated.resources.settings_weight_text_size
+import projectphoenix.shared.generated.resources.settings_weight_text_size_extra_large
+import projectphoenix.shared.generated.resources.settings_weight_text_size_large
+import projectphoenix.shared.generated.resources.settings_weight_text_size_standard
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ThemeModeSelector(
     themeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
 ) {
-    val options = listOf(
-        ThemeMode.SYSTEM to stringResource(Res.string.settings_theme_system),
-        ThemeMode.LIGHT to stringResource(Res.string.settings_theme_light),
-        ThemeMode.DARK to stringResource(Res.string.settings_theme_dark),
+    val systemLabel = stringResource(Res.string.settings_theme_system)
+    val lightLabel = stringResource(Res.string.settings_theme_light)
+    val darkLabel = stringResource(Res.string.settings_theme_dark)
+    val modeLabels = mapOf(
+        ThemeMode.SYSTEM to systemLabel,
+        ThemeMode.LIGHT to lightLabel,
+        ThemeMode.DARK to darkLabel,
     )
 
     Column(
@@ -204,16 +269,86 @@ private fun ThemeModeSelector(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(modifier = Modifier.height(Spacing.small))
-        SingleChoiceSegmentedButtonRow(
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            options.forEachIndexed { index, (mode, label) ->
-                SegmentedButton(
-                    selected = themeMode == mode,
-                    onClick = { onThemeModeChange(mode) },
-                    shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
+        ResponsiveSegmentedSelector(
+            options = listOf(ThemeMode.SYSTEM, ThemeMode.LIGHT, ThemeMode.DARK),
+            selectedOption = themeMode,
+            onSelect = onThemeModeChange,
+            labelForOption = { modeLabels.getValue(it) },
+        )
+    }
+}
+
+/**
+ * Issue #1367 SD7: Workout control size selection (Standard / Large / Extra large).
+ *
+ * SD7: native selected-state radio rows (whole row selectable, >=48dp bounds, child
+ * radio with a null callback so the announcement is not duplicated) for compact-width
+ * and large-text layouts; a horizontal segmented selection only where the three labels
+ * fit without truncation.
+ */
+@Composable
+private fun WeightTextSizeSelector(
+    weightTextScale: WeightTextScale,
+    onWeightTextScaleChange: (WeightTextScale) -> Unit,
+) {
+    val options = listOf(
+        WeightTextScale.STANDARD to stringResource(Res.string.settings_weight_text_size_standard),
+        WeightTextScale.LARGE to stringResource(Res.string.settings_weight_text_size_large),
+        WeightTextScale.EXTRA_LARGE to stringResource(Res.string.settings_weight_text_size_extra_large),
+    )
+    val useRadioRows = isCompactAccessibilityLayout() ||
+        LocalWindowSizeClass.current.widthSizeClass == WindowWidthSizeClass.Compact
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text(
+            stringResource(Res.string.settings_weight_text_size),
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Spacer(modifier = Modifier.height(Spacing.small))
+
+        if (useRadioRows) {
+            options.forEach { (option, label) ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .defaultMinSize(minHeight = 48.dp)
+                        .toggleable(
+                            value = weightTextScale == option,
+                            role = Role.RadioButton,
+                            onValueChange = { onWeightTextScaleChange(option) },
+                        )
+                        .padding(horizontal = Spacing.small),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(label, maxLines = 1)
+                    RadioButton(
+                        selected = weightTextScale == option,
+                        onClick = null, // selection is handled by the row (no duplicate announcement)
+                    )
+                    Spacer(modifier = Modifier.width(Spacing.small))
+                    Text(
+                        label,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+            }
+        } else {
+            SingleChoiceSegmentedButtonRow(
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                options.forEachIndexed { index, (option, label) ->
+                    SegmentedButton(
+                        selected = weightTextScale == option,
+                        onClick = { onWeightTextScaleChange(option) },
+                        shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
+                        modifier = Modifier.heightIn(min = 48.dp),
+                    ) {
+                        Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
                 }
             }
         }
@@ -224,24 +359,32 @@ private fun ThemeModeSelector(
 private fun GlobalSettingsSectionCard(
     title: String,
     icon: ImageVector,
+    iconContentDescription: String? = null,
+    badgeContainerColor: Color = MaterialTheme.colorScheme.primaryContainer,
+    badgeContentColor: Color = MaterialTheme.colorScheme.onPrimaryContainer,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
+    PhoenixSectionCard(verticalArrangement = Arrangement.spacedBy(Spacing.small)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Spacing.medium),
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Icon(imageVector = icon, contentDescription = null)
-                Text(text = title, style = MaterialTheme.typography.titleMedium)
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-            content()
+            SectionHeaderIconBadge(
+                imageVector = icon,
+                contentDescription = iconContentDescription,
+                containerColor = badgeContainerColor,
+                contentColor = badgeContentColor,
+            )
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f),
+            )
         }
+        content()
     }
 }
 
@@ -251,9 +394,10 @@ private fun GlobalSettingsSwitchRow(
     description: String,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .defaultMinSize(minHeight = 48.dp)
             .toggleable(
@@ -307,6 +451,8 @@ fun SettingsTab(
     onBackupDestinationChange: (BackupDestination) -> Unit,
     selectedLanguage: String,
     onLanguageChange: (String) -> Unit,
+    weightTextScale: WeightTextScale,
+    onWeightTextScaleChange: (WeightTextScale) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var deleteAllTarget by remember { mutableStateOf<UserProfile?>(null) }
@@ -339,162 +485,98 @@ fun SettingsTab(
         onSetTitle(settingsTitle)
     }
 
-    Column(
+    val contentMaxWidth = ResponsiveDimensions.contentMaxWidth()
+    Box(
         modifier = modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(Spacing.medium),
-        verticalArrangement = Arrangement.spacedBy(Spacing.medium),
+            .verticalScroll(rememberScrollState()),
+        contentAlignment = Alignment.TopCenter,
     ) {
-        // Header removed for global scaffold integration
-
-        ProfileRecoverySettingsSection()
-
-        // Donation Card - Material 3 Expressive (top of settings for visibility)
-        val uriHandler = LocalUriHandler.current
-        Card(
+        Column(
             modifier = Modifier
+                .then(if (contentMaxWidth != null) Modifier.widthIn(max = contentMaxWidth) else Modifier)
                 .fillMaxWidth()
-                .shadow(8.dp, MaterialTheme.shapes.medium),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-            shape = MaterialTheme.shapes.medium,
-            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-            border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
+                .padding(Spacing.medium),
+            verticalArrangement = Arrangement.spacedBy(Spacing.medium),
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(Spacing.medium),
+            // Header removed for global scaffold integration
+
+            ProfileRecoverySettingsSection()
+
+            // Donation Card (top of settings for visibility)
+            val uriHandler = LocalUriHandler.current
+            GlobalSettingsSectionCard(
+                title = stringResource(Res.string.settings_like_work),
+                icon = Icons.Default.Favorite,
+                iconContentDescription = stringResource(Res.string.cd_support_developer),
+                badgeContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                badgeContentColor = MaterialTheme.colorScheme.onSecondaryContainer,
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(48.dp)
-                            .shadow(8.dp, MaterialTheme.shapes.medium)
-                            .background(
-                                Brush.linearGradient(
-                                    colors = listOf(Color(0xFFFFD700), Color(0xFFFFA500)),
-                                ),
-                                MaterialTheme.shapes.medium,
-                            ),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            Icons.Default.Favorite,
-                            contentDescription = stringResource(Res.string.cd_support_developer),
-                            tint = MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier.size(24.dp),
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(Spacing.medium))
-                    Text(
-                        "Like My Work?",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                }
-                Spacer(modifier = Modifier.height(Spacing.small))
                 Text(
-                    "This app is 100% free with no ads, but I graciously accept donations if you are so inclined!",
+                    stringResource(Res.string.settings_donate_description),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Spacer(modifier = Modifier.height(Spacing.small))
-                Text(
-                    "ko-fi.com/phoenixredux",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.clickable {
-                        uriHandler.openUri("https://ko-fi.com/phoenixredux")
-                    },
-                )
-            }
-        }
-
-        // Cloud Sync Section - Material 3 Expressive
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .shadow(8.dp, MaterialTheme.shapes.medium),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-            shape = MaterialTheme.shapes.medium,
-            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-            border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(Spacing.medium),
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(48.dp)
-                            .shadow(8.dp, MaterialTheme.shapes.medium)
-                            .background(
-                                Brush.linearGradient(
-                                    colors = listOf(Color(0xFF06B6D4), Color(0xFF3B82F6)),
-                                ),
-                                MaterialTheme.shapes.medium,
-                            ),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            Icons.Default.Cloud,
-                            contentDescription = stringResource(Res.string.cd_cloud_sync),
-                            tint = MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier.size(24.dp),
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(Spacing.medium))
-                    Text(
-                        stringResource(Res.string.settings_cloud_sync),
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                }
-                Spacer(modifier = Modifier.height(Spacing.small))
-
-                OutlinedButton(
-                    onClick = onNavigateToLinkAccount,
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(56.dp),
-                    shape = MaterialTheme.shapes.extraLarge,
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.primary,
-                    ),
-                    border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary),
+                        .heightIn(min = 48.dp)
+                        .clickable(role = Role.Button) {
+                            runCatching { uriHandler.openUri("https://ko-fi.com/phoenixredux") }
+                        },
+                    contentAlignment = Alignment.CenterStart,
                 ) {
-                    Icon(
-                        Icons.Default.Sync,
-                        contentDescription = stringResource(Res.string.cd_link_portal),
-                        modifier = Modifier.size(24.dp),
-                    )
-                    Spacer(modifier = Modifier.width(Spacing.small))
                     Text(
-                        "Link Portal Account",
-                        style = MaterialTheme.typography.titleMedium,
+                        "ko-fi.com/phoenixredux",
+                        style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
                     )
                 }
+            }
 
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    "Sync your workouts to the Phoenix Portal for cross-device access",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            // Cloud Sync Section
+            GlobalSettingsSectionCard(
+                title = stringResource(Res.string.settings_cloud_sync),
+                icon = Icons.Default.Cloud,
+                iconContentDescription = stringResource(Res.string.cd_cloud_sync),
+                badgeContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                badgeContentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+            ) {
+                SettingsActionRow(
+                    description = stringResource(Res.string.settings_cloud_sync_description),
+                ) {
+                    OutlinedButton(
+                        onClick = onNavigateToLinkAccount,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 56.dp),
+                        shape = MaterialTheme.shapes.extraLarge,
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.primary,
+                        ),
+                        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary),
+                    ) {
+                        Icon(
+                            Icons.Default.Sync,
+                            contentDescription = stringResource(Res.string.cd_link_portal),
+                            modifier = Modifier.size(24.dp),
+                        )
+                        Spacer(modifier = Modifier.width(Spacing.small))
+                        Text(
+                            stringResource(Res.string.settings_link_portal_account),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                }
 
                 if (hasSyncError) {
-                    Spacer(modifier = Modifier.height(Spacing.small))
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable {
+                            .heightIn(min = 48.dp)
+                            .clickable(role = Role.Button) {
                                 // Issue #528: allow the user to dismiss a stale
                                 // persistent error (e.g. PERMANENT/AUTH or pre-fix
                                 // backoff latch). The trigger manager resets its
@@ -503,7 +585,8 @@ fun SettingsTab(
                                 // run clean. The user is still able to retry by
                                 // tapping the Link Portal Account button above.
                                 syncTriggerManager.clearError()
-                            },
+                            }
+                            .padding(vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Icon(
@@ -523,87 +606,55 @@ fun SettingsTab(
 
                 Spacer(modifier = Modifier.height(Spacing.small))
 
-                OutlinedButton(
-                    onClick = onNavigateToIntegrations,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp),
-                    shape = MaterialTheme.shapes.extraLarge,
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.primary,
-                    ),
-                    border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary),
+                SettingsActionRow(
+                    description = stringResource(Res.string.settings_integrations_description),
                 ) {
-                    Icon(
-                        Icons.Default.Extension,
-                        contentDescription = "Integrations",
-                        modifier = Modifier.size(24.dp),
-                    )
-                    Spacer(modifier = Modifier.width(Spacing.small))
-                    Text(
-                        "Integrations",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    "Connect Hevy, Liftosaur, Health apps, and import/export CSV",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-
-        // Appearance Section - Material 3 Expressive
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .shadow(8.dp, MaterialTheme.shapes.medium),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-            shape = MaterialTheme.shapes.medium,
-            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-            border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(Spacing.medium),
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
+                    OutlinedButton(
+                        onClick = onNavigateToIntegrations,
                         modifier = Modifier
-                            .size(48.dp)
-                            .shadow(8.dp, MaterialTheme.shapes.medium)
-                            .background(
-                                Brush.linearGradient(
-                                    colors = listOf(Color(0xFF6366F1), Color(0xFFA855F7)),
-                                ),
-                                MaterialTheme.shapes.medium,
-                            ),
-                        contentAlignment = Alignment.Center,
+                            .fillMaxWidth()
+                            .heightIn(min = 56.dp),
+                        shape = MaterialTheme.shapes.extraLarge,
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.primary,
+                        ),
+                        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary),
                     ) {
                         Icon(
-                            Icons.Default.Palette,
-                            contentDescription = stringResource(Res.string.cd_appearance),
-                            tint = MaterialTheme.colorScheme.onPrimary,
+                            Icons.Default.Extension,
+                            contentDescription = stringResource(Res.string.settings_integrations),
                             modifier = Modifier.size(24.dp),
                         )
+                        Spacer(modifier = Modifier.width(Spacing.small))
+                        Text(
+                            stringResource(Res.string.settings_integrations),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                        )
                     }
-                    Spacer(modifier = Modifier.width(Spacing.medium))
-                    Text(
-                        stringResource(Res.string.settings_appearance),
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
                 }
-                Spacer(modifier = Modifier.height(Spacing.small))
+            }
 
+            // Appearance Section
+            GlobalSettingsSectionCard(
+                title = stringResource(Res.string.settings_appearance),
+                icon = Icons.Default.Palette,
+                iconContentDescription = stringResource(Res.string.cd_appearance),
+            ) {
                 ThemeModeSelector(
                     themeMode = themeMode,
                     onThemeModeChange = onThemeModeChange,
+                )
+
+                HorizontalDivider(
+                    modifier = Modifier.padding(vertical = Spacing.small),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                )
+
+                // Issue #1367 SD8: Weight text size sits after Theme and before Dynamic color.
+                WeightTextSizeSelector(
+                    weightTextScale = weightTextScale,
+                    onWeightTextScaleChange = onWeightTextScaleChange,
                 )
 
                 if (dynamicColorAvailable) {
@@ -612,96 +663,36 @@ fun SettingsTab(
                         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
                     )
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(
-                            modifier = Modifier.weight(1f),
-                        ) {
-                            Text(
-                                stringResource(Res.string.settings_dynamic_color),
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = FontWeight.Medium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                stringResource(Res.string.settings_dynamic_color_description),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        val dynamicColorContentDescription = stringResource(Res.string.cd_dynamic_color)
-                        Switch(
-                            checked = dynamicColorEnabled,
-                            onCheckedChange = onDynamicColorEnabledChange,
-                            modifier = Modifier.semantics {
-                                contentDescription = dynamicColorContentDescription
-                            },
-                        )
-                    }
-                }
-            }
-        }
-
-        // Language Section - Material 3 Expressive
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .shadow(8.dp, MaterialTheme.shapes.medium),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-            shape = MaterialTheme.shapes.medium,
-            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-            border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(Spacing.medium),
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(48.dp)
-                            .shadow(8.dp, MaterialTheme.shapes.medium)
-                            .background(
-                                Brush.linearGradient(
-                                    colors = listOf(Color(0xFF10B981), Color(0xFF059669)),
-                                ),
-                                MaterialTheme.shapes.medium,
-                            ),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            Icons.Default.Language,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier.size(24.dp),
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(Spacing.medium))
-                    Text(
-                        stringResource(Res.string.settings_language),
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface,
+                    GlobalSettingsSwitchRow(
+                        title = stringResource(Res.string.settings_dynamic_color),
+                        description = stringResource(Res.string.settings_dynamic_color_description),
+                        checked = dynamicColorEnabled,
+                        onCheckedChange = onDynamicColorEnabledChange,
                     )
                 }
-                Spacer(modifier = Modifier.height(Spacing.small))
+            }
 
+            // Language Section
+            GlobalSettingsSectionCard(
+                title = stringResource(Res.string.settings_language),
+                icon = Icons.Default.Language,
+                badgeContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                badgeContentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+            ) {
                 // Language selection dropdown
                 val languageOptions = listOf(
+                    "" to stringResource(Res.string.language_system_default),
                     "en" to stringResource(Res.string.language_english),
                     "nl" to stringResource(Res.string.language_dutch),
                     "de" to stringResource(Res.string.language_german),
                     "es" to stringResource(Res.string.language_spanish),
                     "fr" to stringResource(Res.string.language_french),
+                    "it" to stringResource(Res.string.language_italian),
                 )
                 val selectedLabel = languageOptions.firstOrNull { it.first == selectedLanguage }?.second
                     ?: languageOptions.first().second
                 var languageExpanded by remember { mutableStateOf(false) }
+                var iosLanguageRestartRequired by remember { mutableStateOf(false) }
 
                 @OptIn(ExperimentalMaterial3Api::class)
                 ExposedDropdownMenuBox(
@@ -731,6 +722,9 @@ fun SettingsTab(
                                     )
                                 },
                                 onClick = {
+                                    if (isIosPlatform && code != selectedLanguage) {
+                                        iosLanguageRestartRequired = true
+                                    }
                                     onLanguageChange(code)
                                     languageExpanded = false
                                 },
@@ -740,181 +734,128 @@ fun SettingsTab(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(Spacing.small))
-                Text(
-                    stringResource(Res.string.settings_language_help),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.clickable {
-                        uriHandler.openUri("https://github.com/user/phoenix-translations")
-                    },
-                )
-            }
-        }
-
-        GlobalSettingsSectionCard(
-            title = stringResource(Res.string.settings_video_behavior),
-            icon = Icons.Default.Tune,
-        ) {
-            GlobalSettingsSwitchRow(
-                title = stringResource(Res.string.settings_show_exercise_videos),
-                description = stringResource(
-                    Res.string.settings_show_exercise_videos_description,
-                ),
-                checked = enableVideoPlayback,
-                onCheckedChange = onEnableVideoPlaybackChange,
-            )
-            // Issue #1358 (SD10/SD15): Exercise Demos also gates photos attached to
-            // custom exercises — no new preference key is introduced.
-            Text(
-                text = stringResource(Res.string.settings_exercise_demos_photos_note),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = Spacing.medium),
-            )
-            Spacer(modifier = Modifier.height(Spacing.small))
-            OutlinedButton(
-                onClick = {
-                    if (wgerRefreshInProgress) return@OutlinedButton
-                    scope.launch {
-                        wgerRefreshInProgress = true
-                        wgerRefreshMessage = null
-                        val result = exerciseRepository.updateFromWger()
-                        wgerRefreshInProgress = false
-                        wgerRefreshMessage = result.fold(
-                            onSuccess = { count ->
-                                getString(Res.string.settings_refresh_wger_catalog_success, count)
-                            },
-                            onFailure = { getString(Res.string.settings_refresh_wger_catalog_error) },
-                        )
-                    }
-                },
-                enabled = !wgerRefreshInProgress,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(
-                    if (wgerRefreshInProgress) {
-                        stringResource(Res.string.settings_refresh_wger_catalog_in_progress)
-                    } else {
-                        stringResource(Res.string.settings_refresh_wger_catalog)
-                    },
-                )
-            }
-            Text(
-                stringResource(Res.string.settings_refresh_wger_catalog_description),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            wgerRefreshMessage?.let { message ->
-                Text(
-                    message,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-            }
-        }
-
-        // Data Management Section - Material 3 Expressive
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .shadow(8.dp, MaterialTheme.shapes.medium), // Material 3 Expressive: More shadow, more rounded
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest), // Material 3 Expressive: Higher contrast
-            shape = MaterialTheme.shapes.medium, // Material 3 Expressive: More rounded (was 16dp)
-            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp), // Material 3 Expressive: Higher elevation (was 4dp)
-            border = BorderStroke(2.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.2f)), // Material 3 Expressive: Thicker border, error color for destructive action
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(Spacing.medium),
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(48.dp) // Material 3 Expressive: Larger (was 40dp)
-                            .shadow(8.dp, MaterialTheme.shapes.medium) // Material 3 Expressive: More shadow, more rounded (was 16dp)
-                            .background(
-                                Brush.linearGradient(
-                                    colors = listOf(Color(0xFFF97316), Color(0xFFEF4444)),
-                                ),
-                                MaterialTheme.shapes.medium, // Material 3 Expressive: More rounded (was 16dp)
-                            ),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            Icons.Default.DeleteForever,
-                            contentDescription = stringResource(Res.string.cd_delete_workouts),
-                            tint = MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier.size(24.dp), // Material 3 Expressive: Larger icon
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(Spacing.medium))
+                if (isIosPlatform) {
                     Text(
-                        "Data Management",
-                        style = MaterialTheme.typography.titleLarge, // Material 3 Expressive: Larger (was titleMedium)
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface,
+                        stringResource(Res.string.settings_language_ios_restart_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = if (iosLanguageRestartRequired) FontWeight.Medium else FontWeight.Normal,
+                        color = if (iosLanguageRestartRequired) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
                     )
                 }
-                Spacer(modifier = Modifier.height(Spacing.small))
 
-                // Auto-backup toggle (Phase 36)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                        .clickable(role = Role.Button) {
+                            runCatching {
+                                uriHandler.openUri("https://github.com/9thLevelSoftware/Project-Phoenix-MP/issues")
+                            }
+                        },
+                    contentAlignment = Alignment.CenterStart,
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        stringResource(Res.string.settings_language_help),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+
+            GlobalSettingsSectionCard(
+                title = stringResource(Res.string.settings_video_behavior),
+                icon = Icons.Default.Tune,
+            ) {
+                GlobalSettingsSwitchRow(
+                    title = stringResource(Res.string.settings_show_exercise_videos),
+                    description = stringResource(
+                        Res.string.settings_show_exercise_videos_description,
+                    ),
+                    checked = enableVideoPlayback,
+                    onCheckedChange = onEnableVideoPlaybackChange,
+                )
+                // Issue #1358 (SD10/SD15): Exercise Demos also gates photos attached to
+                // custom exercises — no new preference key is introduced.
+                Text(
+                    text = stringResource(Res.string.settings_exercise_demos_photos_note),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = Spacing.medium),
+                )
+                Spacer(modifier = Modifier.height(Spacing.small))
+                SettingsActionRow(
+                    description = stringResource(Res.string.settings_refresh_wger_catalog_description),
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            if (wgerRefreshInProgress) return@OutlinedButton
+                            scope.launch {
+                                wgerRefreshInProgress = true
+                                wgerRefreshMessage = null
+                                val result = exerciseRepository.updateFromWger()
+                                wgerRefreshInProgress = false
+                                wgerRefreshMessage = result.fold(
+                                    onSuccess = { count ->
+                                        getString(Res.string.settings_refresh_wger_catalog_success, count)
+                                    },
+                                    onFailure = { getString(Res.string.settings_refresh_wger_catalog_error) },
+                                )
+                            }
+                        },
+                        enabled = !wgerRefreshInProgress,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp),
+                    ) {
                         Text(
-                            "Auto-Backup Workouts & Routines",
-                            style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            "Automatically save single workouts and completed routines to local backup files" +
-                                (autoBackupLocationNote?.let { ". $it" } ?: ""),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            if (wgerRefreshInProgress) {
+                                stringResource(Res.string.settings_refresh_wger_catalog_in_progress)
+                            } else {
+                                stringResource(Res.string.settings_refresh_wger_catalog)
+                            },
                         )
                     }
-                    Switch(
-                        checked = autoBackupEnabled,
-                        onCheckedChange = onAutoBackupEnabledChange,
+                }
+                wgerRefreshMessage?.let { message ->
+                    Text(
+                        message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
                     )
                 }
+            }
+
+            // Data Management Section
+            GlobalSettingsSectionCard(
+                title = stringResource(Res.string.settings_data_management),
+                icon = Icons.Default.DeleteForever,
+                iconContentDescription = stringResource(Res.string.cd_delete_workouts),
+                badgeContainerColor = MaterialTheme.colorScheme.errorContainer,
+                badgeContentColor = MaterialTheme.colorScheme.onErrorContainer,
+            ) {
+                GlobalSettingsSwitchRow(
+                    title = stringResource(Res.string.settings_auto_backup_title),
+                    description = autoBackupLocationNote?.let {
+                        stringResource(Res.string.settings_auto_backup_description_with_location, it)
+                    } ?: stringResource(Res.string.settings_auto_backup_description),
+                    checked = autoBackupEnabled,
+                    onCheckedChange = onAutoBackupEnabledChange,
+                )
 
                 // Raw telemetry is out of backups unless opted in (F-033)
-                Spacer(modifier = Modifier.height(Spacing.small))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            "Include raw telemetry",
-                            style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            "Add every raw force and position sample to backups. Makes backups much larger; " +
-                                "workouts, reps and records are always included",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Switch(
-                        checked = includeRawTelemetryInBackups,
-                        onCheckedChange = onIncludeRawTelemetryInBackupsChange,
-                    )
-                }
+                GlobalSettingsSwitchRow(
+                    title = stringResource(Res.string.settings_include_raw_telemetry_title),
+                    description = stringResource(Res.string.settings_include_raw_telemetry_description),
+                    checked = includeRawTelemetryInBackups,
+                    onCheckedChange = onIncludeRawTelemetryInBackupsChange,
+                )
 
                 // Backup Location selector (Phase 42)
                 var showLocationPicker by remember { mutableStateOf(false) }
-                Spacer(modifier = Modifier.height(Spacing.small))
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -934,14 +875,17 @@ fun SettingsTab(
                     Spacer(modifier = Modifier.width(Spacing.small))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            "Backup Location",
+                            stringResource(Res.string.settings_backup_location),
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onSurface,
                         )
                         Text(
                             when (backupDestination) {
-                                is BackupDestination.Default -> "Default ($defaultBackupLocationLabel)"
+                                is BackupDestination.Default -> stringResource(
+                                    Res.string.settings_backup_location_default,
+                                    defaultBackupLocationLabel,
+                                )
                                 is BackupDestination.Custom -> backupDestination.displayName
                             },
                             style = MaterialTheme.typography.bodySmall,
@@ -949,14 +893,14 @@ fun SettingsTab(
                         )
                     }
                 }
-                Spacer(modifier = Modifier.height(4.dp))
-                Row(
+                FlowRow(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(Spacing.small),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.small),
                 ) {
                     OutlinedButton(
                         onClick = { showLocationPicker = true },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.heightIn(min = 48.dp),
                         shape = MaterialTheme.shapes.small,
                         colors = ButtonDefaults.outlinedButtonColors(
                             contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -970,14 +914,14 @@ fun SettingsTab(
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            "Change Location",
+                            stringResource(Res.string.settings_change_location),
                             style = MaterialTheme.typography.bodySmall,
                         )
                     }
                     if (backupDestination.isCustom) {
                         OutlinedButton(
                             onClick = { onBackupDestinationChange(BackupDestination.Default) },
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.heightIn(min = 48.dp),
                             shape = MaterialTheme.shapes.small,
                             colors = ButtonDefaults.outlinedButtonColors(
                                 contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -991,7 +935,7 @@ fun SettingsTab(
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                "Reset to Default",
+                                stringResource(Res.string.settings_reset_to_default),
                                 style = MaterialTheme.typography.bodySmall,
                             )
                         }
@@ -1010,7 +954,6 @@ fun SettingsTab(
                 // Backup stats: file count and total size
                 backupStats?.let { stats ->
                     if (stats.fileCount > 0) {
-                        Spacer(modifier = Modifier.height(Spacing.small))
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -1023,9 +966,14 @@ fun SettingsTab(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
-                                "${stats.fileCount} backup file${if (stats.fileCount != 1) "s" else ""}",
+                                if (stats.fileCount == 1) {
+                                    stringResource(Res.string.settings_backup_file_one)
+                                } else {
+                                    stringResource(Res.string.settings_backup_file_other, stats.fileCount)
+                                },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.weight(1f),
                             )
                             Text(
                                 stats.formattedSize,
@@ -1036,12 +984,11 @@ fun SettingsTab(
                         }
 
                         if (canOpenBackupFolder) {
-                            Spacer(modifier = Modifier.height(Spacing.small))
-
-                            // Open backup folder shortcut
                             OutlinedButton(
                                 onClick = onOpenBackupFolder,
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 48.dp),
                                 shape = MaterialTheme.shapes.small,
                                 colors = ButtonDefaults.outlinedButtonColors(
                                     contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1055,7 +1002,7 @@ fun SettingsTab(
                                 )
                                 Spacer(modifier = Modifier.width(Spacing.small))
                                 Text(
-                                    "Open Backup Folder",
+                                    stringResource(Res.string.settings_open_backup_folder),
                                     style = MaterialTheme.typography.bodyMedium,
                                 )
                             }
@@ -1066,218 +1013,175 @@ fun SettingsTab(
                 Spacer(modifier = Modifier.height(Spacing.small))
 
                 // Backup Button
-                OutlinedButton(
-                    onClick = { showBackupDialog = true },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp),
-                    shape = MaterialTheme.shapes.extraLarge,
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.primary,
-                    ),
-                    border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary),
+                SettingsActionRow(
+                    description = stringResource(Res.string.backup_description),
                 ) {
-                    Icon(
-                        Icons.Default.CloudUpload,
-                        contentDescription = stringResource(Res.string.cd_backup_data),
-                        modifier = Modifier.size(24.dp),
-                    )
-                    Spacer(modifier = Modifier.width(Spacing.small))
-                    Text(
-                        "Backup All Data",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                    )
+                    OutlinedButton(
+                        onClick = { showBackupDialog = true },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 56.dp),
+                        shape = MaterialTheme.shapes.extraLarge,
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.primary,
+                        ),
+                        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary),
+                    ) {
+                        Icon(
+                            Icons.Default.CloudUpload,
+                            contentDescription = stringResource(Res.string.cd_backup_data),
+                            modifier = Modifier.size(24.dp),
+                        )
+                        Spacer(modifier = Modifier.width(Spacing.small))
+                        Text(
+                            stringResource(Res.string.backup_all_data),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(Spacing.small))
 
-                // Restore Button
-                OutlinedButton(
-                    onClick = { showRestoreDialog = true },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp),
-                    shape = MaterialTheme.shapes.extraLarge,
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.secondary,
-                    ),
-                    border = BorderStroke(2.dp, MaterialTheme.colorScheme.secondary),
+                // Restore Button — FilledTonalButton for cohesive tonal hierarchy
+                SettingsActionRow(
+                    description = stringResource(Res.string.restore_description),
                 ) {
-                    Icon(
-                        Icons.Default.CloudDownload,
-                        contentDescription = stringResource(Res.string.cd_restore_data),
-                        modifier = Modifier.size(24.dp),
-                    )
-                    Spacer(modifier = Modifier.width(Spacing.small))
-                    Text(
-                        "Restore from Backup",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                    )
+                    FilledTonalButton(
+                        onClick = { showRestoreDialog = true },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 56.dp),
+                        shape = MaterialTheme.shapes.extraLarge,
+                    ) {
+                        Icon(
+                            Icons.Default.CloudDownload,
+                            contentDescription = stringResource(Res.string.cd_restore_data),
+                            modifier = Modifier.size(24.dp),
+                        )
+                        Spacer(modifier = Modifier.width(Spacing.small))
+                        Text(
+                            stringResource(Res.string.restore_from_backup),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
                 }
 
-                Spacer(modifier = Modifier.height(Spacing.medium))
+                Spacer(modifier = Modifier.height(Spacing.small))
 
                 Button(
                     onClick = { deleteAllTarget = activeProfile },
                     enabled = activeProfile != null,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(56.dp), // Material 3 Expressive: Taller button
-                    shape = MaterialTheme.shapes.extraLarge, // Material 3 Expressive: More rounded
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                    elevation = ButtonDefaults.buttonElevation(
-                        defaultElevation = 4.dp,
-                        pressedElevation = 2.dp,
+                        .heightIn(min = 56.dp),
+                    shape = MaterialTheme.shapes.extraLarge,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError,
                     ),
                 ) {
                     Icon(
                         Icons.Default.Delete,
                         contentDescription = stringResource(Res.string.cd_delete_workouts),
-                        modifier = Modifier.size(24.dp), // Material 3 Expressive: Larger icon
+                        modifier = Modifier.size(24.dp),
                     )
                     Spacer(modifier = Modifier.width(Spacing.small))
                     Text(
-                        "Delete All Workouts",
+                        stringResource(Res.string.settings_delete_all_workouts),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                     )
                 }
             }
-        }
 
-        // Material 3 Expressive: Delete All dialog
-        deleteAllTarget?.let { targetProfile ->
-            DestructiveConfirmDialog(
-                title = stringResource(Res.string.delete_all_workouts_title),
-                message = stringResource(Res.string.delete_all_workouts_message, targetProfile.name),
-                confirmText = stringResource(Res.string.delete_all),
-                onConfirm = {
-                    onDeleteAllWorkouts(targetProfile.id)
-                    deleteAllTarget = null
-                },
-                onDismiss = { deleteAllTarget = null },
-            )
-        }
+            deleteAllTarget?.let { targetProfile ->
+                DestructiveConfirmDialog(
+                    title = stringResource(Res.string.delete_all_workouts_title),
+                    message = stringResource(Res.string.delete_all_workouts_message, targetProfile.name),
+                    confirmText = stringResource(Res.string.delete_all),
+                    onConfirm = {
+                        onDeleteAllWorkouts(targetProfile.id)
+                        deleteAllTarget = null
+                    },
+                    onDismiss = { deleteAllTarget = null },
+                )
+            }
 
-        // HRM Heart Rate & Telemetry Sensor
-        HrmSensorSettingsCard()
+            // HRM Heart Rate & Telemetry Sensor
+            HrmSensorSettingsCard()
 
-        // Garmin watch controls (issue #1391) — Connect IQ watch buttons, kept
-        // strictly separate from the HRM Heart-rate sensor card above.
-        GarminControlsSettingsCard()
+            // Garmin controls are separate from the HRM sensor.
+            GarminControlsSettingsCard()
 
-        // Developer Tools Section - Material 3 Expressive
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .shadow(8.dp, MaterialTheme.shapes.medium), // Material 3 Expressive: More shadow, more rounded
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest), // Material 3 Expressive: Higher contrast
-            shape = MaterialTheme.shapes.medium, // Material 3 Expressive: More rounded (was 16dp)
-            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp), // Material 3 Expressive: Higher elevation (was 4dp)
-            border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)), // Material 3 Expressive: Thicker border (was 1dp)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(Spacing.medium),
+            // Developer Tools Section
+            GlobalSettingsSectionCard(
+                title = stringResource(Res.string.settings_developer_tools),
+                icon = Icons.Default.BugReport,
+                iconContentDescription = stringResource(Res.string.cd_developer_tools),
+                badgeContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                badgeContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
+                SettingsActionRow(
+                    description = stringResource(Res.string.settings_machine_diagnostics_description),
+                ) {
+                    OutlinedButton(
+                        onClick = onNavigateToDiagnostics,
                         modifier = Modifier
-                            .size(48.dp)
-                            .shadow(8.dp, MaterialTheme.shapes.medium)
-                            .background(
-                                Brush.linearGradient(
-                                    colors = listOf(Color(0xFFF59E0B), Color(0xFFEF4444)),
-                                ),
-                                MaterialTheme.shapes.medium,
-                            ),
-                        contentAlignment = Alignment.Center,
+                            .fillMaxWidth()
+                            .heightIn(min = 56.dp),
+                        shape = MaterialTheme.shapes.extraLarge,
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.primary,
+                        ),
+                        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary),
                     ) {
                         Icon(
                             Icons.Default.BugReport,
-                            contentDescription = stringResource(Res.string.cd_developer_tools),
-                            tint = MaterialTheme.colorScheme.onPrimary,
+                            contentDescription = null,
                             modifier = Modifier.size(24.dp),
                         )
+                        Spacer(modifier = Modifier.width(Spacing.small))
+                        Text(
+                            stringResource(Res.string.diagnostics_title),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                        )
                     }
-                    Spacer(modifier = Modifier.width(Spacing.medium))
-                    Text(
-                        "Developer Tools",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
                 }
+
                 Spacer(modifier = Modifier.height(Spacing.small))
 
-                OutlinedButton(
-                    onClick = onNavigateToDiagnostics,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp),
-                    shape = MaterialTheme.shapes.extraLarge,
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.primary,
-                    ),
-                    border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary),
+                SettingsActionRow(
+                    description = stringResource(Res.string.settings_connection_logs_description),
                 ) {
-                    Icon(
-                        Icons.Default.BugReport,
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                    )
-                    Spacer(modifier = Modifier.width(Spacing.small))
-                    Text(
-                        stringResource(Res.string.diagnostics_title),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                    )
+                    OutlinedButton(
+                        onClick = onNavigateToConnectionLogs,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 56.dp),
+                        shape = MaterialTheme.shapes.extraLarge,
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.primary,
+                        ),
+                        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary),
+                    ) {
+                        Icon(
+                            Icons.Default.Timeline,
+                            contentDescription = stringResource(Res.string.cd_connection_logs),
+                            modifier = Modifier.size(24.dp),
+                        )
+                        Spacer(modifier = Modifier.width(Spacing.small))
+                        Text(
+                            stringResource(Res.string.settings_connection_logs),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
                 }
 
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    stringResource(Res.string.settings_machine_diagnostics_description),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-
-                Spacer(modifier = Modifier.height(Spacing.medium))
-
-                OutlinedButton(
-                    onClick = onNavigateToConnectionLogs,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp),
-                    shape = MaterialTheme.shapes.extraLarge,
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.primary,
-                    ),
-                    border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary),
-                ) {
-                    Icon(
-                        Icons.Default.Timeline,
-                        contentDescription = stringResource(Res.string.cd_connection_logs),
-                        modifier = Modifier.size(24.dp),
-                    )
-                    Spacer(modifier = Modifier.width(Spacing.small))
-                    Text(
-                        "Connection Logs",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    "View Bluetooth connection debug logs to diagnose connectivity issues",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-
-                Spacer(modifier = Modifier.height(Spacing.medium))
+                Spacer(modifier = Modifier.height(Spacing.small))
 
                 // Issue #333: BLE small-MTU compatibility path (fixes BCM4389 Pixel
                 // GATT_ERROR(133) disconnect at workout start)
@@ -1287,7 +1191,6 @@ fun SettingsTab(
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
-                Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     stringResource(
                         if (DeviceInfo.isBcm4389Pixel()) {
@@ -1299,115 +1202,75 @@ fun SettingsTab(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Spacer(modifier = Modifier.height(Spacing.small))
-                SingleChoiceSegmentedButtonRow(
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    val options = listOf(
-                        BleCompatibilitySetting.AUTO to stringResource(Res.string.settings_ble_compat_auto),
-                        BleCompatibilitySetting.ON to stringResource(Res.string.settings_ble_compat_on),
-                        BleCompatibilitySetting.OFF to stringResource(Res.string.settings_ble_compat_off),
-                    )
-                    options.forEachIndexed { index, (setting, label) ->
-                        SegmentedButton(
-                            selected = bleCompatibilityMode == setting,
-                            onClick = { onBleCompatibilityModeChange(setting) },
-                            shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
-                        ) {
-                            Text(label, maxLines = 1)
-                        }
-                    }
-                }
-                Spacer(modifier = Modifier.height(4.dp))
+                val bleAutoLabel = stringResource(Res.string.settings_ble_compat_auto)
+                val bleOnLabel = stringResource(Res.string.settings_ble_compat_on)
+                val bleOffLabel = stringResource(Res.string.settings_ble_compat_off)
+                val bleLabels = mapOf(
+                    BleCompatibilitySetting.AUTO to bleAutoLabel,
+                    BleCompatibilitySetting.ON to bleOnLabel,
+                    BleCompatibilitySetting.OFF to bleOffLabel,
+                )
+                ResponsiveSegmentedSelector(
+                    options = listOf(
+                        BleCompatibilitySetting.AUTO,
+                        BleCompatibilitySetting.ON,
+                        BleCompatibilitySetting.OFF,
+                    ),
+                    selectedOption = bleCompatibilityMode,
+                    onSelect = onBleCompatibilityModeChange,
+                    labelForOption = { bleLabels.getValue(it) },
+                )
                 Text(
                     stringResource(Res.string.settings_ble_compat_reconnect_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
-                Spacer(modifier = Modifier.height(Spacing.medium))
+                Spacer(modifier = Modifier.height(Spacing.small))
 
-                OutlinedButton(
-                    onClick = onTestSounds,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp),
-                    shape = MaterialTheme.shapes.extraLarge,
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.primary,
-                    ),
-                    border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary),
+                SettingsActionRow(
+                    description = stringResource(Res.string.settings_test_sounds_description),
                 ) {
-                    Icon(
-                        Icons.Default.MusicNote,
-                        contentDescription = stringResource(Res.string.cd_test_sounds),
-                        modifier = Modifier.size(24.dp),
-                    )
-                    Spacer(modifier = Modifier.width(Spacing.small))
-                    Text(
-                        "Test Sounds",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    "Tests current workout sounds; numbered rep count requires Profile > Workout > Audio rep counter.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-
-        // App Info Section - Material 3 Expressive
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .shadow(8.dp, MaterialTheme.shapes.medium), // Material 3 Expressive: More shadow, more rounded
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest), // Material 3 Expressive: Higher contrast
-            shape = MaterialTheme.shapes.medium, // Material 3 Expressive: More rounded (was 16dp)
-            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp), // Material 3 Expressive: Higher elevation (was 4dp)
-            border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)), // Material 3 Expressive: Thicker border (was 1dp)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(Spacing.medium),
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
+                    OutlinedButton(
+                        onClick = onTestSounds,
                         modifier = Modifier
-                            .size(48.dp) // Material 3 Expressive: Larger (was 40dp)
-                            .shadow(8.dp, MaterialTheme.shapes.medium) // Material 3 Expressive: More shadow, more rounded (was 16dp)
-                            .background(
-                                Brush.linearGradient(
-                                    colors = listOf(Color(0xFF22C55E), Color(0xFF3B82F6)),
-                                ),
-                                MaterialTheme.shapes.medium, // Material 3 Expressive: More rounded (was 16dp)
-                            ),
-                        contentAlignment = Alignment.Center,
+                            .fillMaxWidth()
+                            .heightIn(min = 56.dp),
+                        shape = MaterialTheme.shapes.extraLarge,
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.primary,
+                        ),
+                        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary),
                     ) {
                         Icon(
-                            Icons.Default.Info,
-                            contentDescription = stringResource(Res.string.cd_app_info),
-                            tint = MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier.size(24.dp), // Material 3 Expressive: Larger icon
+                            Icons.Default.MusicNote,
+                            contentDescription = stringResource(Res.string.cd_test_sounds),
+                            modifier = Modifier.size(24.dp),
+                        )
+                        Spacer(modifier = Modifier.width(Spacing.small))
+                        Text(
+                            stringResource(Res.string.settings_test_sounds),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
                         )
                     }
-                    Spacer(modifier = Modifier.width(Spacing.medium))
-                    Text(
-                        "App Info",
-                        style = MaterialTheme.typography.titleLarge, // Material 3 Expressive: Larger (was titleMedium)
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
                 }
-                Spacer(modifier = Modifier.height(Spacing.small))
-                Text(stringResource(Res.string.settings_version, DeviceInfo.appVersionName), color = MaterialTheme.colorScheme.onSurface)
-                Spacer(modifier = Modifier.height(Spacing.small))
+            }
+
+            // App Info Section
+            GlobalSettingsSectionCard(
+                title = stringResource(Res.string.settings_app_info),
+                icon = Icons.Default.Info,
+                iconContentDescription = stringResource(Res.string.cd_app_info),
+                badgeContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                badgeContentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+            ) {
                 Text(
-                    "Open source community project to control Phoenix Trainer machines locally.",
+                    stringResource(Res.string.settings_version, DeviceInfo.appVersionName),
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    stringResource(Res.string.settings_app_info_description),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1425,177 +1288,162 @@ fun SettingsTab(
 
     // Backup confirmation dialog
     if (showBackupDialog) {
-        AlertDialog(
-            onDismissRequest = { showBackupDialog = false },
-            title = { Text(stringResource(Res.string.backup_all_data), style = MaterialTheme.typography.headlineSmall) },
-            text = {
-                // Description + Share button stacked vertically so both buttons
-                // fit without overflowing the narrow confirmButton slot.
-                Column(verticalArrangement = Arrangement.spacedBy(Spacing.medium)) {
-                    Text(stringResource(Res.string.backup_description))
-                    // Share button (streaming export) — full-width in text area
-                    OutlinedButton(
-                        onClick = {
-                            showBackupDialog = false
-                            backupInProgress = true
-                            scope.launch {
-                                try {
-                                    backupManager.shareBackup()
-                                } catch (e: Exception) {
-                                    backupError = e.message ?: "Unknown error"
-                                    showResultDialog = true
-                                } finally {
-                                    backupInProgress = false
-                                    backupProgress = null
-                                }
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Icon(
-                            Icons.Default.Share,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(stringResource(Res.string.action_share))
+        PhoenixModalDialogFrame(
+            title = stringResource(Res.string.backup_all_data),
+            onDismiss = { showBackupDialog = false },
+            confirmLabel = stringResource(Res.string.action_save),
+            dismissLabel = stringResource(Res.string.action_cancel),
+            onConfirm = {
+                showBackupDialog = false
+                backupInProgress = true
+                scope.launch {
+                    try {
+                        val result = backupManager.exportToFile { progress ->
+                            backupProgress = progress
+                        }
+                        result.onSuccess { path ->
+                            backupResult = path
+                            showResultDialog = true
+                        }.onFailure { error ->
+                            backupError = error.message ?: getString(Res.string.settings_unknown_error)
+                            showResultDialog = true
+                        }
+                    } catch (e: Exception) {
+                        backupError = e.message ?: getString(Res.string.settings_unknown_database_error)
+                        showResultDialog = true
+                    } finally {
+                        backupInProgress = false
+                        backupProgress = null
                     }
                 }
             },
-            confirmButton = {
-                // Save to Files button (streaming export) — sole occupant of confirmButton slot
-                Button(
-                    onClick = {
-                        showBackupDialog = false
-                        backupInProgress = true
-                        scope.launch {
-                            try {
-                                val result = backupManager.exportToFile { progress ->
-                                    backupProgress = progress
-                                }
-                                result.onSuccess { path ->
-                                    backupResult = path
-                                    showResultDialog = true
-                                }.onFailure { error ->
-                                    backupError = error.message ?: "Unknown error"
-                                    showResultDialog = true
-                                }
-                            } catch (e: Exception) {
-                                backupError = e.message ?: "Unknown database error"
-                                showResultDialog = true
-                            } finally {
-                                backupInProgress = false
-                                backupProgress = null
-                            }
+        ) {
+            Text(stringResource(Res.string.backup_description))
+            Spacer(modifier = Modifier.height(Spacing.small))
+            OutlinedButton(
+                onClick = {
+                    showBackupDialog = false
+                    backupInProgress = true
+                    scope.launch {
+                        try {
+                            backupManager.shareBackup()
+                        } catch (e: Exception) {
+                            backupError = e.message ?: getString(Res.string.settings_unknown_error)
+                            showResultDialog = true
+                        } finally {
+                            backupInProgress = false
+                            backupProgress = null
                         }
-                    },
-                ) {
-                    Text(stringResource(Res.string.action_save))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showBackupDialog = false }) {
-                    Text(stringResource(Res.string.action_cancel))
-                }
-            },
-        )
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp),
+            ) {
+                Icon(
+                    Icons.Default.Share,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(stringResource(Res.string.action_share))
+            }
+        }
     }
 
     // Restore confirmation dialog
     if (showRestoreDialog) {
-        AlertDialog(
-            onDismissRequest = { showRestoreDialog = false },
-            title = { Text(stringResource(Res.string.restore_from_backup), style = MaterialTheme.typography.headlineSmall) },
-            text = {
-                Text(stringResource(Res.string.restore_description))
+        PhoenixModalDialogFrame(
+            title = stringResource(Res.string.restore_from_backup),
+            onDismiss = { showRestoreDialog = false },
+            confirmLabel = stringResource(Res.string.select_file),
+            dismissLabel = stringResource(Res.string.action_cancel),
+            onConfirm = {
+                showRestoreDialog = false
+                launchFilePicker = true
             },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showRestoreDialog = false
-                        launchFilePicker = true
-                    },
-                ) {
-                    Text(stringResource(Res.string.select_file))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showRestoreDialog = false }) {
-                    Text(stringResource(Res.string.action_cancel))
-                }
-            },
-        )
+        ) {
+            Text(stringResource(Res.string.restore_description))
+        }
     }
 
     // Result dialog
     if (showResultDialog) {
         val isError = backupError != null
-        AlertDialog(
-            onDismissRequest = { showResultDialog = false },
-            title = {
-                Text(
-                    when {
-                        isError -> "Error"
-                        backupResult != null -> "Backup Complete"
-                        restoreResult?.hasPartialFailure == true -> "Restore Incomplete"
-                        else -> "Restore Complete"
-                    },
-                    style = MaterialTheme.typography.headlineSmall,
-                )
+        val resetResultState = {
+            showResultDialog = false
+            backupResult = null
+            backupError = null
+            restoreResult = null
+        }
+        PhoenixModalDialogFrame(
+            title = when {
+                isError -> stringResource(Res.string.label_error)
+                backupResult != null -> stringResource(Res.string.settings_backup_complete)
+                restoreResult?.hasPartialFailure == true -> stringResource(Res.string.settings_restore_incomplete)
+                else -> stringResource(Res.string.settings_restore_complete)
             },
-            text = {
-                when {
-                    isError -> {
-                        Text(backupError ?: "Unknown error")
-                    }
+            onDismiss = resetResultState,
+            confirmLabel = stringResource(Res.string.action_ok),
+            onConfirm = resetResultState,
+        ) {
+            when {
+                isError -> {
+                    Text(backupError ?: stringResource(Res.string.settings_unknown_error))
+                }
 
-                    backupResult != null -> {
-                        Text(stringResource(Res.string.backup_success, backupResult ?: ""))
-                    }
+                backupResult != null -> {
+                    Text(stringResource(Res.string.backup_success, backupResult ?: ""))
+                }
 
-                    else -> {
-                        restoreResult?.let { result ->
-                            Column {
-                                Text(stringResource(Res.string.import_completed))
+                else -> {
+                    restoreResult?.let { result ->
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(stringResource(Res.string.import_completed))
+                            Spacer(modifier = Modifier.height(Spacing.small))
+                            Text(stringResource(Res.string.settings_restore_imported, result.totalImported))
+                            Text(stringResource(Res.string.settings_restore_already_present, result.totalSkipped))
+                            Text(stringResource(Res.string.settings_restore_failed, result.entitiesFailed))
+                            Text(stringResource(Res.string.settings_restore_repaired_references, result.repairedReferences))
+                            if (result.hasPartialFailure) {
                                 Spacer(modifier = Modifier.height(Spacing.small))
-                                Text("Imported: ${result.totalImported}")
-                                Text("Already present: ${result.totalSkipped}")
-                                Text("Failed: ${result.entitiesFailed}")
-                                Text("Repaired references: ${result.repairedReferences}")
-                                if (result.hasPartialFailure) {
-                                    Spacer(modifier = Modifier.height(Spacing.small))
-                                    Text(
-                                        "Restore incomplete: ${result.entitiesFailed} " +
-                                            (if (result.entitiesFailed == 1) "item" else "items") +
-                                            " could not be restored. The counts above reflect the partial result.",
-                                        color = MaterialTheme.colorScheme.error,
-                                    )
-                                }
+                                Text(
+                                    if (result.entitiesFailed == 1) {
+                                        stringResource(Res.string.settings_restore_incomplete_detail_one)
+                                    } else {
+                                        stringResource(Res.string.settings_restore_incomplete_detail_other, result.entitiesFailed)
+                                    },
+                                    color = MaterialTheme.colorScheme.error,
+                                )
                             }
                         }
                     }
                 }
-            },
-            confirmButton = {
-                Button(onClick = {
-                    showResultDialog = false
-                    backupResult = null
-                    backupError = null
-                    restoreResult = null
-                }) {
-                    Text(stringResource(Res.string.action_ok))
-                }
-            },
-        )
+            }
+        }
     }
 
     // Loading indicator dialog with streaming progress
     if (backupInProgress || restoreInProgress) {
         AlertDialog(
             onDismissRequest = { },
-            title = { Text(if (backupInProgress) "Creating Backup..." else "Restoring Data...", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold) },
+            properties = DialogProperties(
+                dismissOnBackPress = false,
+                dismissOnClickOutside = false,
+            ),
+            title = {
+                Text(
+                    if (backupInProgress) {
+                        stringResource(Res.string.settings_creating_backup)
+                    } else {
+                        stringResource(Res.string.settings_restoring_data)
+                    },
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                )
+            },
             text = {
-                Column {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                     backupProgress?.let { progress ->
                         Text(
                             progress.phase.displayName,
@@ -1646,9 +1494,9 @@ fun SettingsTab(
                         }.onFailure { error ->
                             // Include exception class so users sharing a screenshot give
                             // us enough to diagnose without needing a full logcat.
-                            val cls = error::class.simpleName ?: "Error"
-                            val msg = error.message?.take(240) ?: "Unknown error"
-                            backupError = "Import failed ($cls): $msg"
+                            val cls = error::class.simpleName ?: getString(Res.string.label_error)
+                            val msg = error.message?.take(240) ?: getString(Res.string.settings_unknown_error)
+                            backupError = getString(Res.string.settings_import_failed_detail, cls, msg)
                             showResultDialog = true
                         }
                     } catch (e: kotlinx.coroutines.CancellationException) {
@@ -1658,9 +1506,9 @@ fun SettingsTab(
                         // Result.failure). Without this catch the thrown exception
                         // escapes the coroutine after finally, leaving the user with
                         // no error dialog. Mirror the onFailure path.
-                        val cls = e::class.simpleName ?: "Error"
-                        val msg = e.message?.take(240) ?: "Unknown error"
-                        backupError = "Import failed ($cls): $msg"
+                        val cls = e::class.simpleName ?: getString(Res.string.label_error)
+                        val msg = e.message?.take(240) ?: getString(Res.string.settings_unknown_error)
+                        backupError = getString(Res.string.settings_import_failed_detail, cls, msg)
                         showResultDialog = true
                     } finally {
                         restoreInProgress = false

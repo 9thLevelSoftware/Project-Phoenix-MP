@@ -1,18 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Dutch (Nederlands) — Beta AI-generated translation -->
+<!-- Dutch (Nederlands) -->
 <!-- Fitness terminology context:
-     "set" = serie (een groep herhalingen)
-     "rep" = herhaling (een enkele beweging)
+     "set" = set / sets
+     "rep" = herhaling / herhalingen
      "1RM" = 1RM (one-rep max, universeel)
      "AMRAP" = AMRAP (as many reps as possible, universeel)
      "TUT" = TUT (time under tension, universeel)
      "PR" = PR (persoonlijk record)
-     Technical terms like "Echo", "TUT", "AMRAP", "1RM" stay in English.
+     Technical terms like "Phoenix", "Just Lift", "Echo", "TUT", "AMRAP", "1RM" stay in English.
 -->
 <resources>
     <string name="app_name">Phoenix</string>
 
-    <!-- Common actions -->
+    <!-- ==================== Common actions ==================== -->
     <string name="action_cancel">Annuleren</string>
     <string name="action_ok">OK</string>
     <string name="action_save">Opslaan</string>
@@ -20,6 +20,7 @@
     <string name="action_history">Geschiedenis</string>
     <string name="delete_personal_record_title">Persoonlijk record verwijderen?</string>
     <string name="delete_personal_record_message">Dit persoonlijke record verwijderen van dit apparaat en gesynchroniseerde apparaten? Dit kan in deze versie niet ongedaan worden gemaakt.</string>
+    <string name="delete_personal_record_failed">Kan persoonlijk record niet verwijderen</string>
     <string name="action_edit">Bewerken</string>
     <string name="action_copy">Kopiëren</string>
     <string name="action_close">Sluiten</string>
@@ -30,17 +31,18 @@
     <string name="action_back">Terug</string>
     <string name="action_exit">Afsluiten</string>
     <string name="action_skip">Overslaan</string>
-    <string name="action_stop">Stop</string>
+    <string name="action_stop">Stoppen</string>
     <string name="action_share">Delen</string>
     <string name="action_add">Toevoegen</string>
     <string name="action_clear">Wissen</string>
     <string name="action_preview">Voorbeeld</string>
     <string name="action_login">Inloggen</string>
     <string name="action_continue">Doorgaan</string>
+    <string name="action_continue_set">Set vervolgen</string>
     <string name="action_discard">Verwerpen</string>
     <string name="action_rename">Hernoemen</string>
 
-    <!-- Common labels -->
+    <!-- ==================== Common labels ==================== -->
     <string name="label_please_wait">Even geduld…</string>
     <string name="label_name">Naam</string>
     <string name="label_email">E-mail</string>
@@ -50,13 +52,13 @@
     <string name="label_favorites">Favorieten</string>
     <string name="label_custom">Aangepast</string>
     <string name="label_essentials">Basis</string>
-    <string name="cd_filter_essentials">Alleen basisoefeningen tonen</string>
     <string name="label_recent">Recent</string>
     <string name="label_all">Alles</string>
     <string name="label_done">KLAAR</string>
     <string name="label_reps">Herhalingen</string>
     <string name="label_duration">Duur</string>
     <string name="label_kg">kg</string>
+    <string name="label_lb">lb</string>
     <string name="label_lbs">lbs</string>
     <string name="label_per_cable">Per kabel</string>
     <string name="label_live">LIVE</string>
@@ -64,13 +66,13 @@
     <string name="label_table">Tabel</string>
     <string name="label_description_optional">Beschrijving (optioneel)</string>
 
-    <!-- Workout controls -->
+    <!-- ==================== Workout controls ==================== -->
     <string name="start_workout">Start training</string>
     <string name="start_exercise">START OEFENING</string>
-    <string name="stop_set">Stop serie</string>
-    <string name="end_workout">Beëindig training</string>
+    <string name="stop_set">Set stoppen</string>
+    <string name="end_workout">Training beëindigen</string>
     <string name="skip_exercise">Oefening overslaan</string>
-    <string name="just_lift">Gewoon tillen</string>
+    <string name="just_lift">Just Lift</string>
     <string name="target_reps">Doelherhalingen</string>
     <string name="stop_label">STOP</string>
     <string name="waiting_for_data">Wachten op gegevens…</string>
@@ -78,23 +80,47 @@
     <string name="workout_teardown_finishing">Vorige training wordt afgerond…</string>
     <string name="workout_teardown_failed">Het resetten van de trainer is niet voltooid</string>
     <string name="workout_teardown_retry">Opnieuw proberen</string>
+    <string name="workout_save_failed">Trainingsgegevens konden niet worden opgeslagen.</string>
+    <string name="workout_save_retry_failed">Deze set kan niet meer opnieuw worden geprobeerd.</string>
+    <string name="save_set">Set opslaan</string>
+    <string name="bodyweight_reps_title">Herhalingen met lichaamsgewicht invoeren</string>
+    <string name="bodyweight_set_progress">%1$s • Set %2$d van %3$d</string>
+    <string name="bodyweight_reps_completed">Voltooide herhalingen</string>
+    <string name="bodyweight_variant">Variant</string>
+    <string name="bodyweight_variant_percent">%1$s (%2$d%%)</string>
+    <string name="bodyweight_effective_load">Effectieve belasting: %1$s</string>
+    <string name="bodyweight_effective_load_includes">Inclusief: %1$s</string>
+    <string name="bodyweight_effective_load_more">+%1$d meer</string>
+    <string name="bodyweight_volume">Volume: %1$s</string>
+    <string name="bodyweight_no_weight_volume">Lichaamsgewicht is niet ingesteld, dus volume wordt opgeslagen als 0.</string>
+    <string name="weight_recommendation_increase">Volgende set verhogen</string>
+    <string name="weight_recommendation_decrease">Volgende set verlagen</string>
+    <string name="weight_recommendation_maintain">Volgende set gelijk houden</string>
+    <string name="weight_recommendation_weight_change">%1$s naar %2$s per kabel</string>
 
-    <string name="stop_current_set_title">Huidige serie stoppen?</string>
-    <string name="stop_current_set_message">Stop deze serie, sla deze oefening over of beëindig de hele training.</string>
+    <!-- Stop set dialog -->
+    <string name="stop_current_set_title">Huidige set stoppen?</string>
+    <string name="stop_current_set_message">Stop deze set, sla deze oefening over of beëindig de hele training.</string>
+
+    <!-- Exit workout dialog -->
     <string name="exit_workout_title">Training verlaten?</string>
     <string name="exit_workout_message">De training is actief. Weet je zeker dat je wilt afsluiten?</string>
+
+    <!-- Exit routine dialog -->
     <string name="exit_routine_title">Routine verlaten?</string>
     <string name="exit_routine_message">Voortgang wordt opgeslagen.</string>
 
-    <!-- Connection -->
+    <!-- ==================== Connection ==================== -->
     <string name="connecting">Verbinden…</string>
     <string name="connection_failed">Verbinding mislukt</string>
     <string name="disconnect">Verbinding verbreken</string>
+    <string name="disconnect_integration_title">Integratie ontkoppelen?</string>
+    <string name="disconnect_integration_message">Weet je zeker dat je %1$s wilt ontkoppelen? Hiermee wordt de integratie verwijderd en kan een geplande synchronisatie worden onderbroken.</string>
 
-    <!-- Settings -->
+    <!-- ==================== Settings screen ==================== -->
     <string name="settings_title">Instellingen</string>
-    <string name="settings_cloud_sync">Cloud Sync</string>
-    <string name="settings_sync_error_tap_to_dismiss">Sync error — tap to dismiss</string>
+    <string name="settings_cloud_sync">Cloudsynchronisatie</string>
+    <string name="settings_sync_error_tap_to_dismiss">Synchronisatiefout — tik om te sluiten</string>
     <string name="settings_weight_unit">Gewichtseenheid</string>
     <string name="settings_appearance">Uiterlijk</string>
     <string name="settings_theme_mode">Thema</string>
@@ -107,7 +133,15 @@
     <string name="settings_version">Versie: %1$s</string>
     <string name="settings_language">Taal</string>
     <string name="settings_language_help">Help vertalingen te verbeteren</string>
-    <string name="settings_machine_diagnostics_description">Bekijk een geredigeerde machine-diagnosesnapshot: uptime, foutcodes, temperaturen, crashgegevens en waarschuwingen. Dit is geen volledige back-up.</string>
+    <string name="settings_machine_diagnostics_description">Bekijk een geschoonde machine-diagnosesnapshot: bedrijfstijd, foutcodes, temperaturen, crashgegevens en waarschuwingen. Dit is geen volledige back-up.</string>
+    <string name="settings_weight_suggestions_title">Gewichtssuggesties</string>
+    <string name="settings_ble_compat_title">BLE-compatibiliteitsmodus</string>
+    <string name="settings_ble_compat_description">Schrijfpad met kleine MTU dat verbroken verbindingen bij het starten van een training op Pixel 6/7, Fold en Tablet verhelpt. Auto schakelt het alleen op die toestellen in.</string>
+    <string name="settings_ble_compat_description_affected">Schrijfpad met kleine MTU dat verbroken verbindingen bij het starten van een training op Pixel 6/7, Fold en Tablet verhelpt. Auto schakelt het alleen op die toestellen in (dit toestel is getroffen).</string>
+    <string name="settings_ble_compat_auto">Auto</string>
+    <string name="settings_ble_compat_on">Aan</string>
+    <string name="settings_ble_compat_off">Uit</string>
+    <string name="settings_ble_compat_reconnect_hint">Wordt van kracht bij de volgende verbinding. Maak na het wijzigen opnieuw verbinding met de trainer.</string>
 
     <!-- Machine diagnostics -->
     <string name="diagnostics_title">Machinediagnose</string>
@@ -117,51 +151,65 @@
     <string name="diagnostics_status_no_active_faults">Geen actieve fouten</string>
     <string name="diagnostics_copy_action">Diagnose kopiëren</string>
     <string name="diagnostics_empty_title">Maak verbinding met een machine om diagnose te lezen.</string>
-    <string name="diagnostics_empty_description">Fouten, temperaturen, uptime, crashgegevens en waarschuwingen verschijnen hier.</string>
+    <string name="diagnostics_empty_description">Fouten, temperaturen, bedrijfstijd, crashgegevens en waarschuwingen verschijnen hier.</string>
     <string name="diagnostics_waiting_title">Wachten op diagnose</string>
-    <string name="diagnostics_waiting_description">Verbonden. Wachten tot de diagnose-characteristic een momentopname teruggeeft.</string>
-    <string name="diagnostics_uptime">Uptime</string>
+    <string name="diagnostics_waiting_description">Verbonden. Wachten tot het diagnosekanaal een momentopname teruggeeft.</string>
+    <string name="diagnostics_uptime">Bedrijfstijd</string>
     <string name="diagnostics_faults">Fouten</string>
     <string name="diagnostics_temperatures">Temperaturen</string>
     <string name="diagnostics_crash">Crash</string>
     <string name="diagnostics_warnings">Waarschuwingen</string>
     <string name="diagnostics_seconds">Seconden</string>
     <string name="diagnostics_stack_base64">Stack Base64</string>
-    <string name="diagnostics_raw">Ruw</string>
+    <string name="diagnostics_raw">Onbewerkt</string>
     <string name="diagnostics_none_reported">Geen gemeld</string>
 
+    <!-- Language names -->
+    <string name="language_system_default">Systeemstandaard</string>
     <string name="language_english">English</string>
     <string name="language_dutch">Nederlands (Beta)</string>
     <string name="language_german">Deutsch (Beta)</string>
     <string name="language_spanish">Español (Beta)</string>
     <string name="language_french">Français (Beta)</string>
+    <string name="language_italian">Italiano (Beta)</string>
+    <string name="settings_language_ios_restart_hint">Herstart de app om de taalwijziging volledig toe te passen</string>
 
-    <!-- Backup -->
+    <!-- ==================== Backup / Restore ==================== -->
     <string name="backup_all_data">Alle gegevens back-uppen</string>
-    <string name="backup_description">Dit is een volledige export van persoonlijke gegevens: trainingsgeschiedenis, routines, trainingscycli, prestaties, profielen, notities en instellingen.\n\nDeze bevat geen authenticatie-/sessietokens, Supabase-configuratie of keystore-gegevens. Machine-diagnose-exporten zijn afzonderlijke geredigeerde probleemoplossingssnapshots en kunnen je trainingen niet herstellen.</string>
+    <string name="backup_description">Dit is een volledige export van persoonlijke gegevens: trainingsgeschiedenis, routines, trainingscycli, prestaties, profielen, notities en instellingen.\n\nDeze bevat geen authenticatie-/sessietokens, Supabase-configuratie of keystore-gegevens. Machine-diagnose-exporten zijn afzonderlijke geschoonde probleemoplossingssnapshots en kunnen je trainingen niet herstellen.</string>
     <string name="restore_from_backup">Herstellen vanuit back-up</string>
     <string name="restore_description">Selecteer een back-upbestand om je gegevens te herstellen.\n\nBestaande gegevens worden NIET overschreven - alleen nieuwe records worden geïmporteerd.</string>
     <string name="select_file">Selecteer bestand</string>
-    <string name="backup_success">Back-up succesvol opgeslagen naar:\n%1$s</string>
+    <string name="backup_success">Back-up opgeslagen in:\n%1$s</string>
     <string name="import_completed">Import voltooid!</string>
 
-    <!-- Account -->
+    <!-- ==================== Account ==================== -->
+
+    <!-- ==================== Auth ==================== -->
     <string name="auth_google">Google</string>
     <string name="auth_apple">Apple</string>
+    <string name="auth_or_continue_with">Of ga verder met</string>
+    <string name="auth_google_failed">Inloggen met Google mislukt</string>
+    <string name="auth_apple_failed">Inloggen met Apple mislukt</string>
 
-    <!-- Sync -->
+    <!-- ==================== Link Account / Sync ==================== -->
     <string name="phoenix_portal">Phoenix Portal</string>
     <string name="syncing">Synchroniseren…</string>
     <string name="last_synced">Laatst gesynchroniseerd: %1$s</string>
     <string name="never_synced">Nooit gesynchroniseerd</string>
+    <string name="sync_paused_subscription_required">Synchronisatie gepauzeerd — abonnement vereist</string>
+    <string name="delete_portal_account">Portaalaccount verwijderen</string>
+    <string name="delete_portal_account_caption">Opent het portaal. Trainingen op deze telefoon blijven op deze telefoon bewaard.</string>
     <string name="unlink_account">Account ontkoppelen</string>
     <string name="sync_now">Nu synchroniseren</string>
 
-    <!-- Training Cycles -->
+    <!-- ==================== Paywall ==================== -->
+
+    <!-- ==================== Training Cycles ==================== -->
     <string name="create_cycle">Cyclus aanmaken</string>
     <string name="edit_cycle">Cyclus bewerken</string>
     <string name="delete_cycle_title">Cyclus verwijderen?</string>
-    <string name="delete_cycle_message">Weet je zeker dat je \"%1$s\" wilt verwijderen? Dit kan niet ongedaan worden gemaakt.</string>
+    <string name="delete_cycle_message">Weet je zeker dat je &quot;%1$s&quot; wilt verwijderen? Dit kan niet ongedaan worden gemaakt.</string>
     <string name="exercises_not_found">Oefeningen niet gevonden</string>
     <string name="skip_rest_day">Rustdag overslaan</string>
     <string name="jump_to_day">Ga naar dag %1$d</string>
@@ -170,10 +218,12 @@
     <string name="add_workout">+ Training toevoegen</string>
     <string name="add_rest">+ Rust toevoegen</string>
 
-    <!-- Routines -->
+    <!-- ==================== Routines ==================== -->
     <string name="routine_name">Routinenaam</string>
     <string name="create_new_routine">Nieuwe routine aanmaken</string>
     <string name="add_exercise">Oefening toevoegen</string>
+    <!-- Issue #1018: commit label for the session-only add flow on the terminal set summary (not the editor's template-writing "Add to Routine"). -->
+    <string name="add_to_workout">Toevoegen aan training</string>
     <string name="delete_routine">Routine verwijderen</string>
     <string name="delete_routine_message">Weet je zeker dat je '%1$s' wilt verwijderen?</string>
     <!-- #772: routine CSV import and export -->
@@ -191,15 +241,17 @@
     <string name="routine_csv_matches_found">Sommige routines in dit bestand komen overeen met routines die je al hebt.</string>
     <string name="routine_csv_mode_copies">Als kopieën importeren</string>
     <string name="routine_csv_mode_overwrite">Bestaande routines vervangen</string>
-    <string name="routine_csv_refreshed">Je routines zijn sinds dit voorbeeld gewijzigd. Controleer het opnieuw voordat je importeert.</string>
+    <string name="routine_csv_refreshed">Je routines zijn sinds dit voorbeeld gewijzigd. Controleer ze opnieuw voordat je importeert.</string>
     <string name="routine_csv_commit_failed">Het importeren is mislukt. Er is niets opgeslagen.</string>
     <string name="routine_csv_confirm">Importeren</string>
     <string name="routine_csv_imported">%1$d routines geïmporteerd.</string>
     <string name="routine_csv_export_blocked_title">%1$s kan niet worden geëxporteerd</string>
     <string name="routine_csv_export_blocked_message">CSV-bestanden kunnen deze instellingen nog niet bevatten, dus exporteren zou ze verliezen:</string>
     <string name="delete_selected_routines">%1$d routines verwijderen?</string>
+    <string name="delete_group_title">Groep verwijderen</string>
+    <string name="delete_group_message">Groep &quot;%1$s&quot; verwijderen? Routines in deze groep worden ongegroepeerd.</string>
     <string name="duplicate_selected_routines">%1$d routines dupliceren?</string>
-    <string name="duplicate_routines_message">Nieuwe kopieën worden aangemaakt met '(Kopie)' achtervoegsel.</string>
+    <string name="duplicate_routines_message">Nieuwe kopieën worden aangemaakt met '(Kopie)' als achtervoegsel.</string>
     <string name="move_to_profile">Verplaatsen naar profiel</string>
     <string name="copy_to_profile">Kopiëren naar profiel</string>
     <string name="move_routines_confirm">%1$d routines verplaatsen naar %2$s?</string>
@@ -208,7 +260,7 @@
     <string name="cannot_be_undone">Dit kan niet ongedaan worden gemaakt.</string>
     <string name="delete_all">Alles verwijderen</string>
 
-    <!-- Supersets -->
+    <!-- ==================== Supersets ==================== -->
     <string name="add_to_superset">Toevoegen aan superset</string>
     <string name="rename_superset">Superset hernoemen</string>
     <string name="choose_color">Kleur kiezen</string>
@@ -216,64 +268,89 @@
     <string name="copy_superset">Superset kopiëren</string>
     <string name="delete_superset">Superset verwijderen</string>
     <string name="delete_superset_title">Superset verwijderen?</string>
+    <string name="delete_superset_message">Hiermee verwijder je de superset &quot;%1$s&quot; en alle %2$d oefeningen erin. Dit kan niet ongedaan worden gemaakt.</string>
     <string name="delete_selected_exercises">%1$d oefeningen verwijderen?</string>
 
-    <!-- Exercise Picker -->
+    <!-- ==================== Exercise Picker ==================== -->
     <string name="select_exercise">Selecteer oefening</string>
     <string name="search_exercises">Oefeningen zoeken…</string>
     <string name="create_exercise">Oefening aanmaken</string>
     <string name="clear_filters">Filters wissen</string>
 
-    <!-- Exercise Create/Edit -->
-    <string name="exercise_name_label">Oefening naam *</string>
+    <!-- ==================== Exercise Create/Edit ==================== -->
+    <string name="exercise_name_label">Naam oefening *</string>
     <string name="label_cables">Kabels</string>
     <string name="label_bodyweight">Lichaamsgewicht</string>
     <string name="label_equipment">Apparatuur</string>
     <string name="delete_exercise_title">Oefening verwijderen?</string>
-    <string name="delete_exercise_message">Weet je zeker dat je \"%1$s\" wilt verwijderen? Deze actie kan niet ongedaan worden gemaakt.</string>
+    <string name="delete_exercise_message">Weet je zeker dat je &quot;%1$s&quot; wilt verwijderen? Deze actie kan niet ongedaan worden gemaakt.</string>
 
-    <!-- Workout Modes — technical terms stay in English -->
+    <!-- ==================== Exercise Detail ==================== -->
+
+    <!-- ==================== Workout Modes ==================== -->
     <string name="mode_old_school">Old School</string>
     <string name="mode_pump">Pump</string>
     <string name="mode_tut">TUT</string>
     <string name="just_lift_tut_standard">Standaard</string>
     <string name="just_lift_tut_beast">Beast</string>
-    <string name="mode_eccentric_only">Eccentric Only</string>
+    <string name="mode_eccentric_only">Alleen excentrisch</string>
     <string name="mode_echo">Echo</string>
     <string name="echo_level">Echo-niveau</string>
+    <string name="echo_level_hard">Zwaar</string>
+    <string name="echo_level_harder">Zwaarder</string>
+    <string name="echo_level_hardest">Zwaarst</string>
+    <string name="echo_level_epic">Episch</string>
     <string name="eccentric_load">Excentrische belasting</string>
+    <string name="eccentric_load_helper">Belasting tijdens de excentrische (neergaande) fase</string>
+    <string name="rep_count_timing">Timing herhalingstelling</string>
+    <string name="rep_count_timing_top">Tel bovenaan (concentrische piek)</string>
+    <string name="rep_count_timing_bottom">Tel onderaan (excentrisch dal)</string>
 
-    <!-- Profiles -->
+    <!-- ==================== Workout Setup ==================== -->
+
+    <!-- ==================== Profiles ==================== -->
     <string name="add_profile">Profiel toevoegen</string>
     <string name="edit_profile">Profiel bewerken</string>
     <string name="delete_profile">Profiel verwijderen</string>
+
+    <!-- ==================== Progression Suggestion ==================== -->
+
+    <!-- ==================== Resume Routine ==================== -->
     <string name="resume_workout_title">Training hervatten?</string>
     <string name="resume_workout_saved">Je hebt opgeslagen voortgang:</string>
-    <string name="restart_from_set_1">Herstart vanaf serie 1</string>
+    <string name="restart_from_set_1">Opnieuw vanaf set 1</string>
+
+    <!-- ==================== Rest Timer ==================== -->
     <string name="rest_between_exercises">Rust tussen oefeningen</string>
     <string name="rest_quick_rest">SNELLE RUST</string>
     <string name="rest_time">RUSTTIJD</string>
     <string name="rest_paused">GEPAUZEERD</string>
     <string name="rest_up_next">VOLGENDE</string>
-    <string name="rest_next_set_config">VOLGENDE SERIE-CONFIGURATIE</string>
+    <string name="rest_next_set_config">CONFIGURATIE VOLGENDE SET</string>
     <string name="rest_echo_level">ECHO-NIVEAU</string>
     <string name="rest_eccentric_load">EXCENTRISCHE BELASTING</string>
     <string name="rest_workout_complete">Training voltooid</string>
     <string name="rest_weight_per_cable">Gewicht per kabel</string>
     <string name="rest_target_reps">Doelherhalingen</string>
     <string name="rest_exercise_of">Oefening %1$d van %2$d</string>
-    <string name="rest_set_of">Serie %1$d van %2$d</string>
+    <string name="rest_set_of">Set %1$d van %2$d</string>
     <string name="rest_mode">%1$s-modus</string>
     <string name="rest_resume">Hervatten</string>
     <string name="rest_pause">Pauzeren</string>
     <string name="rest_reset">Resetten</string>
+    <!-- Issue #1360: rest-control rejection feedback (canonical English wire text; see RestControlFeedback). -->
+    <string name="rest_control_not_resting">De rusttimer is nu niet actief.</string>
+    <string name="rest_control_stale_owner">Deze rust is gewijzigd voordat de wijziging is toegepast.</string>
+    <string name="rest_control_authority_failed">De huidige rust kon niet worden bevestigd. De wijziging is niet toegepast.</string>
+    <string name="rest_control_persistence_failed">De wijziging aan de rust kon niet worden opgeslagen. Je kunt het opnieuw proberen.</string>
+    <string name="rest_control_post_write_drift">De rust is gewijzigd tijdens het opslaan. De wijziging is mogelijk niet toegepast.</string>
     <string name="rest_skip">Rust overslaan</string>
     <string name="rest_end_workout">Training beëindigen</string>
     <string name="rest_continue">Doorgaan</string>
     <string name="rest_complete_announcement">Rust voltooid</string>
     <string name="rest_seconds_remaining">Nog %1$d seconden</string>
     <string name="drop_set_title">Drop-set</string>
-    <string name="drop_set_offer_toggle">Drop-set aanbieden na een mislukte set.</string>
+    <string name="drop_set_offer_toggle">Drop-set aanbieden na spierfalen.</string>
     <string name="drop_set_min_weight">Minimumgewicht</string>
     <string name="drop_set_min_weight_supporting">Minimum per kabel in %1$s</string>
     <string name="drop_set_min_weight_error">Voer een minimumgewicht groter dan 0 in</string>
@@ -293,9 +370,11 @@
     <string name="cd_drop_set_candidate_unavailable">%1$s drop niet beschikbaar</string>
     <string name="cd_drop_set_retry_disabled">Selecteer een droppercentage om opnieuw te proberen</string>
 
-    <!-- Connection Logs -->
+    <!-- ==================== Weight Adjustment ==================== -->
+
+    <!-- ==================== Connection Logs ==================== -->
     <string name="search_logs">Logs doorzoeken…</string>
-    <string name="auto_scroll">Auto-scroll</string>
+    <string name="auto_scroll">Automatisch scrollen</string>
     <string name="export_logs">Logs exporteren</string>
     <string name="logs_ready_to_export">%1$d logregels klaar om te exporteren.</string>
     <string name="copy_to_clipboard">Naar klembord kopiëren</string>
@@ -304,7 +383,7 @@
     <string name="clear_all">Alles wissen</string>
     <string name="log_level_count">%1$s (%2$d)</string>
 
-    <!-- Analytics -->
+    <!-- ==================== Analytics / Export ==================== -->
     <string name="export_import_data">Exporteren / Importeren</string>
     <string name="choose_export">Kies wat je wilt exporteren:</string>
     <string name="personal_records_count">Persoonlijke records (%1$d)</string>
@@ -314,41 +393,64 @@
     <string name="import_workout_csv">Trainingsgeschiedenis importeren (CSV)</string>
     <string name="no_result_available">Geen resultaat beschikbaar.</string>
 
-    <!-- Assessment -->
+    <!-- ==================== Assessment Wizard ==================== -->
+    <string name="wizard_step_of">Stap %1$d van %2$d</string>
     <string name="actual_weight_label">Werkelijk gebruikt gewicht (kg)</string>
     <string name="mean_velocity_label">Gemiddelde snelheid (m/s)</string>
-    <string name="cancel_assessment">Beoordeling annuleren</string>
+    <string name="cancel_assessment">Krachtmeting annuleren</string>
     <string name="assessment_save_failed">De krachtmeting kon niet worden opgeslagen. Probeer het opnieuw.</string>
     <string name="enter_estimate_label">Voer je eigen schatting in (kg)</string>
     <string name="leave_empty_hint">Laat leeg om de berekende waarde te gebruiken</string>
     <string name="enter_valid_number">Voer een geldig getal in</string>
 
-    <!-- Smart Insights -->
+    <!-- ==================== Smart Insights ==================== -->
     <string name="no_workouts_this_week">Geen trainingen deze week</string>
     <string name="no_balance_data">Onvoldoende gegevens voor balansanalyse</string>
     <string name="great_variety">Geweldige variatie! Alle oefeningen recent uitgevoerd.</string>
     <string name="no_plateaus">Geen plateaus gedetecteerd. Blijf vooruitgaan!</string>
 
+    <!-- ==================== Badges ==================== -->
+
+    <!-- ==================== Daily Routines ==================== -->
     <string name="workout_in_progress">Training bezig</string>
     <string name="stop_before_editing">Stop eerst de huidige training voordat je routines bewerkt.</string>
 
+    <!-- ==================== Exercise Config Modal ==================== -->
     <string name="starting_weight">Startgewicht</string>
     <string name="eccentric_overload">Excentrische overbelasting</string>
 
+    <!-- ==================== Navigation ==================== -->
     <string name="nav_analytics">Analyse</string>
     <string name="nav_insights">Inzichten</string>
+
+    <!-- ==================== Misc ==================== -->
+
+    <!-- ==================== OneRepMax ==================== -->
     <string name="orm_placeholder">bijv. 100</string>
+
+    <!-- ==================== ExerciseEditBottomSheet ==================== -->
     <string name="percent_label">%1$d%%</string>
+
+    <!-- ==================== Cycle Editor ==================== -->
+
+    <!-- ==================== Progression Settings ==================== -->
     <string name="nav_previous">◄</string>
     <string name="nav_next">►</string>
-    <!-- Velocity Zones -->
+
+    <!-- ==================== Selection Action Bar ==================== -->
+
+    <!-- ==================== RPE Slider ==================== -->
+
+    <!-- ==================== Velocity Zones ==================== -->
     <string name="zone_explosive">Explosief</string>
     <string name="zone_fast">Snel</string>
     <string name="zone_moderate">Matig</string>
     <string name="zone_slow">Langzaam</string>
     <string name="zone_grind">Grind</string>
 
-    <!-- Issue 1: AnalyticsScreen -->
+    <!-- ==================== Ghost Racing ==================== -->
+
+    <!-- ==================== Issue 1: AnalyticsScreen ==================== -->
     <string name="analytics_progress">Voortgang</string>
     <string name="analytics_progress_subtitle">Volg je krachtwinst over tijd</string>
     <string name="analytics_personal_records">Persoonlijke records</string>
@@ -357,7 +459,7 @@
     <string name="analytics_dashboard">Dashboard</string>
     <string name="analytics_history">Geschiedenis</string>
 
-    <!-- Issue 2: SmartInsightsTab -->
+    <!-- ==================== Issue 2: SmartInsightsTab ==================== -->
     <string name="insights_title">Slimme inzichten</string>
     <string name="insights_subtitle">Gepersonaliseerde trainingsaanbevelingen</string>
     <string name="insights_weekly_volume">Volume deze week</string>
@@ -366,18 +468,20 @@
     <string name="insights_plateau_alert">Plateau-waarschuwing</string>
     <string name="insights_best_window">Moment met hoogste gemiddelde intensiteit</string>
     <string name="insights_col_muscle_group">Spiergroep</string>
-    <string name="insights_col_sets">Series</string>
+    <string name="insights_col_sets">Sets</string>
     <string name="insights_col_reps">Herhalingen</string>
     <string name="insights_col_total">Totaal %1$s</string>
-    <string name="insights_push">Push</string>
-    <string name="insights_pull">Pull</string>
+    <string name="insights_push">Duwen</string>
+    <string name="insights_pull">Trekken</string>
     <string name="insights_legs">Benen</string>
     <string name="insights_well_balanced">Je training is goed gebalanceerd</string>
     <string name="insights_days_ago">%1$d dagen geleden</string>
     <string name="insights_need_more_sessions">Meer sessies op verschillende dagen nodig om je beste tijdvenster te bepalen</string>
     <string name="insights_perform_best_in">Je hoogste gemiddelde intensiteit is in de</string>
+    <string name="insights_error_title">Kan inzichten niet laden</string>
+    <string name="insights_error_message">Er is een fout opgetreden bij het laden van je trainingsgegevens.</string>
 
-    <!-- Issue 3: ExerciseConfigModal -->
+    <!-- ==================== Issue 3: ExerciseConfigModal ==================== -->
     <string name="config_beast_mode">BEAST MODE</string>
     <string name="config_extended_difficulty">Verhoogde moeilijkheid</string>
     <string name="config_standard_tut">Standaard TUT</string>
@@ -388,20 +492,22 @@
     <string name="config_mode_tut_desc">Handhaaft constante weerstand gedurende de beweging voor maximale spieractivatie.</string>
     <string name="config_mode_pump_title">Pump-modus</string>
     <string name="config_mode_pump_desc">Hoog volume met aanhoudende spanning voor maximale bloedtoevoer en spiervolume.</string>
-    <string name="config_meta_sets">Series</string>
+    <string name="config_meta_sets">Sets</string>
     <string name="config_meta_reps">Herhalingen</string>
     <string name="config_meta_1rm">1RM</string>
 
-    <!-- Issue 4: EmptyState strings -->
+    <!-- ==================== Issue 4: EmptyState strings ==================== -->
     <string name="empty_no_routines_title">Nog geen routines</string>
     <string name="empty_no_routines_message">Maak je eerste trainingsroutine om te beginnen</string>
     <string name="empty_no_history_title">Nog geen trainingsgeschiedenis</string>
     <string name="empty_no_history_all">Voltooi je eerste training om deze hier te zien</string>
     <string name="empty_no_history_period">Geen trainingen in de laatste %1$s</string>
     <string name="empty_no_cycles_title">Nog geen trainingscycli</string>
-    <string name="empty_no_cycles_message">Maak een roterend trainingsschema dat zich aanpast aan je leven, niet de kalender</string>
+    <string name="empty_no_cycles_message">Maak een roterend trainingsschema dat zich aanpast aan je leven, niet aan de kalender</string>
+    <string name="empty_no_external_activities_title">Nog geen activiteiten geïmporteerd</string>
+    <string name="empty_no_external_activities_message">Koppel Hevy, Liftosaur of importeer een CSV vanuit het Integraties-scherm.</string>
 
-    <!-- Import/Export messages -->
+    <!-- ==================== Import/Export messages ==================== -->
     <string name="import_complete_title">Import voltooid</string>
     <string name="import_result_title">Importresultaat</string>
     <string name="import_issues">Problemen:</string>
@@ -409,19 +515,22 @@
     <string name="export_success">Geëxporteerd naar: %1$s</string>
     <string name="export_failed">Export mislukt: %1$s</string>
 
-    <!-- Issue 5: Chart empty states -->
+    <!-- ==================== Issue 5: Chart empty states ==================== -->
     <string name="chart_no_data">Geen gegevens beschikbaar</string>
     <string name="chart_invalid_target">Ongeldige doelwaarde</string>
     <string name="chart_invalid_gauge">Ongeldige metergegevens</string>
 
-    <!-- contentDescription strings — accessibility labels, not translated for Beta -->
-    <string name="cd_cloud_sync">Cloud Sync</string>
+    <!-- ==================== Issue 7: contentDescription strings ==================== -->
+    <!-- Connection -->
+    <string name="cd_cloud_sync">Cloudsynchronisatie</string>
     <string name="cd_bluetooth_lost">Bluetooth-verbinding verloren</string>
     <string name="cd_connection_error">Verbindingsfout</string>
     <string name="cd_connection_lost">Verbinding verloren</string>
     <string name="cd_connection_logs">Verbindingslogs</string>
     <string name="cd_sync_error">Synchronisatiefout</string>
     <string name="cd_link_portal">Portal-account koppelen</string>
+
+    <!-- Navigation / Actions -->
     <string name="cd_back">Terug</string>
     <string name="cd_close">Sluiten</string>
     <string name="cd_search">Zoeken</string>
@@ -435,10 +544,12 @@
     <string name="cd_drag">Slepen</string>
     <string name="cd_reorder">Herschikken</string>
     <string name="cd_edit">Bewerken</string>
-    <string name="cd_stop">Stop</string>
+    <string name="cd_stop">Stoppen</string>
     <string name="cd_previous">Vorige</string>
     <string name="cd_next">Volgende</string>
     <string name="cd_tip">Tip</string>
+
+    <!-- Workout -->
     <string name="cd_start_workout">Training starten</string>
     <string name="cd_start_new_workout">Nieuwe training starten</string>
     <string name="cd_stop_workout">Training stoppen</string>
@@ -448,13 +559,19 @@
     <string name="cd_workout_completed">Training voltooid</string>
     <string name="cd_workout_error">Trainingsfout</string>
     <string name="cd_workout_history">Trainingsgeschiedenis</string>
+
+    <!-- Exercises -->
     <string name="cd_previous_exercise">Vorige oefening</string>
     <string name="cd_next_exercise">Volgende oefening</string>
     <string name="cd_completed">Voltooid</string>
     <string name="cd_thumbnail_for">Miniatuur voor %1$s</string>
     <string name="cd_clear_filters">Filters wissen</string>
     <string name="cd_alphabet_nav">Alfabetnavigatie. Tik op een letter om naar oefeningen te springen die met die letter beginnen.</string>
+
+    <!-- Profiles -->
     <string name="cd_active">Actief</string>
+
+    <!-- Settings / Preferences -->
     <string name="cd_settings">Instellingen</string>
     <string name="cd_appearance">Uiterlijk-instellingen</string>
     <string name="cd_dynamic_color">Instelling voor dynamische Material You-kleuren</string>
@@ -463,8 +580,16 @@
     <string name="cd_support_developer">Steun de ontwikkelaar</string>
     <string name="cd_led_scheme">LED-kleurenschema</string>
     <string name="cd_test_sounds">Geluiden testen</string>
+
+    <!-- Weight -->
     <string name="cd_decrease_weight">Gewicht verlagen</string>
     <string name="cd_increase_weight">Gewicht verhogen</string>
+
+    <!-- Weight Stepper (BLE config context — machine always uses kg) -->
+    <string name="weight_kg_per_cable">kg per kabel</string>
+    <string name="weight_total_two_cables">Totaal: %1$s kg (beide kabels)</string>
+
+    <!-- Data / Export -->
     <string name="cd_backup_data">Gegevens back-uppen</string>
     <string name="cd_restore_data">Gegevens herstellen</string>
     <string name="cd_export_data">Gegevens exporteren</string>
@@ -472,6 +597,8 @@
     <string name="cd_clear_logs">Logs wissen</string>
     <string name="cd_open_backup_folder">Back-upmap openen</string>
     <string name="cd_delete_workouts">Trainingsgeschiedenis wissen</string>
+
+    <!-- Routines / Cycles -->
     <string name="cd_add_routine">Nieuwe routine toevoegen</string>
     <string name="cd_delete_routine">Routinesessie verwijderen</string>
     <string name="cd_cancel_selection">Selectie annuleren</string>
@@ -482,13 +609,18 @@
     <string name="cd_reorder_superset">Superset herschikken</string>
     <string name="cd_remove_superset">Uit superset verwijderen</string>
     <string name="cd_progression_settings">Progressie-instellingen</string>
+    <string name="progression_eccentric_load_increase_by">Excentrische belasting verhogen met</string>
     <string name="cd_select_template">Sjabloon selecteren</string>
-    <string name="cd_add_set">Serie toevoegen</string>
-    <string name="cd_delete_set">Serie verwijderen</string>
+
+    <!-- Sets -->
+    <string name="cd_add_set">Set toevoegen</string>
+    <string name="cd_delete_set">Set verwijderen</string>
     <string name="cd_add_30_seconds">30 seconden toevoegen</string>
     <string name="cd_reset_timer">Timer resetten</string>
     <string name="cd_skip_rest">Rust overslaan</string>
     <string name="cd_rest_day">Rustdag</string>
+
+    <!-- Stats / Analytics -->
     <string name="cd_analytics">Analyse</string>
     <string name="cd_dashboard">Dashboard-overzicht</string>
     <string name="cd_progress_tracking">Voortgang bijhouden</string>
@@ -500,12 +632,15 @@
     <string name="cd_velocity">Snelheid</string>
     <string name="cd_success">Succes</string>
     <string name="cd_missed">Gemist</string>
+
+    <!-- Misc -->
     <string name="cd_empty_state">Lege status</string>
-    <string name="cd_trophy">Trofeëviering</string>
+    <string name="cd_trophy">Trofeeviering</string>
     <string name="cd_confetti">Feestconfetti</string>
     <string name="cd_phoenix_logo">Phoenix-logo</string>
     <string name="cd_delete_workout">Training verwijderen</string>
     <string name="cd_home">Startpagina</string>
+    <string name="single_exercise_unavailable">Oefening is niet meer beschikbaar</string>
 
     <!-- ==================== Voice Emergency Stop (Issue #141) ==================== -->
     <string name="settings_voice_stop_description">Zeg je veiligheidswoord tijdens een training om de set onmiddellijk te stoppen</string>
@@ -519,11 +654,11 @@
     <string name="settings_calibration_prompt">Zeg je veiligheidswoord:</string>
     <string name="settings_calibration_listening">Luisteren…</string>
     <string name="settings_calibration_progress">%1$d van 3 detecties</string>
-    <string name="settings_calibration_mic_error">Kon geen toegang krijgen tot de microfoon. Controleer toestemmingen en probeer opnieuw.</string>
+    <string name="settings_calibration_mic_error">Microfoontoestemming is vereist voor spraakkalibratie. Geef microfoontoegang in de instellingen van je apparaat en probeer het opnieuw.</string>
     <string name="settings_calibration_open_settings">Instellingen openen</string>
     <string name="cd_calibration_check">Kalibratiecontrole</string>
 
-    <!-- ==================== Verbale aanmoediging (Issue #611) ==================== -->
+    <!-- ==================== Verbal Encouragement (Issue #611) ==================== -->
     <string name="settings_verbal_encouragement_title">Verbale aanmoediging</string>
     <string name="settings_vulgar_mode_title">Vulgaire modus</string>
     <string name="settings_vulgar_mode_headphone_warning">Koptelefoongebruik sterk aanbevolen.</string>
@@ -532,66 +667,59 @@
     <string name="settings_vulgar_mode_tier_strong">Sterk</string>
     <string name="settings_vulgar_mode_tier_mix">Mix</string>
     <string name="settings_dominatrix_mode_title">Dominatrix-modus</string>
-    <string name="settings_dominatrix_mode_description">Charlotte-stemopdrachten. Overschrijft vulgaire pool indien actief.</string>
+    <string name="settings_dominatrix_mode_description">Stemopdrachten van Charlotte. Overschrijft de vulgaire selectie wanneer actief.</string>
     <string name="settings_dominatrix_unlock_toast">Dominatrix-modus ontgrendeld</string>
     <string name="settings_adults_only_title">Alleen voor volwassenen</string>
     <string name="settings_adults_only_body">Vulgaire modus bevat krachttermen en volwassen thema's. Ben je 18 of ouder?</string>
     <string name="settings_adults_only_confirm">Ik ben 18+ en oma hoort me niet</string>
     <string name="settings_adults_only_decline">Houd het netjes</string>
-    <string name="settings_adults_only_compliance_footer">Apple 16+ / Google Play IARC: Krachtige taal + Suggestieve thema's</string>
-    <string name="settings_ble_compat_title">BLE-compatibiliteitsmodus</string>
-    <string name="settings_ble_compat_description">Schrijfpad met kleine MTU dat verbroken verbindingen bij het starten van een workout op Pixel 6/7, Fold en Tablet verhelpt. Auto schakelt het alleen op die toestellen in.</string>
-    <string name="settings_ble_compat_description_affected">Schrijfpad met kleine MTU dat verbroken verbindingen bij het starten van een workout op Pixel 6/7, Fold en Tablet verhelpt. Auto schakelt het alleen op die toestellen in (dit toestel is getroffen).</string>
-    <string name="settings_ble_compat_auto">Auto</string>
-    <string name="settings_ble_compat_on">Aan</string>
-    <string name="settings_ble_compat_off">Uit</string>
-    <string name="settings_ble_compat_reconnect_hint">Wordt van kracht bij de volgende verbinding. Maak na het wijzigen opnieuw verbinding met de trainer.</string>
+    <string name="settings_adults_only_compliance_footer">Apple 16+ / Google Play IARC: Grof taalgebruik + Suggestieve thema's</string>
 
     <!-- ==================== RPG Attributes ==================== -->
     <string name="rpg_no_data_yet">Voltooi je eerste training om RPG-attributen te ontgrendelen</string>
     <!-- Just Lift exercise tagging -->
     <string name="action_tag">Labelen</string>
     <string name="action_change">Wijzigen</string>
-    <string name="tag_lift_title">Deze lift labelen?</string>
-    <string name="tag_lift_message">Deze Just Lift-set is nog niet aan een oefening gekoppeld. Labelen houdt je geschiedenis accuraat.</string>
+    <string name="tag_lift_title">Deze set labelen?</string>
+    <string name="tag_lift_message">Deze Just Lift-set is nog niet aan een oefening gekoppeld. Labelen houdt je geschiedenis nauwkeurig.</string>
     <string name="tag_exercise_prompt">Deze oefening labelen</string>
-    <string name="tag_exercise_hint">Label deze lift om hem bij te houden</string>
+    <string name="tag_exercise_hint">Label deze set om hem bij te houden</string>
     <string name="tag_exercise_action">Oefening labelen</string>
     <string name="exercise_tagged">Oefening gelabeld</string>
     <!-- #972: edit/clear a completed Just Lift exercise label -->
     <string name="action_clear_label">Wissen</string>
-    <string name="clear_exercise_label_title">Dit oefeninglabel verwijderen?</string>
-    <string name="clear_exercise_label_message">De lift blijft in je geschiedenis. Hij wordt Just Lift tot je hem opnieuw labelt.</string>
+    <string name="clear_exercise_label_title">Dit oefeningslabel verwijderen?</string>
+    <string name="clear_exercise_label_message">De set blijft in je geschiedenis. Hij wordt weergegeven als Just Lift totdat je hem opnieuw labelt.</string>
     <string name="clear_exercise_label_confirm">Label verwijderen</string>
     <!-- Routine launch modifiers (Issue #495) -->
     <string name="routine_modifier_active_recovery">Actief herstel starten…</string>
     <string name="routine_modifier_heavy_deload">Zware deload starten…</string>
-    <string name="routine_modifier_percent_label">Modifier</string>
+    <string name="routine_modifier_percent_label">Aanpassing</string>
     <string name="routine_modifier_start">Starten</string>
     <string name="routine_modifier_cancel">Annuleren</string>
-    <string name="routine_modifier_active_recovery_description">Gewichten worden verlaagd naar het gekozen 1RM-percentage; werkherhalingen blijven gelijk; warming-ups worden vereenvoudigd.</string>
+    <string name="routine_modifier_active_recovery_description">Gewichten worden verlaagd naar het gekozen percentage van je 1RM (indien bekend) of van het ingestelde gewicht; oefeningen met alleen lichaamsgewicht behouden hun belasting. Werkherhalingen blijven gelijk; warming-ups worden vereenvoudigd.</string>
     <string name="routine_modifier_heavy_deload_description">Herhalingen worden verlaagd naar het gekozen volumepercentage; gewichten blijven gelijk.</string>
 
     <!-- ==================== Equipment Rack (Issue #448) ==================== -->
-    <string name="equipment_rack_title">Equipment rack</string>
+    <string name="equipment_rack_title">Uitrustingsrek</string>
     <string name="equipment_rack_description">Beheer lokale accessoires en toegevoegde belasting voor trainingssessies.</string>
-    <string name="equipment_rack_empty">Nog geen rack-items.</string>
-    <string name="equipment_rack_add_item">Rack-item toevoegen</string>
-    <string name="equipment_rack_edit_item">Rack-item bewerken</string>
+    <string name="equipment_rack_empty">Nog geen rekitems.</string>
+    <string name="equipment_rack_add_item">Rekitem toevoegen</string>
+    <string name="equipment_rack_edit_item">Rekitem bewerken</string>
     <string name="equipment_rack_name_label">Naam item</string>
     <string name="equipment_rack_weight_label">Gewicht (%1$s)</string>
     <string name="equipment_rack_category_label">Categorie</string>
     <string name="equipment_rack_behavior_label">Belastingsgedrag</string>
     <string name="equipment_rack_enabled">Ingeschakeld</string>
     <string name="equipment_rack_invalid_name">Naam is verplicht.</string>
-    <string name="equipment_rack_invalid_weight">Voer een niet-negatief eindig gewicht in.</string>
-    <string name="equipment_rack_active_selection">Equipment rack</string>
+    <string name="equipment_rack_invalid_weight">Voer een geldig gewicht in (0 of hoger).</string>
+    <string name="equipment_rack_active_selection">Uitrustingsrek</string>
     <string name="equipment_rack_manage">Beheren</string>
-    <string name="equipment_rack_no_enabled_items">Geen ingeschakelde rack-items.</string>
-    <string name="equipment_rack_none_selected">Geen rack-items geselecteerd.</string>
-    <string name="equipment_rack_inline_context">Rack: %1$s</string>
+    <string name="equipment_rack_no_enabled_items">Geen ingeschakelde rekitems.</string>
+    <string name="equipment_rack_none_selected">Geen rekitems geselecteerd.</string>
+    <string name="equipment_rack_inline_context">Rek: %1$s</string>
     <string name="custom_equipment_title">Aangepaste apparatuur</string>
-    <string name="custom_equipment_description">Voeg je eigen apparatuurnamen (bijvoorbeeld EZ-bar) toe aan het apparatuurkeuzemenu en de filterchips van de oefening.</string>
+    <string name="custom_equipment_description">Voeg je eigen apparatuurnamen (bijvoorbeeld EZ-bar) toe aan het keuzemenu en de filterchips van oefeningen.</string>
     <string name="custom_equipment_manage">Beheren</string>
     <string name="cd_custom_equipment">Aangepaste apparatuur</string>
     <string name="custom_equipment_add_hint">Naam apparatuur</string>
@@ -603,7 +731,7 @@
     <string name="custom_equipment_remove_title">Apparatuur verwijderen?</string>
     <string name="custom_equipment_remove_message">Oefeningen die deze gebruiken houden een leesbare naam. Het item is geen filter of keuzeoptie meer. Dezelfde naam opnieuw toevoegen hergebruikt hem voor die oefeningen.</string>
     <string name="custom_equipment_official_title">Officiële apparatuur</string>
-    <string name="custom_equipment_official_body">De officiële lijst is vast. Je aangepaste namen verschijnen daarna in het oefeningsmenu en na de filterchips.</string>
+    <string name="custom_equipment_official_body">De officiële lijst staat vast. Je aangepaste namen verschijnen daarna in het keuzemenu en na de filterchips van oefeningen.</string>
     <string name="custom_equipment_error_empty">Voer een naam in met letters of cijfers.</string>
     <string name="custom_equipment_error_too_long">Namen kunnen maximaal 32 tekens lang zijn.</string>
     <string name="custom_equipment_error_comma">Namen mogen geen komma’s bevatten.</string>
@@ -612,10 +740,15 @@
     <string name="custom_equipment_error_duplicate">Die naam staat al in je lijst.</string>
     <string name="custom_equipment_error_limit">Je kunt maximaal 24 aangepaste apparatuurnamen opslaan.</string>
     <string name="custom_equipment_error_generic">Die naam kan niet worden opgeslagen.</string>
+    <string name="detailed_metrics_not_captured">Voor deze set zijn geen gedetailleerde metingen vastgelegd</string>
+    <!-- ==================== Set type labels (Issue #646) ==================== -->
+    <string name="set_type_calibration">Kalibratieherhalingen</string>
+    <string name="set_type_warmup">Opwarmset %1$d</string>
+    <string name="set_type_working">Werkset</string>
     <string name="equipment_rack_category_weighted_vest">Gewichtsvest</string>
     <string name="equipment_rack_category_dip_belt">Dipriem</string>
     <string name="equipment_rack_category_chains">Kettingen</string>
-    <string name="equipment_rack_category_band">Band</string>
+    <string name="equipment_rack_category_band">Weerstandsband</string>
     <string name="equipment_rack_category_assistance">Assistentie</string>
     <string name="equipment_rack_category_attachment">Hulpstuk</string>
     <string name="equipment_rack_category_other">Overig</string>
@@ -623,20 +756,71 @@
     <string name="equipment_rack_behavior_counterweight">Contragewicht</string>
     <string name="equipment_rack_behavior_display_only">Alleen weergave</string>
     <string name="equipment_rack_behavior_added_short">+Last</string>
-    <string name="equipment_rack_behavior_counterweight_short">-CW</string>
+    <string name="equipment_rack_behavior_counterweight_short">-CG</string>
     <string name="equipment_rack_behavior_display_only_short">Weergave</string>
-    <string name="equipment_rack_save_override_title">Override opslaan?</string>
+    <string name="equipment_rack_save_override_title">Afwijking opslaan?</string>
     <string name="equipment_rack_save_override_message">Deze gedragsconfiguratie als standaard opslaan voor %1$s in deze routine?</string>
     <string name="equipment_rack_save_override_confirm">Opslaan</string>
     <string name="equipment_rack_save_override_dismiss">Alleen deze keer</string>
-    <string name="cd_equipment_rack">Equipment rack</string>
-    <string name="bodyweight_effective_load_includes">Inclusief: %1$s</string>
-    <string name="bodyweight_effective_load_more">+%1$d meer</string>
-    <!-- ==================== Set type labels (Issue #646) ==================== -->
-    <string name="set_type_calibration">Calibration Reps</string>
-    <string name="set_type_warmup">Warm-up Set %1$d</string>
-    <string name="set_type_working">Working Set</string>
+    <string name="cd_equipment_rack">Uitrustingsrek</string>
 
+    <!-- ==================== Accessibility: profile color picker (task-1.2) ==================== -->
+    <string name="color_blue">Blauw</string>
+    <string name="color_green">Groen</string>
+    <string name="color_amber">Amber</string>
+    <string name="color_red">Rood</string>
+    <string name="color_purple">Paars</string>
+    <string name="color_pink">Roze</string>
+    <string name="color_cyan">Cyaan</string>
+    <string name="color_orange">Oranje</string>
+    <string name="cd_select_profile_color">Selecteer %1$s als profielkleur</string>
+
+    <!-- ==================== Accessibility: rep counter live region (task-1.2) ==================== -->
+    <string name="cd_rep_counter">%1$d van %2$d herhalingen, %3$s</string>
+    <string name="cd_phase_idle">rust</string>
+    <string name="cd_phase_concentric">concentrisch</string>
+    <string name="cd_phase_eccentric">excentrisch</string>
+
+    <!-- ==================== Accessibility: day chip merged description (task-1.2) ==================== -->
+    <string name="cd_day_chip_completed">Dag %1$d, voltooid</string>
+    <string name="cd_day_chip_missed">Dag %1$d, gemist</string>
+    <string name="cd_day_chip_current">Dag %1$d, huidige</string>
+    <string name="cd_day_chip_upcoming">Dag %1$d, gepland</string>
+    <string name="cd_day_chip_rest">Dag %1$d, rustdag</string>
+
+    <!-- ==================== Exercise detail (task-3.5) ==================== -->
+    <string name="exercise_unknown">Onbekende oefening</string>
+
+    <!-- ==================== Destructive confirm dialogs (task-3.7) ==================== -->
+    <string name="delete_workout_title">Training verwijderen?</string>
+    <string name="delete_workout_message">Deze actie kan niet ongedaan worden gemaakt.</string>
+    <string name="delete_all_sets">Alle sets verwijderen</string>
+    <string name="delete_routine_session_title">Routinesessie verwijderen?</string>
+    <string name="delete_routine_session_message">Hiermee verwijder je alle %1$d sets uit deze routine. Deze actie kan niet ongedaan worden gemaakt.</string>
+    <string name="delete_all_workouts_title">Alle trainingen verwijderen?</string>
+    <string name="delete_all_workouts_message">Hiermee verwijder je permanent de volledige trainingsgeschiedenis voor %1$s. Deze actie kan niet ongedaan worden gemaakt.</string>
+
+    <!-- ==================== Dialog slot/hierarchy fixes (task-3.8) ==================== -->
+    <string name="bulk_weight_adjust_select_hint">Selecteer een percentage of voer een waarde in om Toepassen in te schakelen</string>
+    <string name="bulk_adjust_hint_pr_scaled">Alle oefeningen gebruiken op PR geschaalde gewichten — niets om aan te passen</string>
+
+    <!-- ==================== Unsaved-changes guard (task-4A.2) ==================== -->
+    <string name="discard_changes_title">Wijzigingen verwerpen?</string>
+    <string name="discard_changes_message">Je hebt niet-opgeslagen wijzigingen. Als je teruggaat, gaan deze verloren.</string>
+
+    <!-- ==================== Pager / overlay accessibility (task-4A.5) ==================== -->
+    <string name="pager_page_of">Pagina %1$d van %2$d</string>
+
+    <!-- ==================== VBT assessment entry points (task-4B.0) ==================== -->
+    <string name="strength_assessment_cta_title">Krachtmeting</string>
+    <string name="strength_assessment_cta_subtitle">Bepaal je 1RM met snelheidsgebaseerde tests</string>
+    <string name="cd_strength_assessment_cta">Krachtmetingskiezer openen</string>
+    <string name="cd_exercise_history_detail">Oefeningsgeschiedenis en 1RM bekijken</string>
+
+    <!-- ==================== Just Lift auto-start honesty (task-5B.3) ==================== -->
+    <string name="autostart_connect_prompt">Verbind om automatisch starten in te schakelen</string>
+    <string name="autostart_ready">KLAAR VOOR AUTO-START</string>
+    <string name="autostart_grab_handles">Pak de handgrepen om te starten</string>
     <string name="nav_profile">Profiel</string>
     <string name="cd_profile">Profiel</string>
     <string name="cd_open_profile_switcher">Profielwisselaar openen</string>
@@ -669,10 +853,11 @@
     <string name="profile_update_failed">Deze profielvoorkeur kon niet worden opgeslagen</string>
     <string name="profile_switch_failed">Profiel wisselen is mislukt</string>
     <string name="profile_create_failed">Profiel maken is mislukt</string>
+    <string name="profile_switch_blocked_during_workout">Voltooi of beëindig je training voordat je van profiel wisselt</string>
     <string name="profile_recovery_title">Profielherstel vereist</string>
-    <string name="profile_recovery_message">Phoenix kan niet bevestigen welk profiel actief is. Probeer opnieuw voordat u doorgaat.</string>
+    <string name="profile_recovery_message">Phoenix kan niet bevestigen welk profiel actief is. Probeer opnieuw voordat je doorgaat.</string>
     <string name="profile_recovery_retry_failed">Profielherstel is nog niet beschikbaar</string>
-    <string name="profile_delete_reassign_message">&quot;%1$s&quot; verwijderen? Trainingen, routines, records, badges, metingen en voortgang worden naar Default verplaatst. Dit kan niet ongedaan worden gemaakt.</string>
+    <string name="profile_delete_reassign_message">&quot;%1$s&quot; verwijderen? Trainingen, routines, records, badges, metingen en voortgang worden naar Standaard verplaatst. Dit kan niet ongedaan worden gemaakt.</string>
     <string name="profile_delete_merge_action">Samenvoegen met Standaard</string>
     <string name="profile_delete_permanent_action">Definitief verwijderen</string>
     <string name="profile_delete_permanent_message">Of verwijder &quot;%1$s&quot; definitief: de trainingen, routines, cycli en records worden van dit apparaat en uit je portaalaccount verwijderd. Dit kan niet ongedaan worden gemaakt.</string>
@@ -680,6 +865,11 @@
     <string name="settings_show_exercise_videos">Oefendemonstraties tonen</string>
     <string name="settings_show_exercise_videos_description">Toon oefendemonstraties; schakel dit uit op tragere apparaten</string>
     <string name="settings_exercise_demos_disabled">Oefendemonstraties uitgeschakeld</string>
+    <string name="settings_refresh_wger_catalog">Extra oefeningen vernieuwen via wger</string>
+    <string name="settings_refresh_wger_catalog_description">Downloadt oefeningen met een open licentie van wger (CC-BY-SA). Vervangt de ingebouwde catalogus niet.</string>
+    <string name="settings_refresh_wger_catalog_success">%1$d oefeningen toegevoegd van wger</string>
+    <string name="settings_refresh_wger_catalog_error">Kan niet vernieuwen via wger</string>
+    <string name="settings_refresh_wger_catalog_in_progress">Vernieuwen…</string>
     <string name="profile_weight_increment">Gewichtsstap</string>
     <string name="profile_body_weight">Lichaamsgewicht</string>
     <string name="profile_set_summary">Duur setoverzicht</string>
@@ -690,21 +880,12 @@
     <string name="profile_rep_completion_sound">Geluid na herhaling</string>
     <string name="profile_motion_start">Set starten door beweging</string>
     <string name="profile_gamification">Gamificatie</string>
-    <string name="profile_default_scaling_basis">Standaardbasis voor gewichtschaal</string>
+    <string name="profile_default_scaling_basis">Standaardbasis voor gewichtsschaling</string>
     <string name="profile_stop_at_top">Stoppen bovenaan</string>
-    <string name="profile_stall_detection">Stildetectie</string>
+    <string name="profile_stall_detection">Stilstanddetectie</string>
     <string name="profile_velocity_loss_threshold">Drempel voor snelheidsverlies</string>
     <string name="profile_auto_end_velocity_loss">Automatisch stoppen bij snelheidsverlies</string>
     <string name="profile_vbt_history_note">VBT uitschakelen beïnvloedt alleen live trainingen; opgeslagen schattingen en metingen blijven beschikbaar.</string>
-    <string name="color_blue">Blauw</string>
-    <string name="color_green">Groen</string>
-    <string name="color_amber">Amber</string>
-    <string name="color_red">Rood</string>
-    <string name="color_purple">Paars</string>
-    <string name="color_pink">Roze</string>
-    <string name="color_cyan">Cyaan</string>
-    <string name="color_orange">Oranje</string>
-    <string name="cd_select_profile_color">Selecteer %1$s als profielkleur</string>
     <string name="profile_automatic">Automatisch</string>
     <string name="profile_manual">Handmatig</string>
     <string name="profile_master_beeps">Trainingspiepjes</string>
@@ -729,23 +910,49 @@
     <string name="profile_adult_enable_partial_failure">De leeftijdsbevestiging is opgeslagen, maar de vulgaire modus kon niet worden ingeschakeld. Probeer het opnieuw.</string>
     <string name="label_previously_completed">Eerder voltooid</string>
     <string name="cd_filter_previously_completed">Eerder voltooide oefeningen filteren</string>
-    <!-- #764: startup storage failure screen -->
-    <string name="startup_storage_attention_title">Lokale opslag vraagt aandacht</string>
-    <string name="startup_local_data_preserved_title">Lokale gegevens behouden</string>
-    <string name="startup_storage_failed_message">Phoenix kon de lokale opslag niet veilig voorbereiden. Bestaande lokale gegevens zijn niet gewijzigd. Je kunt het opnieuw proberen zodra het apparaat- of opslagprobleem is opgelost.</string>
+    <string name="cd_filter_essentials">Alleen basisoefeningen tonen</string>
+    <!-- PR 25: crash report prompt -->
+    <string name="crash_report_title">Crashrapport beschikbaar</string>
+    <string name="crash_report_message">De app is de vorige keer onverwacht afgesloten. Het crashrapport delen? Het bevat technische details over de fout; controleer het voordat je het openbaar deelt.</string>
+    <string name="crash_report_share">Delen</string>
+    <string name="crash_report_dismiss">Niet nu</string>
     <string name="startup_dual_databases_message">Phoenix heeft meer dan één kopie van zijn lokale database gevonden en kon niet veilig bepalen welke bewaard moet worden, dus is geen van beide geopend. Er is niets verwijderd. Exporteer de databasebestanden om een kopie te bewaren en mail ze privé naar support@phoenix-portal.com, samen met de diagnose- en supportcode hieronder. De bestanden bevatten je trainingsgeschiedenis, dus voeg ze niet toe aan een openbaar issue. Opnieuw proberen controleert het opnieuw zodra support je heeft geholpen.</string>
     <string name="startup_export_database_files">Databasebestanden exporteren</string>
     <string name="startup_export_failed">De databasebestanden konden niet worden geëxporteerd. Er is niets gewijzigd; je kunt het opnieuw proberen.</string>
     <string name="startup_contact_support">Support mailen</string>
+    <string name="startup_storage_attention_title">Lokale opslag vraagt aandacht</string>
+    <string name="startup_local_data_preserved_title">Lokale gegevens behouden</string>
+    <string name="startup_storage_failed_message">Phoenix kon de lokale opslag niet veilig voorbereiden. Bestaande lokale gegevens zijn niet gewijzigd. Je kunt het opnieuw proberen zodra het apparaat- of opslagprobleem is opgelost.</string>
     <string name="startup_diagnostic_code">Diagnosecode: %1$s</string>
     <string name="startup_support_code">Supportcode: %1$s</string>
     <string name="startup_initialization_failed_message">Phoenix kon niet volledig opstarten. Laat de app geïnstalleerd om je lokale gegevens te bewaren. Probeer het opnieuw of neem contact op met support als het probleem blijft.</string>
     <string name="startup_share_diagnostics">Opstartdiagnostiek delen</string>
     <string name="startup_share_diagnostics_failed">Het deelmenu kon niet worden geopend. Je kunt het opnieuw proberen.</string>
+    <!-- PR 28: voice safe-word emergency stop availability -->
+    <string name="voice_stop_unavailable_chip">Spraakstop niet beschikbaar: %1$s</string>
+    <string name="voice_stop_unavailable_snackbar">Spraakstop niet beschikbaar: %1$s. Gebruik de Stop-knop op het scherm om de set te beëindigen.</string>
+    <string name="voice_stop_reason_profile_switching">profiel wordt nog geladen</string>
+    <string name="voice_stop_reason_not_configured">geen veiligheidswoord ingesteld</string>
+    <string name="voice_stop_reason_not_calibrated">veiligheidswoord niet gekalibreerd</string>
+    <string name="voice_stop_reason_recognizer_unavailable">spraakherkenning niet beschikbaar op dit apparaat</string>
+    <string name="voice_stop_reason_permission">microfoontoestemming geweigerd</string>
+    <string name="voice_stop_reason_audio_focus_lost">een andere app gebruikt de microfoon</string>
+    <string name="voice_stop_reason_start_failed">spraakherkenning kon niet starten</string>
+    <!-- PR 11: account-switch dialog and ownership-conflict recovery -->
+    <string name="account_switch_title">De gegevens op deze telefoon horen bij een ander account</string>
+    <string name="account_switch_message">Je bent ingelogd als %1$s, maar de gegevens op deze telefoon horen bij %2$s. Trainingen die al zijn gesynchroniseerd naar %2$s blijven op deze telefoon en in dat account; ze worden niet geüpload naar %1$s.</string>
+    <string name="account_switch_upload_never_synced">Nog niet gesynchroniseerde trainingen uploaden</string>
+    <string name="account_switch_exclude_all">Bestaande gegevens niet uploaden</string>
+    <string name="ownership_conflict_title">Upload geweigerd</string>
+    <string name="ownership_conflict_message">Het portaal heeft gegevens geweigerd die bij een ander account horen: %1$s</string>
+    <string name="ownership_conflict_action">Stop met het uploaden van gegevens van vóór de accountwissel</string>
+    <string name="cycle_training_max_missing_title">Trainingsmax niet ingesteld</string>
+    <string name="cycle_training_max_missing_body">Wekelijkse verhogingen van het trainingsmax worden overgeslagen voor %1$s totdat dit profiel er een trainingsmax voor heeft.</string>
+    <string name="cycle_training_max_missing_action">Trainingsmax instellen</string>
 
     <!-- Shared/opened routine CSV files (#1242) -->
-    <string name="routine_csv_imported_builder">Geïmporteerd naar Builder: %1$s</string>
-    <string name="routine_csv_imported_builder_more">Geïmporteerd naar Builder: %1$s (+%2$d meer in Dagelijkse routines)</string>
+    <string name="routine_csv_imported_builder">Geïmporteerd naar de editor: %1$s</string>
+    <string name="routine_csv_imported_builder_more">Geïmporteerd naar de editor: %1$s (+%2$d meer in Dagelijkse routines)</string>
     <string name="routine_csv_saved_daily">Geïmporteerd: %1$s. Staat in Dagelijkse routines.</string>
     <string name="action_open">Openen</string>
     <string name="routine_csv_import_busy">Er is al een import bezig. Deel het bestand opnieuw als die klaar is.</string>
@@ -757,122 +964,19 @@
     <string name="home_recent_activity_date_pattern">dd-MM-yyyy</string>
     <string name="home_recent_activity_time_pattern">HH:mm</string>
     <string name="home_recent_activity_date_time_separator"> • </string>
-    <!-- ==================== Intervals.icu uitgaande synchronisatie (#1384) ==================== -->
-    <string name="intervals_screen_title">Intervals.icu</string>
-    <string name="intervals_back_cd">Terug</string>
-    <string name="intervals_send_workouts_title">Workouts versturen</string>
-    <string name="intervals_send_workouts_subtitle">Stuur voltooide workouts automatisch naar Intervals.icu</string>
-    <string name="intervals_send_workouts_cd">Instellingen voor Workouts versturen openen</string>
-
-    <!-- Toelichting -->
-    <string name="intervals_disclosure_title">Hoe delen werkt</string>
-    <string name="intervals_disclosure_strength">Elke voltooide workout wordt verstuurd als één krachttraining-activiteit met herhalingen en gewicht van elke set.</string>
-    <string name="intervals_disclosure_hr">Gemiddelde en maximale hartslag worden toegevoegd wanneer een hartslagmeter ze heeft geregistreerd. Geen band nodig.</string>
-    <string name="intervals_disclosure_credentials">Je atleten-ID en API-sleutel worden alleen op deze telefoon bewaard, in de beveiligde opslag.</string>
-    <string name="intervals_disclosure_future_only">Alleen workouts die na het inschakelen zijn voltooid, worden verstuurd. Bestaande geschiedenis wordt nooit geüpload.</string>
-    <string name="intervals_disclosure_no_edit_sync">Wijzigingen en verwijderingen in Phoenix worden later niet verstuurd. Elke workout wordt één keer geüpload.</string>
-    <string name="intervals_disclosure_no_onward">Phoenix stuurt workouts alleen naar Intervals.icu — nooit door naar andere diensten.</string>
-    <string name="intervals_disclosure_no_background">Workouts worden verstuurd terwijl Phoenix open is. Versturen op de achtergrond is niet gegarandeerd.</string>
-    <string name="intervals_disclosure_backup_tradeoff">Omdat ruwe databasebestanden niet van deze inloggegevens kunnen worden ontdaan, blijven ZIP-ondersteuningsexporten uit in builds met deze integratie. Je gewone JSON-trainingsbackups blijven werken.</string>
-
-    <!-- Onderscheid in drie toestanden -->
-    <string name="intervals_three_way_title">Opgeslagen, in wachtrij, verstuurd</string>
-    <string name="intervals_three_way_saved">Opgeslagen — de workout staat op deze telefoon.</string>
-    <string name="intervals_three_way_queued">In wachtrij — wacht op upload naar Intervals.icu.</string>
-    <string name="intervals_three_way_sent">Verstuurd — bevestigd op Intervals.icu.</string>
-
-    <!-- Inloggegevens -->
-    <string name="intervals_athlete_id_label">Atleten-ID</string>
-    <string name="intervals_athlete_id_hint">bijv. i123456</string>
-    <string name="intervals_api_key_label">API-sleutel</string>
-    <string name="intervals_api_key_hint">Je Intervals.icu API-sleutel</string>
-    <string name="intervals_api_key_show_cd">API-sleutel tonen</string>
-    <string name="intervals_api_key_hide_cd">API-sleutel verbergen</string>
-
-    <!-- Validatie- en actiefouten -->
-    <string name="intervals_error_athlete_id_required">Voer je Intervals.icu atleten-ID in.</string>
-    <string name="intervals_error_athlete_id_invalid">Dit atleten-ID lijkt niet correct. Gebruik letters, cijfers, koppelstreepjes of underscores, zoals i123456.</string>
-    <string name="intervals_error_api_key_required">Voer je Intervals.icu API-sleutel in.</string>
-    <string name="intervals_error_network">Kon Intervals.icu niet bereiken. Controleer je verbinding en probeer opnieuw.</string>
-    <string name="intervals_error_credentials_rejected">Intervals.icu heeft deze inloggegevens geweigerd. Controleer het atleten-ID en de API-sleutel.</string>
-    <string name="intervals_error_validation_rejected">Intervals.icu heeft het verzoek geweigerd.</string>
-    <string name="intervals_error_enable_failed">Verzenden kon niet worden ingeschakeld. Controleer of je inloggegevens zijn opgeslagen en probeer opnieuw.</string>
-
-    <!-- Acties -->
-    <string name="intervals_action_save">Opslaan</string>
-    <string name="intervals_action_test">Verbinding testen</string>
-    <string name="intervals_action_testing">Testen…</string>
-    <string name="intervals_action_enable">Versturen aanzetten</string>
-    <string name="intervals_action_pause">Versturen pauzeren</string>
-    <string name="intervals_action_resume">Versturen hervatten</string>
-    <string name="intervals_action_disconnect">Verbinding verbreken</string>
-    <string name="intervals_action_check_upload">Uploadstatus controleren</string>
-    <string name="intervals_action_retry_check">Controle opnieuw proberen</string>
-
-    <!-- Statuslabels -->
-    <string name="intervals_status_off">Uit</string>
-    <string name="intervals_status_draft">Niet ingesteld</string>
-    <string name="intervals_status_testing">Verbinding testen</string>
-    <string name="intervals_status_tested_disabled">Getest — nog uit</string>
-    <string name="intervals_status_enabled">Aan</string>
-    <string name="intervals_status_paused">Gepauzeerd</string>
-    <string name="intervals_status_auth_required">Aanmelding nodig</string>
-    <string name="intervals_status_secure_store_unavailable">Beveiligde opslag niet beschikbaar</string>
-    <string name="intervals_status_offline_queued">In wachtrij — wacht op versturen</string>
-    <string name="intervals_status_retry_exhausted">Upload gestopt</string>
-    <string name="intervals_status_uncertain">Uploadstatus onbekend</string>
-    <string name="intervals_status_disconnect_confirm">Verbinding verbreken?</string>
-
-    <!-- Statusberichten -->
-    <string name="intervals_message_off">Het versturen van voltooide workouts naar Intervals.icu staat uit.</string>
-    <string name="intervals_message_draft">Voer je atleten-ID en API-sleutel in om het versturen in te stellen.</string>
-    <string name="intervals_message_tested_disabled">Verbinding getest. Versturen blijft uit totdat je het aanzet.</string>
-    <string name="intervals_message_enabled">Nieuwe voltooide workouts worden naar Intervals.icu verstuurd.</string>
-    <string name="intervals_message_paused">Versturen is gepauzeerd. Nu voltooide workouts blijven op deze telefoon en worden later niet alsnog verstuurd.</string>
-    <string name="intervals_message_auth_required">Intervals.icu heeft de opgeslagen inloggegevens geweigerd. Werk je API-sleutel bij om opnieuw te versturen.</string>
-    <string name="intervals_message_secure_store_unavailable">Phoenix bewaart je sleutel in de beveiligde opslag van het apparaat, die nu niet beschikbaar is. Versturen blijft uit en er wordt niets in platte tekst bewaard.</string>
-    <string name="intervals_message_offline_queued">Workouts zijn opgeslagen en staan in de wachtrij. Ze worden verstuurd zodra er een verbinding is.</string>
-    <string name="intervals_message_retry_exhausted">Sommige uploads zijn na te veel pogingen gestopt. Er wordt niets automatisch opnieuw geüpload.</string>
-    <string name="intervals_message_uncertain">We konden niet bevestigen of een workout Intervals.icu heeft bereikt. Controleer eerst de uploadstatus — Phoenix uploadt niet blind opnieuw.</string>
-    <string name="intervals_message_checking">Uploadstatus controleren…</string>
-    <string name="intervals_message_check_done">Uploadstatus gecontroleerd.</string>
-    <string name="intervals_message_check_failed">Kon de uploadstatus niet controleren. Er is niets opnieuw geüpload.</string>
-    <string name="intervals_message_saved">Inloggegevens opgeslagen op deze telefoon.</string>
-
-    <!-- Tellers per profiel en bestemming -->
-    <string name="intervals_counters_title">Dit profiel en deze atleet</string>
-    <string name="intervals_counters_last_sent">Laatst verstuurd</string>
-    <string name="intervals_counters_never">Nooit</string>
-    <string name="intervals_counters_queued">In wachtrij</string>
-    <string name="intervals_counters_sent">Verstuurd</string>
-    <string name="intervals_counters_uncertain">Onzeker</string>
-    <string name="intervals_counters_failed">Mislukt</string>
-
-    <!-- Bevestiging verbreken -->
-    <string name="intervals_disconnect_title">Verbinding met Intervals.icu verbreken?</string>
-    <string name="intervals_disconnect_message">Phoenix zet versturen uit en verwijdert je sleutel van deze telefoon. Workouts die al naar Intervals.icu zijn verstuurd, blijven op Intervals.icu.</string>
-    <string name="intervals_disconnect_confirm">Verbinding verbreken</string>
-
-    <!-- Permanente foutcodes -->
-    <string name="intervals_reason_label">Reden</string>
-    <string name="intervals_reason_retry_exhausted">Te veel pogingen</string>
-    <string name="intervals_reason_lease_expired">Verstuurpoging verlopen</string>
-    <string name="intervals_reason_auth_required">Inloggegevens geweigerd</string>
-    <string name="intervals_reason_validation_rejected">Intervals.icu heeft de workout geweigerd</string>
-    <string name="intervals_reason_payload_too_large">Workoutdetails te groot om te versturen</string>
-    <string name="intervals_reason_safe_retryable">Tijdelijk probleem</string>
-    <string name="intervals_reason_ambiguous_outcome">Levering niet bevestigd</string>
-    <string name="intervals_reason_incomplete_reconciliation">Statuscontrole was onvolledig</string>
-    <string name="intervals_reason_no_remote_match">Geen overeenkomende activiteit gevonden</string>
-    <string name="intervals_reason_multiple_remote_matches">Meer dan één overeenkomende activiteit gevonden</string>
-    <string name="intervals_reason_suppressed_by_pause">Gepauzeerd</string>
+    <!-- Issue #1367: Workout control size preference. -->
+    <string name="settings_weight_text_size">Grootte van trainingsbediening</string>
+    <string name="settings_weight_text_size_standard">Standaard</string>
+    <string name="settings_weight_text_size_large">Groot</string>
+    <string name="settings_weight_text_size_extra_large">Extra groot</string>
+    <string name="cd_weight_text_size">Grootte van trainingsbediening</string>
     <!-- Issue #1358: custom-exercise photos (Phase 1) -->
     <string name="media_photos_count">Foto's · %1$d van %2$d</string>
     <string name="media_add_photos">Foto's toevoegen</string>
     <string name="media_photos_helper">Tot 6 foto's · 10 MB per stuk</string>
-    <string name="media_photos_privacy_note">Kopieën worden privé op dit apparaat bewaard. Je originen blijven ongewijzigd.</string>
+    <string name="media_photos_privacy_note">Kopieën worden privé op dit apparaat bewaard. Je originelen blijven ongewijzigd.</string>
     <string name="media_flipbook_note">Tijdens trainingen worden maximaal 2 foto's roulerend getoond.</string>
-    <string name="media_preference_off_notice">Oefendemo's staan uit. Schakel ze in bij Instellingen om foto's toe te voegen of te bekijken.</string>
+    <string name="media_preference_off_notice">Oefendemonstraties staan uit. Schakel ze in bij Instellingen om foto's toe te voegen of te bekijken.</string>
     <string name="media_copying_progress">Foto's kopiëren… %1$d van %2$d</string>
     <string name="media_photo_badge">Foto</string>
     <string name="media_preview_title">Foto %1$d van %2$d</string>
@@ -887,7 +991,7 @@
     <string name="media_error_too_large">Geen foto's toegevoegd: %1$s is groter dan 10 MB.</string>
     <string name="media_error_unsupported">Geen foto's toegevoegd: %1$s is geen ondersteunde afbeelding.</string>
     <string name="media_error_unreadable">Geen foto's toegevoegd: %1$s kon niet worden gelezen.</string>
-    <string name="media_error_missing_staged">Niet opgeslagen: %1$s kon niet worden gevonden. Verwijder ze of selecteer ze opnieuw en probeer het opnieuw.</string>
+    <string name="media_error_missing_staged">Niet opgeslagen: %1$s niet gevonden. Verwijder of selecteer opnieuw en probeer het nogmaals.</string>
     <string name="media_error_generic">Geen foto's toegevoegd. Probeer het opnieuw.</string>
     <string name="media_save_media_failed">Oefening opgeslagen; foto's konden niet worden opgeslagen. Voeg foto's opnieuw toe.</string>
     <string name="media_save_busy">Foto's worden nog toegevoegd. Wacht tot de selectie klaar is en sla daarna op.</string>
@@ -895,12 +999,679 @@
     <string name="media_delete_cleanup_transient">Oefening verwijderd. Lokale foto's opschonen…</string>
     <string name="media_save_failed">De oefening kon niet worden opgeslagen. Probeer het opnieuw.</string>
     <string name="media_delete_failed">De oefening kon niet worden verwijderd. Probeer het opnieuw.</string>
-    <string name="delete_exercise_media_message">Deze oefening en de bijbehorende foto's verwijderen? Je originen blijven ongewijzigd.</string>
-    <string name="settings_exercise_demos_photos_note">Oefendemo's bepalen ook of foto's die je aan aangepaste oefeningen toevoegt zichtbaar zijn.</string>
-    <!-- Issue #1360: rest-control rejection feedback. -->
-    <string name="rest_control_not_resting">De rusttimer is nu niet actief.</string>
-    <string name="rest_control_stale_owner">Deze rust is gewijzigd voordat de wijziging is toegepast.</string>
-    <string name="rest_control_authority_failed">De huidige rust kon niet worden bevestigd. De wijziging is niet toegepast.</string>
-    <string name="rest_control_persistence_failed">De wijziging aan de rust kon niet worden opgeslagen. Je kunt het opnieuw proberen.</string>
-    <string name="rest_control_post_write_drift">De rust is gewijzigd tijdens het opslaan. De wijziging is mogelijk niet toegepast.</string>
+    <string name="delete_exercise_media_message">Deze oefening en de bijbehorende foto's verwijderen? Je originelen blijven ongewijzigd.</string>
+    <string name="settings_exercise_demos_photos_note">Oefendemonstraties bepalen ook of foto's die je aan aangepaste oefeningen toevoegt zichtbaar zijn.</string>
+
+    <!-- Wave 3A: Extracted UI strings -->
+
+    <!-- Settings Tab -->
+    <string name="settings_like_work">Tevreden met mijn werk?</string>
+    <string name="settings_donate_description">Deze app is 100% gratis en reclamevrij, maar een donatie wordt natuurlijk zeer gewaardeerd!</string>
+    <string name="settings_cloud_sync_description">Synchroniseer je trainingen met het Phoenix Portal voor toegang op al je apparaten</string>
+    <string name="settings_link_portal_account">Portal-account koppelen</string>
+    <string name="settings_integrations">Integraties</string>
+    <string name="settings_integrations_description">Koppel Hevy, Liftosaur, gezondheidsapps en importeer/exporteer CSV</string>
+    <string name="settings_data_management">Gegevensbeheer</string>
+    <string name="settings_auto_backup_title">Auto-back-up van trainingen &amp; routines</string>
+    <string name="settings_auto_backup_description">Sla losse trainingen en voltooide routines automatisch op als lokale back-upbestanden</string>
+    <string name="settings_auto_backup_description_with_location">Sla losse trainingen en voltooide routines automatisch op als lokale back-upbestanden. %1$s</string>
+    <string name="settings_include_raw_telemetry_title">Ruwe telemetrie opnemen</string>
+    <string name="settings_include_raw_telemetry_description">Voeg elke ruwe kracht- en positiemeting toe aan back-ups. Dit maakt back-ups veel groter; trainingen, herhalingen en records worden altijd meegenomen</string>
+    <string name="settings_backup_location">Back-uplocatie</string>
+    <string name="settings_backup_location_default">Standaard (%1$s)</string>
+    <string name="settings_change_location">Locatie wijzigen</string>
+    <string name="settings_reset_to_default">Standaard herstellen</string>
+    <string name="settings_backup_file_one">1 back-upbestand</string>
+    <string name="settings_backup_file_other">%1$d back-upbestanden</string>
+    <string name="settings_open_backup_folder">Back-upmap openen</string>
+    <string name="settings_delete_all_workouts">Alle trainingen verwijderen</string>
+    <string name="settings_developer_tools">Ontwikkelaarshulpmiddelen</string>
+    <string name="settings_connection_logs">Verbindingslogs</string>
+    <string name="settings_connection_logs_description">Bekijk Bluetooth-debuglogs om verbindingsproblemen op te sporen</string>
+    <string name="settings_test_sounds">Geluiden testen</string>
+    <string name="settings_test_sounds_description">Test de huidige trainingsgeluiden; voor de gesproken teller is Profiel &gt; Trainingsgedrag &gt; Gesproken herhalingsteller vereist.</string>
+    <string name="settings_app_info">App-info</string>
+    <string name="settings_app_info_description">Open-source communityproject om Phoenix Trainer-machines lokaal aan te sturen.</string>
+    <string name="settings_unknown_error">Onbekende fout</string>
+    <string name="settings_unknown_database_error">Onbekende databasefout</string>
+    <string name="settings_backup_complete">Back-up voltooid</string>
+    <string name="settings_restore_incomplete">Herstel onvolledig</string>
+    <string name="settings_restore_complete">Herstel voltooid</string>
+    <string name="settings_restore_imported">Geïmporteerd: %1$d</string>
+    <string name="settings_restore_already_present">Al aanwezig: %1$d</string>
+    <string name="settings_restore_failed">Mislukt: %1$d</string>
+    <string name="settings_restore_repaired_references">Herstelde verwijzingen: %1$d</string>
+    <string name="settings_restore_incomplete_detail_one">Herstel onvolledig: 1 item kon niet worden hersteld. De aantallen hierboven geven het gedeeltelijke resultaat weer.</string>
+    <string name="settings_restore_incomplete_detail_other">Herstel onvolledig: %1$d items konden niet worden hersteld. De aantallen hierboven geven het gedeeltelijke resultaat weer.</string>
+    <string name="settings_creating_backup">Back-up maken…</string>
+    <string name="settings_restoring_data">Gegevens herstellen…</string>
+    <string name="settings_import_failed_detail">Importeren mislukt (%1$s): %2$s</string>
+
+    <!-- Connection Lost Safety Dialog -->
+    <string name="connection_lost_reconnect_hint">Opnieuw verbinden kan een softwarematige stop aanvragen, maar bewijst niet dat de kabels onbelast zijn. Volg de veiligheidsinstructies van de trainer; uitschakelen van het apparaat is een geldig laatste redmiddel.</string>
+    <string name="connection_lost_confirm_load_hint">Nieuwe sets blijven geblokkeerd totdat je bevestigt. Controleer de trainer zelf: handgrepen in ruststand en kabels zonder extra trekkracht boven de normale lichte rustspanning.</string>
+    <string name="connection_lost_unknown_load">Phoenix kan niet bevestigen of er nog weerstand actief is. Ga er niet van uit dat de machine onbelast is.</string>
+    <string name="connection_lost_title">Verbinding verloren</string>
+    <string name="connection_lost_message">Bluetooth-verbinding met de trainer is verbroken. %1$s</string>
+    <string name="connection_lost_set_end_title">Einde van set niet bevestigd</string>
+    <string name="connection_lost_set_end_message">Phoenix heeft geen bevestiging ontvangen dat je laatste set op deze trainer is geëindigd met een stopopdracht. %1$s</string>
+    <string name="connection_lost_unconfirmed_title">Trainerbelasting onbevestigd</string>
+    <string name="connection_lost_unconfirmed_message">Phoenix heeft een onopgeloste veiligheidsmelding voor deze trainer. %1$s</string>
+    <string name="connection_lost_phase_connecting">Trainer zoeken en softwarematige stop aanvragen…</string>
+    <string name="connection_lost_phase_acknowledged">Stop aangevraagd via Bluetooth en bevestigd door de trainer. Dit bewijst niet dat de kabels onbelast zijn: controleer de handgrepen en bevestig hieronder.</string>
+    <string name="connection_lost_phase_wrong_device">Er is een andere trainer verbonden, dus er is geen stop aangevraagd. Verbind met de oorspronkelijke trainer of controleer zelf en bevestig hieronder.</string>
+    <string name="connection_lost_phase_disconnect_during_stop">Bluetooth viel weg tijdens het verzenden van de stopopdracht. Probeer opnieuw of controleer de trainer zelf en bevestig hieronder.</string>
+    <string name="connection_lost_phase_transport_fail">De stopopdracht kon niet worden verzonden. Probeer opnieuw of controleer de trainer zelf en bevestig hieronder.</string>
+    <string name="connection_lost_phase_could_not_reach">Kon de trainer niet bereiken via Bluetooth, dus er is geen stop aangevraagd. Als de trainer uit of in slaapstand staat, controleer dan zelf de handgrepen en bevestig hieronder.</string>
+    <string name="connection_lost_reconnect_button">Opnieuw verbinden om vrijgave te vragen</string>
+    <string name="connection_lost_confirm_button">Gecontroleerd: handgrepen in rust, melding wissen</string>
+    <string name="connection_lost_remind_later">Herinner me later</string>
+
+    <!-- EULA Screen -->
+    <string name="eula_title">Gebruikersovereenkomst (EULA),\nveiligheidsverklaring en risicoaanvaarding</string>
+    <string name="eula_end_of_agreement">— Einde van de overeenkomst —</string>
+    <string name="eula_scroll_down_prompt">↓ Scrol omlaag om de volledige overeenkomst te lezen ↓</string>
+    <string name="eula_age_certification">Ik verklaar dat ik minimaal 18 jaar oud ben.</string>
+    <string name="eula_accept_button">IK GA AKKOORD</string>
+    <string name="eula_scroll_to_continue">SCROL OMLAAG OM DOOR TE GAAN</string>
+    <string name="eula_confirm_age_to_continue">BEVESTIG LEEFTIJD OM DOOR TE GAAN</string>
+    <string name="eula_must_accept">Je moet deze voorwaarden accepteren om Project Phoenix te gebruiken.</string>
+    <string name="eula_app_name_label">Appnaam: </string>
+    <string name="eula_developer_label">Ontwikkelaar: </string>
+    <string name="eula_developer_name">9th Level Software</string>
+    <string name="eula_section_medical_title">MEDISCHE WAARSCHUWING EN DISCLAIMER</string>
+    <string name="eula_section_medical_body">RAADPLEEG VOOR GEBRUIK EEN ARTS. De inhoud en functionaliteit van Project Phoenix zijn uitsluitend bedoeld voor informatieve en recreatieve doeleinden. Raadpleeg je arts of een andere zorgverlener voordat je aan dit of een ander fitnessprogramma begint om te bepalen of het geschikt is voor jouw situatie. Gebruik Project Phoenix niet als je arts dit afraadt. Stop onmiddellijk als je tijdens het trainen last krijgt van flauwte, duizeligheid, pijn of kortademigheid.</string>
+    <string name="eula_section_risk_title">VRIJWILLIGE AANVAARDING VAN RISICO</string>
+    <string name="eula_section_risk_highlight">LEES ZORGVULDIG: PROJECT PHOENIX BESTUURT HARDWARE VAN DERDEN DIE AANZIENLIJKE FYSIEKE KRACHT KAN GENEREREN.</string>
+    <string name="eula_section_risk_intro">Door Project Phoenix te gebruiken erken je dat krachttraining inherente risico's met zich meebrengt, waaronder ernstig letsel, blijvende invaliditeit, verlamming en overlijden. Je erkent uitdrukkelijk dat softwaregestuurde weerstandsapparatuur specifieke risico's kent, waaronder maar niet beperkt tot:</string>
+    <string name="eula_section_risk_bullet_1">Plotselinge weerstandswijzigingen: Softwarefouten, Bluetooth-vertraging of verbroken verbindingen kunnen ertoe leiden dat het apparaat plotseling onverwachte kracht levert of de weerstand niet tijdig loslaat.</string>
+    <string name="eula_section_risk_bullet_2">Niet-reagerende hardware: De &quot;veiligheidsfuncties&quot; van de hardware (zoals spotter-ondersteuning) kunnen falen door communicatiefouten tussen deze App en de hardware.</string>
+    <string name="eula_section_risk_assumption">JE AANVAARDT AL DEZE RISICO'S WELBEWUST EN VRIJWILLIG, zowel bekende als onbekende, zelfs als deze voortvloeien uit nalatigheid van de Ontwikkelaar, en draagt de volledige verantwoordelijkheid voor je deelname.</string>
+    <string name="eula_section_affiliation_title">GEEN VERBONDENHEID (HARDWARE VAN DERDEN)</string>
+    <string name="eula_section_affiliation_body">Project Phoenix is een onafhankelijk, door de community ontwikkeld project. HET IS NIET GELIEERD AAN, ONDERSCHREVEN DOOR, GEAUTORISEERD DOOR OF ONDERSTEUND DOOR PHOENIX INVESTMENTS PTY LTD (IN LIQUIDATIE), ONDER BEHEER VAN MERCHANTS ADVISORY, OF ENIGE ANDERE FABRIKANT VAN APPARATUUR.</string>
+    <string name="eula_section_affiliation_bullet_1">Je erkent dat het gebruik van deze App de garantie bij de fabrikant van de apparatuur kan laten vervallen.</string>
+    <string name="eula_section_affiliation_bullet_2">Je erkent dat de fabrikant van de apparatuur niet verantwoordelijk is voor de werking van deze App.</string>
+    <string name="eula_section_warranty_title">UITSLUITING VAN GARANTIES (&quot;AS IS&quot;)</string>
+    <string name="eula_section_warranty_body">VOOR ZOVER MAXIMAAL TOEGESTAAN DOOR TOEPASSELIJK RECHT WORDT DE APPLICATIE GELEVERD &quot;AS IS&quot; (&quot;IN DE HUIDIGE STAAT&quot;) EN &quot;ZOALS BESCHIKBAAR&quot;, MET ALLE GEBREKEN EN ZONDER ENIGE GARANTIE. 9TH LEVEL SOFTWARE WIJST HIERBIJ ALLE GARANTIES EN VOORWAARDEN MET BETREKKING TOT DE APPLICATIE AF, EXPLICIET, IMPLICIET OF WETTELIJK, WAARONDER IMPLICIETE GARANTIES VAN VERKOOPBAARHEID, GESCHIKTHEID VOOR EEN BEPAALD DOEL EN NIET-INBREUK.\n\nWIJ GARANDEREN NIET DAT DE FUNCTIES IN DE APPLICATIE AAN JE EISEN VOLDOEN, DAT DE WERKING ONONDERBROKEN OF FOUTLOOS ZAL ZIJN, OF DAT GEBREKEN WORDEN HERSTELD.</string>
+    <string name="eula_section_liability_title">BEPERKING VAN AANSPRAKELIJKHEID</string>
+    <string name="eula_section_liability_body">VOOR ZOVER NIET WETTELIJK VERBODEN IS 9TH LEVEL SOFTWARE IN GEEN GEVAL AANSPRAKELIJK VOOR PERSOONLIJK LETSEL OF ENIGE INCIDENTELE, BIJZONDERE, INDIRECTE OF GEVOLGSCHADE, WAARONDER ZONDER BEPERKING SCHADE DOOR GEGEVENSVERLIES, BEDRIJFSONDERBREKING OF ANDERE COMMERCIELE SCHADE OF VERLIEZEN, VOORTVLOEIEND UIT OF VERBAND HOUDEND MET HET GEBRUIK OF DE ONMOGELIJKHEID TOT GEBRUIK VAN DE APPLICATIE, ONGEACHT DE AANSPRAKELIJKHEIDSGROND (CONTRACT, ONRECHTMATIGE DAAD OF ANDERSZINS).</string>
+    <string name="eula_section_indemnification_title">VRIJWARING</string>
+    <string name="eula_section_indemnification_body">Je gaat ermee akkoord 9th Level Software en haar bijdragers te vrijwaren, te verdedigen en schadeloos te stellen voor alle claims, verliezen, aansprakelijkheden, uitgaven, schade en kosten, inclusief redelijke advocaatkosten, voortvloeiend uit jouw gebruik van de App, schending van deze Voorwaarden of enig letsel of schade aan jou of derden tijdens het gebruik van de App.</string>
+    <string name="eula_section_arbitration_title">BINDENDE ARBITRAGE EN AFSTAND VAN COLLECTIEVE ACTIES</string>
+    <string name="eula_section_arbitration_body">Jij en 9th Level Software komen overeen dat elk geschil voortvloeiend uit of verband houdend met deze Overeenkomst of de App juridisch wordt beslecht via bindende arbitrage.</string>
+    <string name="eula_section_arbitration_waiver">JE GAAT ERMEE AKKOORD DAT JE AFSTAND DOET VAN HET RECHT OP EEN JURYRECHTSPRAAK OF DEELNAME ALS EISER OF GROEPSLID AAN EEN COLLECTIEVE VORDERING.</string>
+
+    <!-- HRM Sensor Settings Card -->
+    <string name="hrm_sensor_name_default">Hartslagsensor</string>
+    <string name="hrm_status_connected">Verbonden</string>
+    <string name="hrm_status_connecting">Verbinden…</string>
+    <string name="hrm_status_scanning">Zoeken naar sensoren…</string>
+    <string name="hrm_status_connection_error">Verbindingsfout</string>
+    <string name="hrm_status_disconnected">Niet verbonden</string>
+    <string name="hrm_intro">Koppel een hartslagsensor voor realtime hartslag. Borstbanden kunnen indien ondersteund ook R-R-intervallen, ECG en bewegingstelemetrie leveren.</string>
+    <string name="hrm_remembered_sensor">Onthouden sensor</string>
+    <string name="hrm_forget">Vergeten</string>
+    <string name="hrm_scan_other">Zoeken naar andere sensoren</string>
+    <string name="hrm_scan_for_sensors">Zoeken naar hartslagsensoren</string>
+    <string name="hrm_scanning_nearby">Zoeken naar hartslagsensoren in de buurt…</string>
+    <string name="hrm_garmin_tip">Garmin-horloge of -band? Schakel hartslaguitzending in (bijv. Instellingen &gt; Sensoren en accessoires &gt; Hartslag uitzenden) zodat het apparaat hier verschijnt.</string>
+    <string name="hrm_chest_strap_tip">Zorg dat de hartslagband vochtig is en stevig op je borst zit.</string>
+    <string name="hrm_connecting_sensor">Verbinden met hartslagsensor…</string>
+    <string name="hrm_device_label">Apparaat: %1$s</string>
+    <string name="hrm_address_label">Adres: %1$s</string>
+    <string name="hrm_battery_label">Batterij: %1$s</string>
+    <string name="hrm_battery_unavailable">Batterijniveau niet beschikbaar</string>
+    <string name="hrm_live_hr_unknown">Live hartslag: onbekend</string>
+    <string name="hrm_live_hr_subscribing">Live hartslag: abonneren op hartslaggegevens…</string>
+    <string name="hrm_live_hr_waiting">Live hartslag: wachten op eerste meting…</string>
+    <string name="hrm_live_hr_bpm">Live hartslag: %1$d BPM</string>
+    <string name="hrm_live_hr_unavailable_dash">Live hartslag: —</string>
+    <string name="hrm_live_hr_not_standard">Live hartslag: niet beschikbaar — geen standaard hartslagsensor</string>
+    <string name="hrm_live_hr_sensor_error">Live hartslag: niet beschikbaar (sensorfout)</string>
+    <string name="hrm_skin_contact_detected">Huidcontact gedetecteerd</string>
+    <string name="hrm_skin_contact_not_detected">Geen huidcontact gedetecteerd</string>
+    <string name="hrm_skin_contact_not_reported">Huidcontact: niet gemeld</string>
+    <string name="hrm_rr_hrv_available">R-R-intervallen beschikbaar · HRV (RMSSD)</string>
+    <string name="hrm_hrv_unavailable">HRV niet beschikbaar</string>
+    <string name="hrm_auto_reconnect">Automatisch opnieuw verbinden bij training</string>
+    <string name="hrm_remember_future_sessions">Deze sensor onthouden voor toekomstige sessies</string>
+    <string name="hrm_save_raw_ecg">Ruw ECG opslaan</string>
+    <string name="hrm_raw_ecg_description">Standaard uitgeschakeld. Slaat lokaal tot 5 minuten per opname op. Ruw ECG wordt na 30 dagen verwijderd of zodra de training wordt gewist; bij opslaglimieten kunnen oudere metingen eerder vervallen. ECG wordt niet naar het portaal gesynchroniseerd.</string>
+    <string name="hrm_currently_state">Momenteel: %1$s</string>
+    <string name="hrm_state_on">Aan</string>
+    <string name="hrm_state_off">Uit</string>
+    <string name="hrm_torso_biomechanics_title">Romp-biomechanica (50 Hz ACC)</string>
+    <string name="hrm_pitch">Kantelhoek</string>
+    <string name="hrm_roll">Rolhoek</string>
+    <string name="hrm_dynamic_acc">Dyn. versn.</string>
+    <string name="hrm_mg_value">%1$d mG</string>
+    <string name="hrm_tare_posture">Houding nullen</string>
+    <string name="hrm_reset_tare">Nulpunt resetten</string>
+    <string name="hrm_action_connect">Verbinden</string>
+
+    <!-- Main Shell and Splash -->
+    <string name="main_syncing">Synchroniseren</string>
+    <string name="main_sync_complete">Synchronisatie voltooid</string>
+    <string name="main_sync_error_tap">Synchronisatiefout, tik om op te lossen</string>
+    <string name="main_sync_partial_retry">Gedeeltelijke synchronisatie, tik om opnieuw te proberen</string>
+    <string name="main_connect_connecting">Verbinden</string>
+    <string name="main_connect_action">Verbinden</string>
+    <string name="main_connect_full_click">Tik om te verbinden</string>
+    <string name="main_cd_connected">Verbonden met machine. Tik om te verbreken</string>
+    <string name="main_cd_connecting">Verbinden met machine</string>
+    <string name="main_cd_error">Verbindingsfout. Tik om opnieuw te verbinden</string>
+    <string name="main_cd_tap_connect">Tik om met machine te verbinden</string>
+    <string name="nav_training_cycle">Trainingscyclus</string>
+    <string name="nav_cycle_review">Cyclusoverzicht</string>
+    <string name="nav_cycle_short">Cyclus</string>
+    <string name="nav_review_short">Overzicht</string>
+    <string name="nav_single_exercise">Losse oefening</string>
+    <string name="nav_exercise">Oefening</string>
+    <string name="nav_edit_routine">Routine bewerken</string>
+    <string name="nav_routine">Routine</string>
+    <string name="nav_program">Programma</string>
+    <string name="nav_program_playground">Programmatestveld</string>
+    <string name="nav_playground_short">Testveld</string>
+    <string name="nav_strength_assessment">Krachtmeting</string>
+    <string name="nav_assessment_short">Meting</string>
+    <string name="nav_edit_short">Bewerken</string>
+    <string name="nav_choose_workout">Kies je training</string>
+    <string name="nav_daily_routines">Dagelijkse routines</string>
+    <string name="nav_achievements">Prestaties</string>
+    <string name="nav_complete">Voltooid</string>
+    <string name="nav_workout">Training</string>
+    <string name="nav_app_fallback">Project Phoenix</string>
+    <string name="nav_rack_short">Rek</string>
+    <string name="nav_logs_short">Logs</string>
+    <string name="nav_portal_short">Portaal</string>
+    <string name="nav_data_short">Gegevens</string>
+    <string name="nav_activities_short">Activiteiten</string>
+    <string name="nav_programs_short">Programma's</string>
+    <string name="nav_metrics_short">Metingen</string>
+    <string name="splash_title_upper">PROJECT PHOENIX</string>
+    <string name="splash_tagline">Herrijs uit de as</string>
+
+    <!-- Home Screen -->
+    <string name="home_recent_activity">Recente activiteit</string>
+    <string name="home_cycle_day_named">%1$s in %2$s</string>
+    <string name="home_cycle_day_numbered">Dag %1$d in %2$s</string>
+    <string name="home_cd_open_just_lift">Just Lift openen</string>
+    <string name="home_no_routine_assigned">Geen routine toegewezen</string>
+    <string name="home_no_recent_workouts">Nog geen recente trainingen.</string>
+    <string name="home_workout_session_fallback">Trainingssessie</string>
+    <string name="home_cd_open_single_exercise">Losse oefening openen</string>
+    <string name="home_cd_open_routines">Routines openen</string>
+    <string name="home_cd_open_cycles">Trainingscycli openen</string>
+    <string name="home_action_routines">Routines</string>
+    <string name="home_action_cycles">Cycli</string>
+    <string name="weekday_initial_mon">M</string>
+    <string name="weekday_initial_tue">D</string>
+    <string name="weekday_initial_wed">W</string>
+    <string name="weekday_initial_thu">D</string>
+    <string name="weekday_initial_fri">V</string>
+    <string name="weekday_initial_sat">Z</string>
+    <string name="weekday_initial_sun">Z</string>
+
+    <!-- Workout HUD -->
+    <string name="hud_weight_per_cable_label">Gewicht/kabel</string>
+    <string name="hud_adaptive">Adaptief</string>
+    <string name="hud_set_of">Set %1$d / %2$d</string>
+    <string name="hud_time_label">TIJD</string>
+    <string name="hud_reps_label">HERHALINGEN</string>
+    <string name="hud_rep_label">HERHALING</string>
+    <string name="hud_warmup_label">WARMING-UP</string>
+    <string name="hud_per_cable_upper">PER KABEL</string>
+    <string name="hud_bodyweight_exercise">Lichaamsgewichtoefening</string>
+    <string name="hud_no_machine_metrics_bodyweight">Geen machinemetingen voor lichaamsgewicht</string>
+    <string name="hud_waiting_for_metrics">Wachten op metingen…</string>
+    <string name="hud_live_stats">Livestatistieken</string>
+    <string name="hud_mcv_upper">GEMIDDELDE CONCENTRISCHE SNELHEID</string>
+    <string name="hud_load_upper">BELASTING</string>
+    <string name="hud_velocity_upper">SNELHEID</string>
+    <string name="hud_position_upper">POSITIE</string>
+    <string name="hud_velocity_loss">Snelheidsverlies</string>
+    <string name="hud_threshold_reached">DREMPEL BEREIKT</string>
+    <string name="hud_cd_resume_timer">Timer hervatten</string>
+    <string name="hud_cd_pause_timer">Timer pauzeren</string>
+    <string name="hud_seconds_short">%1$ds</string>
+    <string name="hud_mcv_value">%1$s m/s</string>
+    <string name="hud_velocity_value">%1$d mm/s</string>
+    <string name="hud_position_value">%1$d mm</string>
+    <string name="hud_cable_left_short">L</string>
+    <string name="hud_cable_right_short">R</string>
+    <string name="hud_mcv_short">MCV</string>
+    <string name="hud_zone">Zone</string>
+    <string name="hud_peak">Piek</string>
+    <string name="hud_est_reps_left">Resterende herh. (gesch.)</string>
+    <string name="hud_left">Links</string>
+    <string name="hud_right">Rechts</string>
+    <string name="hud_total">Totaal</string>
+
+    <!-- Insights and Smart Insights -->
+    <string name="insights_this_week">Deze week</string>
+    <string name="insights_compared_last_7_days">Vergeleken met afgelopen 7 dagen</string>
+    <string name="insights_week_summary">Weekoverzicht: %1$d trainingen, %2$s volume, %3$d herhalingen, %4$d PR's</string>
+    <string name="insights_same">gelijk</string>
+    <string name="insights_muscle_chest">Borst</string>
+    <string name="insights_muscle_back">Rug</string>
+    <string name="insights_muscle_legs">Benen</string>
+    <string name="insights_muscle_shoulders">Schouders</string>
+    <string name="insights_muscle_arms">Armen</string>
+    <string name="insights_muscle_core">Core</string>
+    <string name="insights_muscle_balance">Spierbalans</string>
+    <string name="insights_muscle_balance_subtitle">Relatieve trainingsfocus per spiergroep</string>
+    <string name="insights_muscle_balance_empty">Voltooi trainingen om je spierbalansanalyse te bekijken.</string>
+    <string name="insights_monthly_consistency_cd">Maandelijkse consistentie: %1$d trainingen in de afgelopen 30 dagen, doel is %2$d</string>
+    <string name="insights_monthly_consistency">Maandelijkse consistentie</string>
+    <string name="insights_workouts_last_30_days">Trainingen in de afgelopen 30 dagen</string>
+    <string name="insights_volume_vs_intensity">Volume vs. intensiteit</string>
+    <string name="insights_last_7_sessions">Laatste 7 sessies</string>
+    <string name="insights_volume_unit_label">Volume (%1$s)</string>
+    <string name="insights_max_weight_unit_label">Max. gewicht (%1$s)</string>
+    <string name="insights_no_workout_data">Nog geen trainingsgegevens beschikbaar.</string>
+    <string name="insights_mode_distribution">Modusverdeling</string>
+    <string name="insights_based_on_sessions">Gebaseerd op trainingssessies</string>
+    <string name="insights_no_mode_data">Geen modusgegevens beschikbaar.</string>
+    <string name="insights_total_volume_history">Totale volumegeschiedenis</string>
+    <string name="insights_volume_per_session">Getild volume per trainingssessie</string>
+    <string name="insights_fun_titanics">Titanics</string>
+    <string name="insights_fun_blue_whales">Blauwe vinvissen</string>
+    <string name="insights_fun_jumbo_jets">Jumbojets</string>
+    <string name="insights_fun_elephants">Olifanten verplaatst</string>
+    <string name="insights_fun_cars_crushed">Auto's verpletterd</string>
+    <string name="insights_fun_kg_lifted">kg getild</string>
+    <string name="insights_lifetime_stats">Totale statistieken</string>
+    <string name="insights_all_time_achievements">Je prestaties aller tijden</string>
+    <string name="insights_lifetime_empty">Voltooi trainingen om je totale statistieken te zien!</string>
+    <string name="insights_days_of_gains">dagen winst</string>
+    <string name="insights_workouts_count">%1$d trainingen</string>
+    <string name="insights_total_volume">Totaal volume</string>
+    <string name="insights_total_reps">Totaal herhalingen</string>
+    <string name="insights_prs_hit">PR's behaald</string>
+    <string name="insights_total_workouts">Totaal trainingen</string>
+    <string name="insights_days_since_first">Dagen sinds eerste</string>
+    <string name="insights_favorite_exercise">Favoriete oefening</string>
+    <string name="insights_favorite_mode">Favoriete modus</string>
+    <string name="insights_dashboard">Dashboard</string>
+    <string name="insights_training_overview">Je trainingsoverzicht</string>
+    <string name="insights_weekly_snapshot">Weekoverzicht</string>
+    <string name="insights_weekly_snapshot_subtitle">Hoe deze week zich verhoudt tot de vorige 7 dagen</string>
+    <string name="insights_weekly_snapshot_def">Voltooide sessies, volume en persoonlijke records.</string>
+    <string name="insights_weekly_snapshot_time">Afgelopen 7 dagen vs. voorafgaande 7 dagen</string>
+    <string name="insights_weekly_snapshot_so_what">Bekijk het wekelijkse verloop voordat je volume of gewicht aanpast.</string>
+    <string name="insights_performance_trends">Prestatietrends</string>
+    <string name="insights_performance_trends_subtitle">Spierfocus en krachtdekking</string>
+    <string name="insights_performance_trends_def">Spreiding van persoonlijke records over grote spiergroepen.</string>
+    <string name="insights_performance_trends_time">PR's aller tijden</string>
+    <string name="insights_performance_trends_so_what">Herken goed getrainde en onderbelichte spiergroepen voor balans.</string>
+    <string name="insights_consistency_title">Consistentie</string>
+    <string name="insights_consistency_subtitle">Trainingsritme in de afgelopen 30 dagen</string>
+    <string name="insights_consistency_def">Je aantal trainingen vergeleken met een doel van 3 sessies per week.</string>
+    <string name="insights_consistency_time">Afgelopen 30 dagen</string>
+    <string name="insights_consistency_so_what">Regelmatige wekelijkse sessies zorgen voor gestage langetermijnprogressie.</string>
+    <string name="insights_training_load_balance">Trainingsbelasting &amp; balans</string>
+    <string name="insights_training_load_balance_subtitle">Verdeling van volume, intensiteit en modi</string>
+    <string name="insights_workload_intensity_def">Hoe totale belasting (volume) en piekbelasting (intensiteit) samengaan.</string>
+    <string name="insights_workload_intensity_so_what">Als het piekgewicht stijgt terwijl het volume daalt, overweeg dan een lichtere herstelsessie.</string>
+    <string name="insights_volume_history_def">Totaal getilde belasting per trainingsperiode.</string>
+    <string name="insights_volume_history_so_what">Bouw het volume geleidelijk op (5–10% per week) om overbelasting te voorkomen.</string>
+    <string name="insights_mode_dist_def">Verdeling van sessies over verschillende trainingsmodi.</string>
+    <string name="insights_mode_dist_so_what">Gebruik de modusverdeling om afwisseling tussen Echo, Old School en speciale modi te controleren.</string>
+    <string name="insights_no_insights_title">Nog geen inzichten</string>
+    <string name="insights_no_insights_message">Voltooi trainingen om inzichten te ontgrendelen</string>
+    <string name="smart_insights_weekly_volume_title">Wekelijks volume</string>
+    <string name="smart_insights_weekly_volume_subtitle">Belasting per spiergroep in de afgelopen 7 dagen</string>
+    <string name="smart_insights_training_balance_title">Trainingsbalans</string>
+    <string name="smart_insights_training_balance_subtitle">Verdeling tussen duw-, trek- en onderlichaamsoefeningen</string>
+    <string name="smart_insights_recovery_plateaus_title">Herstel &amp; plateaus</string>
+    <string name="smart_insights_recovery_plateaus_subtitle">Onderbelichte bewegingen en gewichtsplateaus</string>
+    <string name="smart_insights_readiness_schedule_title">Paraatheid &amp; planning</string>
+    <string name="smart_insights_readiness_schedule_subtitle">Wanneer je het best presteert en belastingadvies voor vandaag</string>
+    <string name="smart_insights_readiness_title">Trainingsparaatheid</string>
+    <string name="smart_insights_readiness_def">Vergelijkt je laatste 7 dagen training met je 28-daagse basislijn.</string>
+    <string name="smart_insights_readiness_time">Acuut 7d vs. Chronisch 28d</string>
+    <string name="smart_insights_readiness_so_what">Pas intensiteit aan of kies voor herstel wanneer je paraatheid daalt.</string>
+    <string name="smart_insights_weekly_volume_def">Wekelijkse belasting per spiergroep.</string>
+    <string name="smart_insights_last_7_days">Afgelopen 7 dagen</string>
+    <string name="smart_insights_weekly_volume_so_what">Zorg dat je belangrijkste doelspiergroepen wekelijks consistent volume krijgen.</string>
+    <string name="smart_insights_balance_def">Aandeel duwen/trekken/benen in je recente volume.</string>
+    <string name="smart_insights_last_28_days">Afgelopen 28 dagen</string>
+    <string name="smart_insights_balance_so_what">Verschuif komende sessies naar de ondervertegenwoordigde categorie.</string>
+    <string name="smart_insights_variety_def">Oefeningen die recent niet zijn getraind.</string>
+    <string name="smart_insights_variety_so_what">Neem deze week een verwaarloosde beweging weer op om je capaciteit te behouden.</string>
+    <string name="smart_insights_plateau_def">Bewegingen met stagnerende piekbelasting.</string>
+    <string name="smart_insights_recent_sessions">Recente vergelijkbare sessies</string>
+    <string name="smart_insights_plateau_so_what">Varieer in herhalingen, tempo of oefeningsvariant om progressie te hervatten.</string>
+    <string name="smart_insights_best_window_def">Tijdvensters die samenvallen met je sterkste sessies.</string>
+    <string name="smart_insights_best_window_so_what">Plan belangrijke sessies in je best presterende tijdvenster.</string>
+    <string name="smart_insights_sets_reps">%1$d sets · %2$d herhalingen</string>
+    <string name="smart_insights_plateau_at">%1$s op %2$s</string>
+    <string name="smart_insights_window_early_morning">Vroege ochtend</string>
+    <string name="smart_insights_window_morning">Ochtend</string>
+    <string name="smart_insights_window_afternoon">Middag</string>
+    <string name="smart_insights_window_evening">Avond</string>
+    <string name="smart_insights_window_night">Nacht</string>
+    <string name="smart_insights_window_range_early_morning">05:00–07:00</string>
+    <string name="smart_insights_window_range_morning">07:00–10:00</string>
+    <string name="smart_insights_window_range_afternoon">10:00–15:00</string>
+    <string name="smart_insights_window_range_evening">15:00–20:00</string>
+    <string name="smart_insights_window_range_night">20:00–05:00</string>
+
+    <!-- Integrations and External Data -->
+    <string name="integrations_csv_saved">CSV opgeslagen</string>
+    <string name="integrations_file_read_error">Kan bestand niet lezen</string>
+    <string name="integrations_import_preview">Importvoorbeeld</string>
+    <string name="integrations_import_count">%1$d importeren</string>
+    <string name="integrations_format">Formaat: %1$s</string>
+    <string name="integrations_workouts_found">Gevonden trainingen: %1$d</string>
+    <string name="integrations_date_range">Datumbereik: %1$s – %2$s</string>
+    <string name="integrations_total_duration_mins">Totale duur: %1$d min</string>
+    <string name="integrations_rows_unparsed_one">1 rij kon niet worden verwerkt</string>
+    <string name="integrations_rows_unparsed_other">%1$d rijen konden niet worden verwerkt</string>
+    <string name="integrations_connect_hevy">Hevy koppelen</string>
+    <string name="integrations_hevy_api_key_hint">Hevy API-sleutel</string>
+    <string name="integrations_hevy_api_key_note">Vind je API-sleutel in de accountinstellingen van Hevy (Hevy Pro vereist). Je sleutel wordt versleuteld verzonden en veilig opgeslagen.</string>
+    <string name="integrations_connect_liftosaur">Liftosaur koppelen</string>
+    <string name="integrations_liftosaur_api_key_hint">Liftosaur API-sleutel</string>
+    <string name="integrations_liftosaur_api_key_note">Genereer of kopieer je API-sleutel via Liftosaur Instellingen → Integraties. Je sleutel wordt veilig opgeslagen voor programmasynchronisatie.</string>
+    <string name="integrations_health_apps">Gezondheidsapps</string>
+    <string name="integrations_apple_health">Apple Health</string>
+    <string name="integrations_health_connect">Google Health Connect</string>
+    <string name="integrations_permissions_attention">Rechten vragen aandacht</string>
+    <string name="integrations_connected_latest_weight">Verbonden • laatste weegschaalmeting %1$s</string>
+    <string name="integrations_status_not_connected">Niet gekoppeld</string>
+    <string name="integrations_body_weight_value">Lichaamsgewicht: %1$s</string>
+    <string name="integrations_last_sync">Laatste synchronisatie: %1$s</string>
+    <string name="integrations_health_sync_enabled">Gezondheidssynchronisatie ingeschakeld</string>
+    <string name="integrations_enable_health_sync">Gezondheidssynchronisatie inschakelen</string>
+    <string name="integrations_retry_permissions">Rechten opnieuw proberen</string>
+    <string name="integrations_sync_previous">Eerdere synchroniseren</string>
+    <string name="integrations_workout_trackers">Trainingstrackers</string>
+    <string name="integrations_hevy">Hevy</string>
+    <string name="integrations_provider_plan">Abonnement: %1$s</string>
+    <string name="integrations_hevy_description">Trainingsgeschiedenis, routines, sjablonen en metingen</string>
+    <string name="integrations_workouts_chip">%1$d trainingen</string>
+    <string name="integrations_routines_chip">%1$d routines</string>
+    <string name="integrations_folders_chip">%1$d mappen</string>
+    <string name="integrations_templates_chip">%1$d sjablonen</string>
+    <string name="integrations_measurements_chip">%1$d metingen</string>
+    <string name="integrations_action_sync">Synchroniseren</string>
+    <string name="integrations_liftosaur">Liftosaur</string>
+    <string name="integrations_liftosaur_description">Geschiedenis, programma's, statistieken en testveld-voorbeelden</string>
+    <string name="integrations_programs_chip">%1$d programma's</string>
+    <string name="integrations_current_chip">%1$d huidig</string>
+    <string name="integrations_stats_chip">%1$d statistieken</string>
+    <string name="integrations_strong_csv">Strong / CSV</string>
+    <string name="integrations_strong_csv_description">Importeer of exporteer trainingen in Strong-compatibel CSV-formaat</string>
+    <string name="integrations_export_weight_unit">Gewichtseenheid voor export</string>
+    <string name="integrations_export_csv">CSV exporteren</string>
+    <string name="integrations_import_csv">CSV importeren</string>
+    <string name="integrations_data_title">Integratiegegevens</string>
+    <string name="integrations_data_empty_subtitle">Blader door geïmporteerde providergegevens</string>
+    <string name="integrations_data_count_subtitle_one">1 training plus providergegevens</string>
+    <string name="integrations_data_count_subtitle_other">%1$d trainingen plus providergegevens</string>
+    <string name="integrations_cd_view_data">Integratiegegevens bekijken</string>
+    <string name="integrations_cd_hide_api_key">API-sleutel verbergen</string>
+    <string name="integrations_cd_show_api_key">API-sleutel tonen</string>
+    <string name="external_workouts">Trainingen</string>
+    <string name="external_imported_activities_count">%1$d geïmporteerde activiteiten</string>
+    <string name="external_hevy_routines">Hevy-routines</string>
+    <string name="external_routines_folders_summary">%1$s, %2$s</string>
+    <string name="external_liftosaur_programs">Liftosaur-programma's</string>
+    <string name="external_programs_stats_summary">%1$d programma's, %2$d statistiekrecords</string>
+    <string name="external_measurements">Metingen</string>
+    <string name="external_hevy_measurements_summary">%1$d Hevy-metingen</string>
+    <string name="external_routines_title">Externe routines</string>
+    <string name="external_routines_empty">Nog geen routines geïmporteerd</string>
+    <string name="external_unfiled">Zonder map</string>
+    <string name="external_routine_not_found">Routine niet gevonden</string>
+    <string name="external_mapping_disclaimer">Controleer de oefeningskoppelingen vóór het omzetten. Externe gewichten blijven informatief totdat de koppeling per kabel is bevestigd.</string>
+    <string name="external_set_row">Set %1$d: %2$s · %3$s herhalingen%4$s</string>
+    <string name="external_set_type_normal">normaal</string>
+    <string name="external_programs_title">Externe programma's</string>
+    <string name="external_programs_empty">Nog geen programma's geïmporteerd</string>
+    <string name="external_program_not_found">Programma niet gevonden</string>
+    <string name="external_current_program">Huidig programma</string>
+    <string name="external_stats_title">Statistieken</string>
+    <string name="external_stats_approx_minutes">ongeveer %1$d minuten</string>
+    <string name="external_stats_sets">%1$d sets</string>
+    <string name="external_muscle_breakdown">Verdeling per spiergroep</string>
+    <string name="external_muscle_breakdown_unavailable">Spiergroepverdeling niet beschikbaar</string>
+    <string name="external_preview_playground">Testveld openen</string>
+    <string name="external_playground_disclaimer">Liftosaur-omzetting is hier alleen-lezen. Zet pas handmatig om naar een Phoenix-cyclus nadat je de Liftoscript-koppelingen hebt gevalideerd.</string>
+    <string name="external_no_script_text">Geen scripttekst beschikbaar</string>
+    <string name="external_playground_title">Programmatestveld</string>
+    <string name="external_simulating">Simuleren…</string>
+    <string name="external_run_preview">Voorbeeld uitvoeren</string>
+    <string name="external_current_workout">Huidige training</string>
+    <string name="external_current_workout_empty">Voer een voorbeeld uit om de huidige training te bekijken.</string>
+    <string name="external_next_workout">Volgende training</string>
+    <string name="external_next_workout_empty">Voer een voorbeeld uit om de volgende training te bekijken.</string>
+    <string name="external_updated_program">Bijgewerkt programma</string>
+    <string name="external_updated_program_empty">Nog geen bijgewerkte programmatekst.</string>
+    <string name="external_action_commit">Toepassen</string>
+    <string name="external_measurements_empty">Nog geen metingen geïmporteerd</string>
+    <string name="external_measurements_empty_filtered">Geen metingen voor dit type</string>
+    <string name="external_status_current">Huidig</string>
+    <string name="external_direct_indirect">%1$s direct · %2$s indirect</string>
+    <string name="external_activities_title">Externe activiteiten</string>
+    <string name="external_cd_expanded">Uitgevouwen</string>
+    <string name="external_cd_collapsed">Samengevouwen</string>
+    <string name="external_duration_hm">%1$du %2$dm</string>
+    <string name="external_duration_m">%1$dm</string>
+    <string name="external_kcal">%1$d kcal</string>
+    <string name="external_avg_bpm">gem. %1$d bpm</string>
+    <string name="external_max_bpm">max. %1$d bpm</string>
+    <string name="external_no_additional_metrics">Geen aanvullende trainingsmetingen vastgelegd</string>
+    <string name="external_technical_details">Technische details</string>
+    <string name="external_provider_id">Provider-ID: %1$s</string>
+    <string name="external_distance_mi">%1$s mi</string>
+    <string name="external_distance_ft">%1$d ft</string>
+    <string name="external_distance_km">%1$s km</string>
+    <string name="external_distance_m">%1$d m</string>
+    <string name="external_elev_ft">%1$d ft stijging</string>
+    <string name="external_elev_m">%1$d m stijging</string>
+
+    <!-- PR, Badges, and Equipment Rack -->
+    <string name="pr_new_mode_banner">NIEUW %1$s PR!</string>
+    <string name="pr_new_banner">NIEUW PR!</string>
+    <string name="pr_phase_label">%1$s-fase</string>
+    <string name="pr_tap_to_dismiss">Tik om te sluiten</string>
+    <string name="pr_indicator_none">Geen PR</string>
+    <string name="pr_indicator_value">%1$d%% PR</string>
+    <string name="pr_indicator_phase_suffix">%1$d%% PR · %2$s</string>
+    <string name="pr_cd_above">Boven PR</string>
+    <string name="pr_cd_below">Onder PR</string>
+    <string name="badges_day_streak">Dagenreeks</string>
+    <string name="badges_at_risk">In gevaar!</string>
+    <string name="badges_workouts_label">Trainingen</string>
+    <string name="badges_label">Badges</string>
+    <string name="badges_progress_title">Badgevoortgang</string>
+    <string name="badges_fraction">%1$d / %2$d</string>
+    <string name="badges_cd_secret_locked">Geheime badge, vergrendeld</string>
+    <string name="badges_secret_title">Geheime badge</string>
+    <string name="badges_locked">Vergrendeld</string>
+    <string name="badges_secret_keep_training">Blijf trainen om deze geheime badge te ontgrendelen.</string>
+    <string name="badges_progress_label">Voortgang</string>
+    <string name="badges_earned_badge">Verdiend!</string>
+    <string name="badges_secret_category">Geheim</string>
+    <string name="badge_dialog_single_title">Badge verdiend!</string>
+    <string name="badge_dialog_multi_title">%1$d badges verdiend!</string>
+    <string name="badge_dialog_dismiss_awesome">Geweldig!</string>
+    <string name="badge_dialog_item_cd">%1$s, niveau %2$s, categorie %3$s</string>
+    <string name="rack_selection_default_suffix">%1$s (Standaard)</string>
+    <string name="rack_selection_display_suffix">weergave</string>
+    <string name="rack_delete_title">Rekitem verwijderen?</string>
+    <string name="rack_delete_message">&quot;%1$s&quot; verwijderen? Dit kan niet ongedaan worden gemaakt.</string>
+
+    <!-- Profile Recovery and Link Account -->
+    <string name="recovery_failed_generic">Herstel kon niet worden voltooid. Probeer het opnieuw.</string>
+    <string name="recovery_section_title">Herstel van profielgegevens</string>
+    <string name="recovery_section_subtitle">Kies waar onduidelijke lokale gegevens bij horen. Phoenix behoudt elk stabiel record-ID en wijzigt de accounteigenaar niet.</string>
+    <string name="recovery_cloud_transfers_pending_one">1 eigendomsoverdracht wacht op cloudbevestiging.</string>
+    <string name="recovery_cloud_transfers_pending_other">%1$d eigendomsoverdrachten wachten op cloudbevestiging.</string>
+    <string name="recovery_cloud_retry_note">Het lokale herstel is voltooid. Synchronisatie probeert deze exacte ID's opnieuw vóór gewone uploads.</string>
+    <string name="recovery_relink_required">Koppel het oorspronkelijke account opnieuw voordat je deze cloudrecords verplaatst.</string>
+    <string name="recovery_keep_with_default">Behouden bij Standaard</string>
+    <string name="recovery_move_to_profile">Verplaatsen naar %1$s</string>
+    <string name="recovery_table_workout_one">%1$d trainingsrecord</string>
+    <string name="recovery_table_workout_other">%1$d trainingsrecords</string>
+    <string name="recovery_table_pr_one">%1$d persoonlijk record</string>
+    <string name="recovery_table_pr_other">%1$d persoonlijke records</string>
+    <string name="recovery_table_routine_one">%1$d routine</string>
+    <string name="recovery_table_routine_other">%1$d routines</string>
+    <string name="recovery_table_routine_group_one">%1$d routinegroep</string>
+    <string name="recovery_table_routine_group_other">%1$d routinegroepen</string>
+    <string name="recovery_table_cycle_one">%1$d trainingscyclus</string>
+    <string name="recovery_table_cycle_other">%1$d trainingscycli</string>
+    <string name="recovery_table_assessment_one">%1$d metingsresultaat</string>
+    <string name="recovery_table_assessment_other">%1$d metingsresultaten</string>
+    <string name="recovery_table_strength_estimate_one">%1$d krachtschatting</string>
+    <string name="recovery_table_strength_estimate_other">%1$d krachtschattingen</string>
+    <string name="recovery_table_progression_event_one">%1$d progressiegebeurtenis</string>
+    <string name="recovery_table_progression_event_other">%1$d progressiegebeurtenissen</string>
+    <string name="recovery_table_earned_badge_one">%1$d verdiende badge</string>
+    <string name="recovery_table_earned_badge_other">%1$d verdiende badges</string>
+    <string name="recovery_table_mvt_one">%1$d snelheidsinstelling voor oefening</string>
+    <string name="recovery_table_mvt_other">%1$d snelheidsinstellingen voor oefeningen</string>
+    <string name="recovery_table_streak_one">%1$d reeksrecord</string>
+    <string name="recovery_table_streak_other">%1$d reeksrecords</string>
+    <string name="recovery_table_baseline_one">%1$d basislijn voor oefening</string>
+    <string name="recovery_table_baseline_other">%1$d basislijnen voor oefeningen</string>
+    <string name="recovery_table_default_one">%1$d profielrecord</string>
+    <string name="recovery_table_default_other">%1$d profielrecords</string>
+    <string name="recovery_resolution_resolved">Herstel voltooid.</string>
+    <string name="recovery_resolution_busy">Voltooi de actieve training of krachtmeting voordat je profielgegevens herstelt.</string>
+    <string name="recovery_resolution_verification_failed">Phoenix kon deze gegevens niet verifiëren bij het ingelogde account. Controleer het account en probeer het opnieuw.</string>
+    <string name="recovery_resolution_account_mismatch">Log uit bij het andere account voordat je deze gegevens herstelt.</string>
+    <string name="recovery_resolution_missing">Dit herstelitem staat niet meer open.</string>
+    <string name="link_session_expired">Sessie verlopen: %1$s</string>
+    <string name="link_connection_issue">Verbindingsprobleem. Probeer het opnieuw.</string>
+    <string name="link_sign_in_again">Log opnieuw in.</string>
+    <string name="link_sync_workouts_subtitle">Synchroniseer je trainingen op al je apparaten</string>
+    <string name="link_this_portal_account">dit Phoenix Portal-account</string>
+    <string name="link_unlink_confirm_message">%1$s ontkoppelen van dit apparaat? Je lokale trainingsgeschiedenis blijft op dit apparaat bewaard.</string>
+    <string name="link_linked_account">Gekoppeld account</string>
+    <string name="link_syncing_progress">Synchroniseren… (%1$d pagina's, %2$d items)</string>
+    <string name="link_sync_error">Synchronisatiefout: %1$s</string>
+    <string name="link_auth_failed">Authenticatie mislukt — log uit en opnieuw in</string>
+    <string name="link_sync_partial">Synchronisatie gedeeltelijk voltooid — ophalen mislukt: %1$s</string>
+    <string name="link_sync_paused_other_account">Synchronisatie gepauzeerd: gegevens op deze telefoon horen bij een ander account</string>
+    <string name="link_upload_refused">Upload geweigerd: %1$s</string>
+    <string name="link_force_full_resync">Volledige hersynchronisatie forceren</string>
+    <string name="link_cd_hide_password">Wachtwoord verbergen</string>
+    <string name="link_cd_show_password">Wachtwoord tonen</string>
+    <string name="link_login_subtitle">Log in met je bestaande Phoenix Portal-account om trainingen op al je apparaten te synchroniseren.</string>
+    <string name="link_never">Nooit</string>
+    <string name="link_unknown_error">onbekende fout</string>
+
+    <!-- Routines, Cycles, Plurals, Set Ready, Routine Complete, Bulk Weight Adjust -->
+    <string name="exercise_count_one">1 oefening</string>
+    <string name="exercise_count_other">%1$d oefeningen</string>
+    <string name="routine_count_one">1 routine</string>
+    <string name="routine_count_other">%1$d routines</string>
+    <string name="folder_count_one">1 map</string>
+    <string name="folder_count_other">%1$d mappen</string>
+    <string name="day_count_one">1 dag</string>
+    <string name="day_count_other">%1$d dagen</string>
+    <string name="routine_summary_bullet">%1$s • %2$s</string>
+    <string name="routines_selected_count">%1$d geselecteerd</string>
+    <string name="routines_move_to_group">Naar groep verplaatsen</string>
+    <string name="routines_new_group">Nieuwe groep</string>
+    <string name="routines_rename_group">Groep hernoemen</string>
+    <string name="routines_more_options">Meer opties</string>
+    <string name="routines_zero_sets">0 sets</string>
+    <string name="routines_duration_min">%1$d min</string>
+    <string name="routines_duration_est_suffix">%1$s (gesch.)</string>
+    <string name="routine_editor_new_routine">Nieuwe routine</string>
+    <string name="routine_editor_more_actions">Meer acties</string>
+    <string name="routine_editor_adjust_all_weights">Alle gewichten aanpassen</string>
+    <string name="routine_editor_empty_prompt">Tik op + om je eerste oefening toe te voegen</string>
+    <string name="routine_editor_copy_suffix">%1$s (Kopie)</string>
+    <string name="routine_editor_reorder_exercise">Oefening herschikken</string>
+    <string name="routine_editor_add_to_routine">Aan routine toevoegen</string>
+    <string name="routine_editor_color_selected">Kleur %1$d, geselecteerd</string>
+    <string name="routine_editor_color_option">Kleur %1$d</string>
+    <string name="cycles_connection_failed_message">Machineverbinding mislukt — training niet gestart.</string>
+    <string name="cycles_missing_routine_message">Kon deze training niet laden — routinegegevens ontbreken. Probeer de cyclus te bewerken.</string>
+    <string name="cycles_validation_failed">Validatie mislukt: kon 1RM voor %1$s niet opslaan. Kabelgegevens van oefening ontbreken; controleer de waarde en probeer opnieuw.</string>
+    <string name="cycles_save_1rm_failed">1RM opslaan mislukt: %1$s</string>
+    <string name="cycles_create_failed">Trainingscyclus aanmaken mislukt: %1$s</string>
+    <string name="cycles_unexpected_error">Er is een onverwachte fout opgetreden.</string>
+    <string name="cycles_conflict_title">Cyclus gewijzigd op een ander apparaat</string>
+    <string name="cycles_conflict_message">De serverversie van “%1$s” was nieuwer. Je lokale versie is behouden en kan worden opgeslagen als aparte inactieve cyclus.</string>
+    <string name="cycles_save_local_copy">Lokale kopie opslaan</string>
+    <string name="cycles_keep_server_version">Serverversie behouden</string>
+    <string name="cycles_warnings_header">De cyclus is aangemaakt, maar de volgende oefeningen zijn niet gevonden in je bibliotheek:</string>
+    <string name="cycles_warnings_footer">Mogelijk moet je deze oefeningen toevoegen of de routines handmatig bijwerken.</string>
+    <string name="cycles_deload_complete">Deload voltooid! Week 1 begint met een verhoogd trainingsmax.</string>
+    <string name="cycles_rotation_complete_week">Rotatie voltooid! Door naar week %1$d.</string>
+    <string name="cycles_cycle_complete_rotation">Cyclus voltooid! Rotatie %1$d wordt gestart</string>
+    <string name="cycles_day_completed">%1$s voltooid!</string>
+    <string name="cycles_title">Trainingscycli</string>
+    <string name="cycles_all_cycles">Alle cycli</string>
+    <string name="cycles_up_next">VOLGENDE</string>
+    <string name="cycles_previewing">VOORBEELD</string>
+    <string name="cycles_day_of">Dag %1$d van %2$d</string>
+    <string name="cycles_day_numbered">Dag %1$d</string>
+    <string name="cycles_rest_day_message">Rustdag — doe het rustig aan!</string>
+    <string name="cycles_routine_data_missing">Routinegegevens ontbreken — bewerk de cyclus om opnieuw toe te wijzen</string>
+    <string name="cycles_active_badge">ACTIEF</string>
+    <string name="cycles_day_progress_suffix">%1$s - Dag %2$d</string>
+    <string name="cycles_rest_badge">Rust</string>
+    <string name="cycles_activate">Activeren</string>
+    <string name="cycles_deactivate">Deactiveren</string>
+    <string name="cycle_editor_save_failed">Opslaan mislukt: %1$s</string>
+    <string name="cycle_editor_add_day">Dag toevoegen</string>
+    <string name="cycle_editor_length">CYCLUSDUUR: %1$s</string>
+    <string name="cycle_editor_empty_title">Nog geen dagen toegevoegd.</string>
+    <string name="cycle_editor_empty_subtitle">Bouw je cyclus op door trainings- of rustdagen toe te voegen.</string>
+    <string name="cycle_editor_day_removed">Dag verwijderd</string>
+    <string name="cycle_editor_undo">ONGEDAAN MAKEN</string>
+    <string name="cycle_review_confirm_finish">Bevestigen &amp; voltooien</string>
+    <string name="cycle_review_sets_amrap">%1$dx AMRAP</string>
+    <string name="cycle_review_sets_uniform">%1$dx%2$d</string>
+    <string name="cycle_review_sets_plus_amrap">%1$dx%2$d + %3$dx AMRAP</string>
+    <string name="cycle_review_sets_range">%1$dx%2$d-%3$d</string>
+    <string name="cycle_review_echo_badge">Echo: %1$s</string>
+    <string name="cycle_review_eccentric_badge">Excentrisch %1$d%%</string>
+    <string name="cycle_review_rep_mod_badge">%1$s%2$d herh.</string>
+    <string name="cycle_review_rest_badge">%1$ds rust</string>
+    <string name="add_day_routine_exercises">%1$s: %2$s</string>
+    <string name="workout_day_title">Dag %1$d: %2$s</string>
+    <string name="workout_day_est_minutes">%1$s • ~%2$d min</string>
+    <string name="set_ready_start">START</string>
+    <string name="set_ready_set_selector_cd">Setkiezer, momenteel set %1$d van %2$d</string>
+    <string name="set_ready_tap_choose_set">Tik om een andere set te kiezen</string>
+    <string name="set_ready_set_numbered">Set %1$d</string>
+    <string name="set_ready_set_numbered_current">Set %1$d (huidig)</string>
+    <string name="set_ready_timed">Op tijd</string>
+    <string name="set_ready_bodyweight_header">Lichaamsgewicht • %1$s</string>
+    <string name="set_ready_exercise_variant">Oefeningsvariant</string>
+    <string name="set_ready_bodyweight_dialog_note">Alleen gebruikt voor deze training, tenzij opgeslagen in je profiel.</string>
+    <string name="set_ready_bodyweight_unit_label">Huidig lichaamsgewicht (%1$s)</string>
+    <string name="set_ready_not_set_session">Niet ingesteld voor deze sessie</string>
+    <string name="routine_complete_banner">ROUTINE VOLTOOID!</string>
+    <string name="routine_complete_exercises_label">Oefeningen</string>
+    <string name="bulk_adjust_apply_count">Toepassen (%1$d)</string>
+    <string name="bulk_adjust_percentage">Percentage</string>
+    <string name="bulk_adjust_absolute">Absoluut</string>
+    <string name="bulk_adjust_preview">Voorbeeld</string>
+    <string name="bulk_adjust_hint_percent">bijv. 15 of -7.5</string>
+    <string name="bulk_adjust_hint_absolute">bijv. 5 of -2.5</string>
+    <string name="bulk_adjust_pr_scaled">PR-geschaald</string>
+    <string name="bulk_adjust_clamped_suffix"> (begrensd)</string>
+    <string name="bulk_adjust_custom_percent">Aangepast %</string>
+    <string name="bulk_adjust_weight_change">Gewichtswijziging</string>
+    <string name="add_day_title">Toevoegen aan cyclus</string>
+    <string name="add_day_edit_exercises">Oefeningen bewerken</string>
+    <string name="add_day_rest_day">Rustdag toevoegen</string>
+    <string name="add_day_select_workout">Selecteer een training</string>
+    <string name="add_day_recent_routines">Recente routines</string>
+    <string name="add_day_all_routines">Alle routines</string>
+    <string name="add_day_empty_routines">Nog geen routines gemaakt.\nMaak eerst een routine om trainingsdagen toe te voegen.</string>
+    <string name="superset_create_new">Nieuwe superset maken</string>
+    <string name="superset_or_add_existing">Of toevoegen aan bestaande:</string>
+    <string name="superset_add_existing">Toevoegen aan bestaande:</string>
+    <string name="label_amrap">AMRAP</string>
 </resources>

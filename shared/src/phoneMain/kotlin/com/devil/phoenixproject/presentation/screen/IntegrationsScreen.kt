@@ -2,10 +2,11 @@ package com.devil.phoenixproject.presentation.screen
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
@@ -14,10 +15,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -26,12 +31,17 @@ import com.devil.phoenixproject.domain.model.ConnectionStatus
 import com.devil.phoenixproject.domain.model.IntegrationProvider
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.isIosPlatform
-import com.devil.phoenixproject.presentation.viewmodel.IntegrationUiEvent
-import com.devil.phoenixproject.presentation.viewmodel.IntegrationsViewModel
 import com.devil.phoenixproject.presentation.components.DestructiveConfirmDialog
 import com.devil.phoenixproject.presentation.components.ExpressiveCard
 import com.devil.phoenixproject.presentation.components.LoadingIndicator
 import com.devil.phoenixproject.presentation.components.LoadingIndicatorSize
+import com.devil.phoenixproject.presentation.components.PhoenixModalDialogFrame
+import com.devil.phoenixproject.presentation.components.PhoenixSectionCard
+import com.devil.phoenixproject.presentation.components.ResponsiveSegmentedSelector
+import com.devil.phoenixproject.presentation.components.SectionHeaderIconBadge
+import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
+import com.devil.phoenixproject.presentation.viewmodel.IntegrationUiEvent
+import com.devil.phoenixproject.presentation.viewmodel.IntegrationsViewModel
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.KmpUtils
@@ -40,25 +50,17 @@ import com.devil.phoenixproject.util.readUriContent
 import com.devil.phoenixproject.util.rememberFilePicker
 import com.devil.phoenixproject.util.rememberHealthPermissionRequester
 import com.devil.phoenixproject.util.rememberHealthPermissionSettingsLauncher
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
+import projectphoenix.shared.generated.resources.*
 import projectphoenix.shared.generated.resources.Res
-import projectphoenix.shared.generated.resources.disconnect
-import projectphoenix.shared.generated.resources.disconnect_integration_message
-import projectphoenix.shared.generated.resources.disconnect_integration_title
-import projectphoenix.shared.generated.resources.intervals_screen_title
-import projectphoenix.shared.generated.resources.intervals_send_workouts_cd
-import projectphoenix.shared.generated.resources.intervals_send_workouts_subtitle
-import projectphoenix.shared.generated.resources.intervals_send_workouts_title
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun IntegrationsScreen(
     weightUnit: WeightUnit = WeightUnit.KG,
     onNavigateToExternalData: () -> Unit = {},
-    onNavigateToSendWorkouts: () -> Unit = {},
     onSetTitle: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
@@ -71,8 +73,9 @@ fun IntegrationsScreen(
     var awaitingHealthPermissionSettingsReturn by remember { mutableStateOf(false) }
 
     // Set screen title
-    LaunchedEffect(Unit) {
-        onSetTitle("Integrations")
+    val screenTitle = stringResource(Res.string.settings_integrations)
+    LaunchedEffect(screenTitle) {
+        onSetTitle(screenTitle)
     }
 
     // ── Snackbar ──────────────────────────────────────────────────────────────
@@ -128,7 +131,6 @@ fun IntegrationsScreen(
 
     // ── CSV file saver (triggered when csvContent is set) ────────────────────
     var triggerCsvSave by remember { mutableStateOf(false) }
-    var csvExportWeightUnit by remember { mutableStateOf(weightUnit) }
 
     LaunchedEffect(uiState.csvContent) {
         if (uiState.csvContent != null) {
@@ -136,6 +138,8 @@ fun IntegrationsScreen(
         }
     }
 
+    val csvSavedMessage = stringResource(Res.string.integrations_csv_saved)
+    val fileReadErrorMessage = stringResource(Res.string.integrations_file_read_error)
     if (triggerCsvSave && uiState.csvContent != null) {
         val filePicker = rememberFilePicker()
         filePicker.LaunchFileSaver(
@@ -146,7 +150,7 @@ fun IntegrationsScreen(
                 viewModel.clearCsvContent()
                 if (path != null) {
                     scope.launch {
-                        snackbarHostState.showSnackbar("CSV saved successfully")
+                        snackbarHostState.showSnackbar(csvSavedMessage)
                     }
                 }
             },
@@ -166,7 +170,7 @@ fun IntegrationsScreen(
                     if (content != null) {
                         viewModel.previewCsvImport(content)
                     } else {
-                        snackbarHostState.showSnackbar("Could not read file")
+                        snackbarHostState.showSnackbar(fileReadErrorMessage)
                     }
                 }
             }
@@ -175,51 +179,78 @@ fun IntegrationsScreen(
 
     // ── Import preview dialog ─────────────────────────────────────────────────
     uiState.importPreview?.let { preview ->
-        AlertDialog(
-            onDismissRequest = { viewModel.cancelImport() },
-            title = { Text("Import Preview", style = MaterialTheme.typography.titleLarge) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(Spacing.small)) {
-                    Text("Format: ${preview.format.name}", style = MaterialTheme.typography.bodyMedium)
-                    Text("Workouts found: ${preview.workoutCount}", style = MaterialTheme.typography.bodyMedium)
-                    preview.dateRange?.let { (earliest, latest) ->
-                        Text(
-                            "Date range: ${KmpUtils.formatTimestamp(earliest)} – ${KmpUtils.formatTimestamp(latest)}",
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                    }
-                    val totalMins = preview.totalDurationSeconds / 60
-                    if (totalMins > 0) {
-                        Text("Total duration: ${totalMins}m", style = MaterialTheme.typography.bodyMedium)
-                    }
-                    if (preview.errors.isNotEmpty()) {
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            "${preview.errors.size} row(s) could not be parsed",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                    }
+        PhoenixModalDialogFrame(
+            title = stringResource(Res.string.integrations_import_preview),
+            onDismiss = { if (!uiState.isImporting) viewModel.cancelImport() },
+            dismissOnClickOutside = !uiState.isImporting,
+            actions = {
+                OutlinedButton(
+                    onClick = { viewModel.cancelImport() },
+                    enabled = !uiState.isImporting,
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .heightIn(min = 48.dp),
+                    shape = MaterialTheme.shapes.extraLarge,
+                ) {
+                    Text(stringResource(Res.string.action_cancel), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-            },
-            confirmButton = {
                 Button(
                     onClick = { viewModel.confirmImport() },
                     enabled = !uiState.isImporting,
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .heightIn(min = 48.dp),
+                    shape = MaterialTheme.shapes.extraLarge,
                 ) {
                     if (uiState.isImporting) {
                         LoadingIndicator(LoadingIndicatorSize.Small)
                     } else {
-                        Text("Import ${preview.activities.size} workout(s)")
+                        Text(
+                            stringResource(Res.string.integrations_import_count, preview.activities.size),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
                     }
                 }
             },
-            dismissButton = {
-                TextButton(onClick = { viewModel.cancelImport() }) {
-                    Text("Cancel")
+        ) {
+            Text(stringResource(Res.string.integrations_format, preview.format.name), style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(Res.string.integrations_workouts_found, preview.workoutCount), style = MaterialTheme.typography.bodyMedium)
+            preview.dateRange?.let { (earliest, latest) ->
+                Text(
+                    stringResource(
+                        Res.string.integrations_date_range,
+                        KmpUtils.formatTimestamp(earliest),
+                        KmpUtils.formatTimestamp(latest),
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            val totalMins = preview.totalDurationSeconds / 60
+            if (totalMins > 0) {
+                Text(stringResource(Res.string.integrations_total_duration_mins, totalMins), style = MaterialTheme.typography.bodyMedium)
+            }
+            if (preview.errors.isNotEmpty()) {
+                Surface(
+                    shape = MaterialTheme.shapes.small,
+                    color = MaterialTheme.colorScheme.errorContainer,
+                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        if (preview.errors.size == 1) {
+                            stringResource(Res.string.integrations_rows_unparsed_one)
+                        } else {
+                            stringResource(Res.string.integrations_rows_unparsed_other, preview.errors.size)
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(Spacing.small),
+                    )
                 }
-            },
-        )
+            }
+        }
     }
 
     // ── API Key dialogs ───────────────────────────────────────────────────────
@@ -229,12 +260,13 @@ fun IntegrationsScreen(
 
     if (showHevyApiKeyDialog) {
         ApiKeyInputDialog(
-            title = "Connect Hevy",
-            hint = "Enter your Hevy API key",
+            title = stringResource(Res.string.integrations_connect_hevy),
+            hint = stringResource(Res.string.integrations_hevy_api_key_hint),
+            helperNote = stringResource(Res.string.integrations_hevy_api_key_note),
             value = apiKeyInput,
             onValueChange = { apiKeyInput = it },
             onConfirm = {
-                viewModel.connectProvider(IntegrationProvider.HEVY, apiKeyInput)
+                viewModel.connectProvider(IntegrationProvider.HEVY, apiKeyInput.trim())
                 showHevyApiKeyDialog = false
                 apiKeyInput = ""
             },
@@ -247,12 +279,13 @@ fun IntegrationsScreen(
 
     if (showLiftosaurApiKeyDialog) {
         ApiKeyInputDialog(
-            title = "Connect Liftosaur",
-            hint = "Enter your Liftosaur API key",
+            title = stringResource(Res.string.integrations_connect_liftosaur),
+            hint = stringResource(Res.string.integrations_liftosaur_api_key_hint),
+            helperNote = stringResource(Res.string.integrations_liftosaur_api_key_note),
             value = apiKeyInput,
             onValueChange = { apiKeyInput = it },
             onConfirm = {
-                viewModel.connectProvider(IntegrationProvider.LIFTOSAUR, apiKeyInput)
+                viewModel.connectProvider(IntegrationProvider.LIFTOSAUR, apiKeyInput.trim())
                 showLiftosaurApiKeyDialog = false
                 apiKeyInput = ""
             },
@@ -280,27 +313,31 @@ fun IntegrationsScreen(
     }
 
     // ── Weight unit toggle for CSV export ─────────────────────────────────────
-    var csvWeightUnit by remember { mutableStateOf(weightUnit) }
+    var csvWeightUnit by remember(weightUnit) { mutableStateOf(weightUnit) }
+    val contentMaxWidth = ResponsiveDimensions.contentMaxWidth()
 
     // ── Main content ─────────────────────────────────────────────────────────
-    Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-        containerColor = MaterialTheme.colorScheme.background,
-        modifier = modifier,
-    ) { innerPadding ->
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background),
+        contentAlignment = Alignment.TopCenter,
+    ) {
         Column(
             modifier = Modifier
+                .then(if (contentMaxWidth != null) Modifier.widthIn(max = contentMaxWidth) else Modifier)
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(innerPadding)
-                .padding(Spacing.medium),
+                .padding(Spacing.medium)
+                .navigationBarsPadding(),
             verticalArrangement = Arrangement.spacedBy(Spacing.medium),
         ) {
             // ── Health Apps section ───────────────────────────────────────────
             SectionHeader(
                 icon = Icons.Default.Favorite,
-                title = "Health Apps",
-                iconGradient = listOf(Color(0xFFEF4444), Color(0xFFEC4899)),
+                title = stringResource(Res.string.integrations_health_apps),
+                containerColor = MaterialTheme.colorScheme.errorContainer,
+                contentColor = MaterialTheme.colorScheme.onErrorContainer,
             )
 
             val healthProvider = if (isIosPlatform) IntegrationProvider.APPLE_HEALTH else IntegrationProvider.GOOGLE_HEALTH
@@ -311,57 +348,86 @@ fun IntegrationsScreen(
             val latestHealthBodyWeight = uiState.latestHealthBodyWeight
             val latestHealthBodyWeightLabel = latestHealthBodyWeight?.let { measurement ->
                 if (weightUnit == WeightUnit.KG) {
-                    "${UnitConverter.formatDecimal(measurement.value.toFloat())} kg"
+                    "${UnitConverter.formatDecimal(measurement.value.toFloat())} ${stringResource(Res.string.label_kg)}"
                 } else {
-                    "${UnitConverter.formatDecimal(UnitConverter.kgToLb(measurement.value.toFloat()))} lb"
+                    "${UnitConverter.formatDecimal(UnitConverter.kgToLb(measurement.value.toFloat()))} ${stringResource(Res.string.label_lb)}"
                 }
             }
 
             IntegrationCard(
-                title = if (isIosPlatform) "Apple Health" else "Google Health Connect",
+                title = stringResource(
+                    if (isIosPlatform) Res.string.integrations_apple_health else Res.string.integrations_health_connect,
+                ),
                 subtitle = when {
-                    healthError -> healthStatus.errorMessage ?: "Permissions need attention"
-                    healthConnected && latestHealthBodyWeightLabel != null -> "Connected • latest scale weight $latestHealthBodyWeightLabel"
-                    healthConnected -> "Connected"
-                    else -> "Not connected"
+                    healthError -> healthStatus.errorMessage ?: stringResource(Res.string.integrations_permissions_attention)
+                    healthConnected && latestHealthBodyWeightLabel != null ->
+                        stringResource(Res.string.integrations_connected_latest_weight, latestHealthBodyWeightLabel)
+                    healthConnected -> stringResource(Res.string.hrm_status_connected)
+                    else -> stringResource(Res.string.integrations_status_not_connected)
                 },
                 statusConnected = healthConnected,
                 badges = buildList {
-                    latestHealthBodyWeightLabel?.let { add("Body weight: $it") }
-                    healthStatus?.lastSyncAt?.let { add("Last sync: ${KmpUtils.formatTimestamp(it)}") }
+                    latestHealthBodyWeightLabel?.let {
+                        add(stringResource(Res.string.integrations_body_weight_value, it))
+                    }
+                    healthStatus?.lastSyncAt?.let {
+                        add(stringResource(Res.string.integrations_last_sync, KmpUtils.formatTimestamp(it)))
+                    }
                 },
-                trailingContent = {
-                    Column(
-                        horizontalAlignment = Alignment.End,
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                toggleRow = {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .defaultMinSize(minHeight = 48.dp)
+                            .clip(MaterialTheme.shapes.small)
+                            .toggleable(
+                                value = healthConnected,
+                                role = Role.Switch,
+                                onValueChange = { enabled ->
+                                    viewModel.toggleHealthIntegration(enabled)
+                                },
+                            )
+                            .padding(vertical = Spacing.extraSmall),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
-                        Switch(
-                            checked = healthConnected,
-                            onCheckedChange = { enabled ->
-                                viewModel.toggleHealthIntegration(enabled)
-                            },
-                        )
-                        if (healthError) {
-                            TextButton(
-                                onClick = { viewModel.retryHealthPermissions() },
-                                enabled = !healthBusy,
-                                modifier = Modifier,
-                            ) {
-                                Text("Retry permissions", style = MaterialTheme.typography.labelMedium)
-                            }
-                        }
-                        if (healthConnected || healthError) {
-                            OutlinedButton(
-                                onClick = { viewModel.syncPreviousHealthWorkouts() },
-                                enabled = !healthBusy,
-                                shape = MaterialTheme.shapes.small,
-                                modifier = Modifier,
-                            ) {
-                                if (healthBusy) {
-                                    LoadingIndicator(LoadingIndicatorSize.Small)
+                        Text(
+                            text = stringResource(
+                                if (healthConnected) {
+                                    Res.string.integrations_health_sync_enabled
                                 } else {
-                                    Text("Sync previous", style = MaterialTheme.typography.labelMedium)
-                                }
+                                    Res.string.integrations_enable_health_sync
+                                },
+                            ),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Switch(checked = healthConnected, onCheckedChange = null)
+                    }
+                },
+                actions = {
+                    if (healthError) {
+                        OutlinedButton(
+                            onClick = { viewModel.retryHealthPermissions() },
+                            enabled = !healthBusy,
+                            shape = MaterialTheme.shapes.small,
+                            modifier = Modifier.heightIn(min = 48.dp),
+                        ) {
+                            Text(stringResource(Res.string.integrations_retry_permissions), style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+                    if (healthConnected || healthError) {
+                        OutlinedButton(
+                            onClick = { viewModel.syncPreviousHealthWorkouts() },
+                            enabled = !healthBusy,
+                            shape = MaterialTheme.shapes.small,
+                            modifier = Modifier.heightIn(min = 48.dp),
+                        ) {
+                            if (healthBusy) {
+                                LoadingIndicator(LoadingIndicatorSize.Small)
+                            } else {
+                                Text(stringResource(Res.string.integrations_sync_previous), style = MaterialTheme.typography.labelMedium)
                             }
                         }
                     }
@@ -371,8 +437,9 @@ fun IntegrationsScreen(
             // ── Workout Trackers section ──────────────────────────────────────
             SectionHeader(
                 icon = Icons.Default.FitnessCenter,
-                title = "Workout Trackers",
-                iconGradient = listOf(Color(0xFFFF6B35), Color(0xFFDC2626)),
+                title = stringResource(Res.string.integrations_workout_trackers),
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
             )
 
             // Hevy card
@@ -381,61 +448,69 @@ fun IntegrationsScreen(
             val hevyEntitlement = uiState.entitlementStateByProvider[IntegrationProvider.HEVY]
             val hevyBusy = uiState.operationLoading.any { it.startsWith("${IntegrationProvider.HEVY.key}:") }
             IntegrationCard(
-                title = "Hevy",
+                title = stringResource(Res.string.integrations_hevy),
                 subtitle = hevyEntitlement?.upgradeReason
-                    ?: hevyEntitlement?.providerPlanName?.let { "Plan: $it" }
-                    ?: "Workout history, routines, templates, and measurements",
+                    ?: hevyEntitlement?.providerPlanName?.let {
+                        stringResource(Res.string.integrations_provider_plan, it)
+                    }
+                    ?: stringResource(Res.string.integrations_hevy_description),
                 statusConnected = hevyConnected,
                 badges = listOf(
-                    "${uiState.externalActivities.count { it.provider == IntegrationProvider.HEVY }} workouts",
-                    "${uiState.externalRoutines.count { it.provider == IntegrationProvider.HEVY }} routines",
-                    "${uiState.externalRoutineFolders.count { it.provider == IntegrationProvider.HEVY }} folders",
-                    "${uiState.externalExerciseTemplateCountByProvider[IntegrationProvider.HEVY] ?: 0} templates",
-                    "${uiState.externalMeasurements.count { it.provider == IntegrationProvider.HEVY }} measurements",
+                    stringResource(
+                        Res.string.integrations_workouts_chip,
+                        uiState.externalActivities.count { it.provider == IntegrationProvider.HEVY },
+                    ),
+                    stringResource(
+                        Res.string.integrations_routines_chip,
+                        uiState.externalRoutines.count { it.provider == IntegrationProvider.HEVY },
+                    ),
+                    stringResource(
+                        Res.string.integrations_folders_chip,
+                        uiState.externalRoutineFolders.count { it.provider == IntegrationProvider.HEVY },
+                    ),
+                    stringResource(
+                        Res.string.integrations_templates_chip,
+                        uiState.externalExerciseTemplateCountByProvider[IntegrationProvider.HEVY] ?: 0,
+                    ),
+                    stringResource(
+                        Res.string.integrations_measurements_chip,
+                        uiState.externalMeasurements.count { it.provider == IntegrationProvider.HEVY },
+                    ),
                 ),
-                trailingContent = {
-                    Column(
-                        horizontalAlignment = Alignment.End,
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        if (hevyConnected) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                OutlinedButton(
-                                    onClick = {
-                                        viewModel.syncProvider(IntegrationProvider.HEVY)
-                                    },
-                                    enabled = !hevyBusy,
-                                    shape = MaterialTheme.shapes.small,
-                                    modifier = Modifier,
-                                ) {
-                                    if (hevyBusy) {
-                                        LoadingIndicator(LoadingIndicatorSize.Small)
-                                    } else {
-                                        Text("Sync", style = MaterialTheme.typography.labelMedium)
-                                    }
-                                }
-                                TextButton(
-                                    onClick = { disconnectTarget = IntegrationProvider.HEVY },
-                                    modifier = Modifier,
-                                ) {
-                                    Text(
-                                        "Disconnect",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = MaterialTheme.colorScheme.error,
-                                    )
-                                }
+                actions = {
+                    if (hevyConnected) {
+                        OutlinedButton(
+                            onClick = { viewModel.syncProvider(IntegrationProvider.HEVY) },
+                            enabled = !hevyBusy,
+                            shape = MaterialTheme.shapes.small,
+                            modifier = Modifier.heightIn(min = 48.dp),
+                        ) {
+                            if (hevyBusy) {
+                                LoadingIndicator(LoadingIndicatorSize.Small)
+                            } else {
+                                Text(stringResource(Res.string.integrations_action_sync), style = MaterialTheme.typography.labelMedium)
                             }
-                        } else {
-                            Button(
-                                onClick = {
-                                    apiKeyInput = ""
-                                    showHevyApiKeyDialog = true
-                                },
-                                shape = MaterialTheme.shapes.small,
-                                modifier = Modifier,
-                            ) {
-                                Text("Connect", style = MaterialTheme.typography.labelMedium)
-                            }
+                        }
+                        TextButton(
+                            onClick = { disconnectTarget = IntegrationProvider.HEVY },
+                            modifier = Modifier.heightIn(min = 48.dp),
+                        ) {
+                            Text(
+                                stringResource(Res.string.disconnect),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                    } else {
+                        Button(
+                            onClick = {
+                                apiKeyInput = ""
+                                showHevyApiKeyDialog = true
+                            },
+                            shape = MaterialTheme.shapes.small,
+                            modifier = Modifier.heightIn(min = 48.dp),
+                        ) {
+                            Text(stringResource(Res.string.hrm_action_connect), style = MaterialTheme.typography.labelMedium)
                         }
                     }
                 },
@@ -447,294 +522,205 @@ fun IntegrationsScreen(
             val liftosaurEntitlement = uiState.entitlementStateByProvider[IntegrationProvider.LIFTOSAUR]
             val liftosaurBusy = uiState.operationLoading.any { it.startsWith("${IntegrationProvider.LIFTOSAUR.key}:") }
             IntegrationCard(
-                title = "Liftosaur",
+                title = stringResource(Res.string.integrations_liftosaur),
                 subtitle = liftosaurEntitlement?.upgradeReason
-                    ?: liftosaurEntitlement?.providerPlanName?.let { "Plan: $it" }
-                    ?: "History, programs, stats, and playground previews",
+                    ?: liftosaurEntitlement?.providerPlanName?.let {
+                        stringResource(Res.string.integrations_provider_plan, it)
+                    }
+                    ?: stringResource(Res.string.integrations_liftosaur_description),
                 statusConnected = liftosaurConnected,
                 badges = listOf(
-                    "${uiState.externalActivities.count { it.provider == IntegrationProvider.LIFTOSAUR }} workouts",
-                    "${uiState.externalPrograms.count { it.provider == IntegrationProvider.LIFTOSAUR }} programs",
-                    if (uiState.activeProgram != null) "1 current" else "0 current",
-                    "${uiState.externalProgramStatsByProgramId.size} stats",
+                    stringResource(
+                        Res.string.integrations_workouts_chip,
+                        uiState.externalActivities.count { it.provider == IntegrationProvider.LIFTOSAUR },
+                    ),
+                    stringResource(
+                        Res.string.integrations_programs_chip,
+                        uiState.externalPrograms.count { it.provider == IntegrationProvider.LIFTOSAUR },
+                    ),
+                    stringResource(
+                        Res.string.integrations_current_chip,
+                        if (uiState.activeProgram != null) 1 else 0,
+                    ),
+                    stringResource(
+                        Res.string.integrations_stats_chip,
+                        uiState.externalProgramStatsByProgramId.size,
+                    ),
                 ),
-                trailingContent = {
-                    Column(
-                        horizontalAlignment = Alignment.End,
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        if (liftosaurConnected) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                OutlinedButton(
-                                    onClick = {
-                                        viewModel.syncProvider(IntegrationProvider.LIFTOSAUR)
-                                    },
-                                    enabled = !liftosaurBusy,
-                                    shape = MaterialTheme.shapes.small,
-                                    modifier = Modifier,
-                                ) {
-                                    if (liftosaurBusy) {
-                                        LoadingIndicator(LoadingIndicatorSize.Small)
-                                    } else {
-                                        Text("Sync", style = MaterialTheme.typography.labelMedium)
-                                    }
-                                }
-                                TextButton(
-                                    onClick = { disconnectTarget = IntegrationProvider.LIFTOSAUR },
-                                    modifier = Modifier,
-                                ) {
-                                    Text(
-                                        "Disconnect",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = MaterialTheme.colorScheme.error,
-                                    )
-                                }
+                actions = {
+                    if (liftosaurConnected) {
+                        OutlinedButton(
+                            onClick = { viewModel.syncProvider(IntegrationProvider.LIFTOSAUR) },
+                            enabled = !liftosaurBusy,
+                            shape = MaterialTheme.shapes.small,
+                            modifier = Modifier.heightIn(min = 48.dp),
+                        ) {
+                            if (liftosaurBusy) {
+                                LoadingIndicator(LoadingIndicatorSize.Small)
+                            } else {
+                                Text(stringResource(Res.string.integrations_action_sync), style = MaterialTheme.typography.labelMedium)
                             }
-                        } else {
-                            Button(
-                                onClick = {
-                                    apiKeyInput = ""
-                                    showLiftosaurApiKeyDialog = true
-                                },
-                                shape = MaterialTheme.shapes.small,
-                                modifier = Modifier,
-                            ) {
-                                Text("Connect", style = MaterialTheme.typography.labelMedium)
-                            }
+                        }
+                        TextButton(
+                            onClick = { disconnectTarget = IntegrationProvider.LIFTOSAUR },
+                            modifier = Modifier.heightIn(min = 48.dp),
+                        ) {
+                            Text(
+                                stringResource(Res.string.disconnect),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                    } else {
+                        Button(
+                            onClick = {
+                                apiKeyInput = ""
+                                showLiftosaurApiKeyDialog = true
+                            },
+                            shape = MaterialTheme.shapes.small,
+                            modifier = Modifier.heightIn(min = 48.dp),
+                        ) {
+                            Text(stringResource(Res.string.hrm_action_connect), style = MaterialTheme.typography.labelMedium)
                         }
                     }
                 },
             )
 
             // Strong / CSV card (no connection state — always available)
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .shadow(8.dp, MaterialTheme.shapes.medium),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                ),
-                shape = MaterialTheme.shapes.medium,
-                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-                border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(Spacing.medium),
-                    verticalArrangement = Arrangement.spacedBy(Spacing.small),
+            PhoenixSectionCard(verticalArrangement = Arrangement.spacedBy(Spacing.small)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.small),
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(Spacing.small),
-                    ) {
-                        Icon(
-                            Icons.Default.TableChart,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(20.dp),
-                        )
+                    SectionHeaderIconBadge(
+                        imageVector = Icons.Default.TableChart,
+                        contentDescription = null,
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            "Strong / CSV",
+                            stringResource(Res.string.integrations_strong_csv),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                         )
-                    }
-                    Text(
-                        "Import or export workouts in Strong-compatible CSV format",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-
-                    // Weight unit toggle for CSV
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
                         Text(
-                            "Weight unit:",
+                            stringResource(Res.string.integrations_strong_csv_description),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        FilterChip(
-                            selected = csvWeightUnit == WeightUnit.KG,
-                            onClick = { csvWeightUnit = WeightUnit.KG },
-                            label = { Text("kg", style = MaterialTheme.typography.labelSmall) },
-                        )
-                        FilterChip(
-                            selected = csvWeightUnit == WeightUnit.LB,
-                            onClick = { csvWeightUnit = WeightUnit.LB },
-                            label = { Text("lbs", style = MaterialTheme.typography.labelSmall) },
-                        )
-                    }
-
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(Spacing.small),
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        OutlinedButton(
-                            onClick = {
-                                csvExportWeightUnit = csvWeightUnit
-                                viewModel.exportCsv(csvWeightUnit)
-                            },
-                            enabled = !uiState.isExporting,
-                            shape = MaterialTheme.shapes.small,
-                            modifier = Modifier.weight(1f),
-                        ) {
-                            if (uiState.isExporting) {
-                                LoadingIndicator(LoadingIndicatorSize.Small)
-                            } else {
-                                Icon(
-                                    Icons.Default.Upload,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(16.dp),
-                                )
-                                Spacer(Modifier.width(4.dp))
-                                Text("Export CSV", style = MaterialTheme.typography.labelMedium)
-                            }
-                        }
-                        OutlinedButton(
-                            onClick = { triggerCsvImport = true },
-                            enabled = !uiState.isImporting,
-                            shape = MaterialTheme.shapes.small,
-                            modifier = Modifier.weight(1f),
-                        ) {
-                            if (uiState.isImporting) {
-                                LoadingIndicator(LoadingIndicatorSize.Small)
-                            } else {
-                                Icon(
-                                    Icons.Default.Download,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(16.dp),
-                                )
-                                Spacer(Modifier.width(4.dp))
-                                Text("Import CSV", style = MaterialTheme.typography.labelMedium)
-                            }
-                        }
                     }
                 }
-            }
 
-            // ── Send workouts section (issue #1384) ────────────────────────────
-            // Outbound export to Intervals.icu — deliberately distinct from the
-            // imports/CSV surfaces above.
-            SectionHeader(
-                icon = Icons.Default.CloudUpload,
-                title = stringResource(Res.string.intervals_send_workouts_title),
-                iconGradient = listOf(Color(0xFF8B5CF6), Color(0xFF6366F1)),
-            )
+                Text(
+                    stringResource(Res.string.integrations_export_weight_unit),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                val kgUnitLabel = stringResource(Res.string.label_kg)
+                val lbsUnitLabel = stringResource(Res.string.label_lbs)
+                ResponsiveSegmentedSelector(
+                    options = listOf(WeightUnit.KG, WeightUnit.LB),
+                    selectedOption = csvWeightUnit,
+                    onSelect = { csvWeightUnit = it },
+                    labelForOption = { unit -> if (unit == WeightUnit.KG) kgUnitLabel else lbsUnitLabel },
+                )
 
-            ExpressiveCard(
-                onClick = onNavigateToSendWorkouts,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .shadow(8.dp, MaterialTheme.shapes.medium),
-                border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
-            ) {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(Spacing.medium),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.small),
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(Spacing.small),
+                    OutlinedButton(
+                        onClick = { viewModel.exportCsv(csvWeightUnit) },
+                        enabled = !uiState.isExporting,
+                        shape = MaterialTheme.shapes.small,
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 48.dp),
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .background(
-                                    Brush.linearGradient(
-                                        colors = listOf(Color(0xFF8B5CF6), Color(0xFF6366F1)),
-                                    ),
-                                    MaterialTheme.shapes.small,
-                                ),
-                            contentAlignment = Alignment.Center,
-                        ) {
+                        if (uiState.isExporting) {
+                            LoadingIndicator(LoadingIndicatorSize.Small)
+                        } else {
                             Icon(
-                                Icons.Default.CloudUpload,
+                                Icons.Default.Upload,
                                 contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(20.dp),
+                                modifier = Modifier.size(16.dp),
                             )
-                        }
-                        Column {
+                            Spacer(Modifier.width(4.dp))
                             Text(
-                                stringResource(Res.string.intervals_screen_title),
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                            )
-                            Text(
-                                stringResource(Res.string.intervals_send_workouts_subtitle),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                stringResource(Res.string.integrations_export_csv),
+                                style = MaterialTheme.typography.labelMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                             )
                         }
                     }
-                    Icon(
-                        Icons.Default.ChevronRight,
-                        contentDescription = stringResource(Res.string.intervals_send_workouts_cd),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    OutlinedButton(
+                        onClick = { triggerCsvImport = true },
+                        enabled = !uiState.isImporting,
+                        shape = MaterialTheme.shapes.small,
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 48.dp),
+                    ) {
+                        if (uiState.isImporting) {
+                            LoadingIndicator(LoadingIndicatorSize.Small)
+                        } else {
+                            Icon(
+                                Icons.Default.Download,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                stringResource(Res.string.integrations_import_csv),
+                                style = MaterialTheme.typography.labelMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
                 }
             }
 
             // ── External Activities navigation link ───────────────────────────
             ExpressiveCard(
                 onClick = onNavigateToExternalData,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .shadow(8.dp, MaterialTheme.shapes.medium),
-                border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
+                modifier = Modifier.fillMaxWidth(),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(Spacing.medium),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.small),
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(Spacing.small),
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .background(
-                                    Brush.linearGradient(
-                                        colors = listOf(Color(0xFF10B981), Color(0xFF06B6D4)),
-                                    ),
-                                    MaterialTheme.shapes.small,
-                                ),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(
-                                Icons.AutoMirrored.Filled.List,
-                                contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(20.dp),
-                            )
-                        }
-                        Column {
-                            Text(
-                                "Integration Data",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                            )
-                            val count = uiState.externalActivities.size
-                            Text(
-                                if (count == 0) "Browse imported provider data" else "$count workouts plus provider records",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+                    SectionHeaderIconBadge(
+                        imageVector = Icons.AutoMirrored.Filled.List,
+                        contentDescription = null,
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            stringResource(Res.string.integrations_data_title),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        val count = uiState.externalActivities.size
+                        Text(
+                            when (count) {
+                                0 -> stringResource(Res.string.integrations_data_empty_subtitle)
+                                1 -> stringResource(Res.string.integrations_data_count_subtitle_one)
+                                else -> stringResource(Res.string.integrations_data_count_subtitle_other, count)
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                     Icon(
                         Icons.Default.ChevronRight,
-                        contentDescription = "View integration data",
+                        contentDescription = stringResource(Res.string.integrations_cd_view_data),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -742,33 +728,35 @@ fun IntegrationsScreen(
 
             Spacer(Modifier.height(Spacing.medium))
         }
+
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding(),
+        )
     }
 }
 
 // ─── Shared private components ──────────────────────────────────────────────
 
 @Composable
-private fun SectionHeader(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, iconGradient: List<Color>) {
+private fun SectionHeader(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    containerColor: Color = MaterialTheme.colorScheme.primaryContainer,
+    contentColor: Color = MaterialTheme.colorScheme.onPrimaryContainer,
+) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Spacing.small),
     ) {
-        Box(
-            modifier = Modifier
-                .size(36.dp)
-                .background(
-                    Brush.linearGradient(iconGradient),
-                    MaterialTheme.shapes.small,
-                ),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                icon,
-                contentDescription = null,
-                tint = Color.White,
-                modifier = Modifier.size(18.dp),
-            )
-        }
+        SectionHeaderIconBadge(
+            imageVector = icon,
+            contentDescription = null,
+            containerColor = containerColor,
+            contentColor = contentColor,
+        )
         Text(
             title,
             style = MaterialTheme.typography.titleMedium,
@@ -784,89 +772,91 @@ private fun IntegrationCard(
     subtitle: String,
     statusConnected: Boolean,
     badges: List<String> = emptyList(),
-    trailingContent: @Composable () -> Unit,
+    toggleRow: (@Composable () -> Unit)? = null,
+    actions: @Composable FlowRowScope.() -> Unit,
 ) {
-    val connectedGreen = AccessibilityTheme.colors.connectedGreen // Emerald — distinct from success lime
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .shadow(8.dp, MaterialTheme.shapes.medium),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-        ),
-        shape = MaterialTheme.shapes.medium,
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(Spacing.medium),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
+    val connectedGreen = AccessibilityTheme.colors.connectedGreen
+    PhoenixSectionCard(verticalArrangement = Arrangement.spacedBy(Spacing.small)) {
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(Spacing.small),
+            verticalArrangement = Arrangement.spacedBy(Spacing.extraSmall),
+            itemVerticalAlignment = Alignment.CenterVertically,
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    Text(
-                        title,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    // Status badge
+            Text(
+                title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Surface(
+                shape = RoundedCornerShape(6.dp),
+                color = if (statusConnected) {
+                    MaterialTheme.colorScheme.surfaceContainerLow
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant
+                },
+                border = if (statusConnected) {
+                    BorderStroke(1.dp, connectedGreen.copy(alpha = 0.5f))
+                } else {
+                    null
+                },
+            ) {
+                Text(
+                    if (statusConnected) {
+                        stringResource(Res.string.hrm_status_connected)
+                    } else {
+                        stringResource(Res.string.integrations_status_not_connected)
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Medium,
+                    color = if (statusConnected) {
+                        connectedGreen
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                )
+            }
+        }
+
+        Text(
+            subtitle,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        if (badges.isNotEmpty()) {
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                badges.forEach { badge ->
                     Surface(
                         shape = RoundedCornerShape(6.dp),
-                        color = if (statusConnected) {
-                            connectedGreen.copy(alpha = 0.15f)
-                        } else {
-                            MaterialTheme.colorScheme.surfaceVariant
-                        },
+                        color = MaterialTheme.colorScheme.secondaryContainer,
                     ) {
                         Text(
-                            if (statusConnected) "Connected" else "Not connected",
+                            badge,
                             style = MaterialTheme.typography.labelSmall,
-                            color = if (statusConnected) {
-                                connectedGreen
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            },
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                         )
                     }
                 }
-                Text(
-                    subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                if (badges.isNotEmpty()) {
-                    Row(
-                        modifier = Modifier
-                            .padding(top = 6.dp)
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        badges.forEach { badge ->
-                            Surface(
-                                shape = RoundedCornerShape(6.dp),
-                                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
-                            ) {
-                                Text(
-                                    badge,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                )
-                            }
-                        }
-                    }
-                }
             }
-            Spacer(Modifier.width(Spacing.small))
-            trailingContent()
         }
+
+        toggleRow?.invoke()
+
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(Spacing.small),
+            verticalArrangement = Arrangement.spacedBy(Spacing.small),
+            content = actions,
+        )
     }
 }
 
@@ -874,43 +864,56 @@ private fun IntegrationCard(
 private fun ApiKeyInputDialog(
     title: String,
     hint: String,
+    helperNote: String,
     value: String,
     onValueChange: (String) -> Unit,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(title, style = MaterialTheme.typography.titleLarge) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(Spacing.small)) {
-                Text(
-                    "Enter your API key to enable automatic sync",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                OutlinedTextField(
-                    value = value,
-                    onValueChange = onValueChange,
-                    label = { Text(hint) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = MaterialTheme.shapes.small,
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = onConfirm,
-                enabled = value.isNotBlank(),
-            ) {
-                Text("Connect")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
-        },
-    )
+    var showApiKey by remember { mutableStateOf(false) }
+
+    PhoenixModalDialogFrame(
+        title = title,
+        onDismiss = onDismiss,
+        confirmLabel = stringResource(Res.string.hrm_action_connect),
+        onConfirm = onConfirm,
+        dismissLabel = stringResource(Res.string.action_cancel),
+        confirmEnabled = value.isNotBlank(),
+    ) {
+        Text(
+            text = helperNote,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            label = { Text(hint) },
+            singleLine = true,
+            visualTransformation = if (showApiKey) VisualTransformation.None else PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Password,
+                autoCorrectEnabled = false,
+            ),
+            trailingIcon = {
+                IconButton(
+                    onClick = { showApiKey = !showApiKey },
+                    modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
+                ) {
+                    Icon(
+                        imageVector = if (showApiKey) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                        contentDescription = stringResource(
+                            if (showApiKey) {
+                                Res.string.integrations_cd_hide_api_key
+                            } else {
+                                Res.string.integrations_cd_show_api_key
+                            },
+                        ),
+                    )
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.small,
+        )
+    }
 }

@@ -3519,6 +3519,7 @@ class SyncManager(
             append(dto.notes ?: ""); append('|')
             append(dto.workoutMode ?: ""); append('|')
             append(dto.routineName ?: ""); append('|')
+            dto.completedAt?.let { append("completedAt="); append(it); append('|') }
             append(dto.durationSeconds); append('|')
             append(dto.totalVolume); append('|')
             append(dto.setCount); append('|')

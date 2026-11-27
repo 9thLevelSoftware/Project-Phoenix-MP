@@ -18,9 +18,12 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.devil.phoenixproject.presentation.util.ContentAwareFit
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 
 /**
@@ -167,28 +170,39 @@ fun EnhancedCablePositionBar(
         null
     }
 
-    Column(
-        modifier = modifier.fillMaxHeight(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.SpaceBetween,
+    BoxWithConstraints(
+        modifier = modifier
+            .widthIn(max = 40.dp)
+            .fillMaxHeight(),
     ) {
-        // Label at top with phase indicator
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.Bold,
-            color = activeColor,
-            modifier = Modifier.padding(bottom = 4.dp),
-        )
+        val availableWidthDp = maxWidth.value.coerceAtLeast(16f)
+        val textMeasurer = rememberTextMeasurer()
+        val density = LocalDensity.current
 
-        // Main canvas for the bar
-        Canvas(
-            modifier = Modifier
-                .weight(1f)
-                .width(40.dp)
-                .clip(MaterialTheme.shapes.medium)
-                .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.SpaceBetween,
         ) {
+            // Label at top with phase indicator
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = activeColor,
+                maxLines = 1,
+                softWrap = false,
+                modifier = Modifier.padding(bottom = 4.dp),
+            )
+
+            // Main canvas for the bar — respects caller width (e.g., 24dp compact HUD rail)
+            Canvas(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .clip(MaterialTheme.shapes.medium)
+                    .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+            ) {
             val barWidth = size.width
             val barHeight = size.height
 
@@ -258,15 +272,31 @@ fun EnhancedCablePositionBar(
             )
         }
 
-        // Position percentage at bottom
-        Text(
-            text = "${(animatedPosition * 100).toInt()}%",
-            style = MaterialTheme.typography.labelSmall,
-            color = activeColor,
-            maxLines = 1,
-            overflow = TextOverflow.Visible,
-            modifier = Modifier.padding(top = 4.dp),
-        )
+            // Position percentage at bottom, scaled to stay strictly within the rail width
+            val percentText = "${(animatedPosition * 100).toInt()}%"
+            val basePercentStyle = MaterialTheme.typography.labelSmall
+            val fitScale = ContentAwareFit.singleLineFitFontScale(
+                text = percentText,
+                style = basePercentStyle,
+                availableDp = availableWidthDp,
+                measurer = textMeasurer,
+                density = density,
+            )
+            val percentStyle = if (fitScale < 1f) {
+                basePercentStyle.copy(fontSize = basePercentStyle.fontSize * fitScale)
+            } else {
+                basePercentStyle
+            }
+            Text(
+                text = percentText,
+                style = percentStyle,
+                color = activeColor,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Clip,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
     }
 }
 

@@ -21,6 +21,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.devil.phoenixproject.data.repository.ExerciseImageEntity
@@ -34,12 +35,14 @@ import com.devil.phoenixproject.presentation.components.ExerciseDemoImage
 import com.devil.phoenixproject.presentation.components.ExpandedForceCurve
 import com.devil.phoenixproject.presentation.components.ForceCurveMiniGraph
 import com.devil.phoenixproject.presentation.components.StableRepProgress
+import com.devil.phoenixproject.presentation.util.LocalWeightTextScale
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
 import com.devil.phoenixproject.presentation.util.SetTypeLabel
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import com.devil.phoenixproject.presentation.util.formatRackItemLine
 import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
+import com.devil.phoenixproject.presentation.util.scaledForWeightValue
 import com.devil.phoenixproject.presentation.util.setTypeLabel
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.velocityZoneColor
@@ -98,7 +101,11 @@ fun WorkoutHud(
     // Determine if we're in Echo mode
     val isEchoMode = workoutParameters.isEchoMode
     val pagerState = rememberPagerState(pageCount = { 3 })
-    val topBarModeLabel = if (isCurrentExerciseBodyweight) "Bodyweight" else workoutParameters.programMode.displayName
+    val topBarModeLabel = if (isCurrentExerciseBodyweight) {
+        stringResource(Res.string.label_bodyweight)
+    } else {
+        workoutParameters.programMode.displayName
+    }
     val currentRoutineExercise = loadedRoutine?.exercises?.getOrNull(currentExerciseIndex)
 
     // Determine gradient for background based on phase?
@@ -124,171 +131,176 @@ fun WorkoutHud(
         },
         containerColor = MaterialTheme.colorScheme.surface,
     ) { paddingValues ->
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues),
         ) {
-            // Background Pager
-            HorizontalPager(
-                state = pagerState,
-                modifier = Modifier.fillMaxSize(),
-            ) { page ->
-                when (page) {
-                    0 -> {
-                        // Derive exercise info for display
-                        val exerciseName = currentRoutineExercise?.exercise?.name
-                        val totalSets = currentRoutineExercise?.setReps?.size ?: 0
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+            ) {
+                // Background Pager
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier.fillMaxSize(),
+                ) { page ->
+                    when (page) {
+                        0 -> {
+                            // Derive exercise info for display
+                            val exerciseName = currentRoutineExercise?.exercise?.name
+                            val totalSets = currentRoutineExercise?.setReps?.size ?: 0
 
-                        ExecutionPage(
+                            ExecutionPage(
+                                metric = metric,
+                                repCount = repCount,
+                                weightUnit = weightUnit,
+                                formatWeight = formatWeight,
+                                workoutParameters = workoutParameters,
+                                isEchoMode = isEchoMode,
+                                echoForceKgMax = currentHeuristicKgMax,
+                                exerciseName = exerciseName,
+                                currentSetIndex = currentSetIndex,
+                                totalSets = totalSets,
+                                timedExerciseRemainingSeconds = timedExerciseRemainingSeconds,
+                                isCurrentExerciseBodyweight = isCurrentExerciseBodyweight,
+                                isExerciseTimerPaused = isExerciseTimerPaused,
+                                onPauseExerciseTimer = onPauseExerciseTimer,
+                                onResumeExerciseTimer = onResumeExerciseTimer,
+                                onResetExerciseTimer = onResetExerciseTimer,
+                                currentWarmupSetIndex = currentWarmupSetIndex,
+                            )
+                        }
+
+                        1 -> InstructionPage(
+                            loadedRoutine = loadedRoutine,
+                            currentExerciseIndex = currentExerciseIndex,
+                            selectedExerciseId = workoutParameters.selectedExerciseId,
+                            exerciseRepository = exerciseRepository,
+                            enableVideoPlayback = enableVideoPlayback,
+                        )
+
+                        2 -> StatsPage(
                             metric = metric,
-                            repCount = repCount,
                             weightUnit = weightUnit,
                             formatWeight = formatWeight,
-                            workoutParameters = workoutParameters,
-                            isEchoMode = isEchoMode,
-                            echoForceKgMax = currentHeuristicKgMax,
-                            exerciseName = exerciseName,
-                            currentSetIndex = currentSetIndex,
-                            totalSets = totalSets,
-                            timedExerciseRemainingSeconds = timedExerciseRemainingSeconds,
                             isCurrentExerciseBodyweight = isCurrentExerciseBodyweight,
-                            isExerciseTimerPaused = isExerciseTimerPaused,
-                            onPauseExerciseTimer = onPauseExerciseTimer,
-                            onResumeExerciseTimer = onResumeExerciseTimer,
-                            onResetExerciseTimer = onResetExerciseTimer,
-                            currentWarmupSetIndex = currentWarmupSetIndex,
+                            latestBiomechanicsResult = latestBiomechanicsResult,
+                            vbtEnabled = vbtEnabled,
+                            velocityLossThresholdPercent = velocityLossThresholdPercent,
                         )
                     }
+                }
 
-                    1 -> InstructionPage(
-                        loadedRoutine = loadedRoutine,
-                        currentExerciseIndex = currentExerciseIndex,
-                        selectedExerciseId = workoutParameters.selectedExerciseId,
-                        exerciseRepository = exerciseRepository,
-                        enableVideoPlayback = enableVideoPlayback,
+                // PERIPHERAL VISION BARS (Pinned to edges, overlaying the pager)
+                // Detect activity quickly (movement/load), then latch per-cable for the set to avoid flicker.
+                val activePositionThresholdMm = 500f // Match handle detection threshold
+                val activeVelocityThresholdMms = 200.0 // Match auto-start velocity threshold
+                val activeRangeThresholdMm = 200f // Lower than ROM threshold for early visibility
+                val activeLoadDeltaKg = 1.0f // Above baseline to treat as engaged
+
+                val cableAHasRange = repRanges?.isCableAActive(activeRangeThresholdMm) == true
+                val cableBHasRange = repRanges?.isCableBActive(activeRangeThresholdMm) == true
+
+                val isCableACurrentlyActive = metric?.let { metric ->
+                    !isCurrentExerciseBodyweight && (
+                        abs(metric.positionA) > activePositionThresholdMm ||
+                            abs(metric.velocityA) > activeVelocityThresholdMms ||
+                            cableAHasRange ||
+                            (loadBaselineA > 0f && metric.loadA > loadBaselineA + activeLoadDeltaKg)
+                        )
+                } ?: false
+
+                val isCableBCurrentlyActive = metric?.let { metric ->
+                    !isCurrentExerciseBodyweight && (
+                        abs(metric.positionB) > activePositionThresholdMm ||
+                            abs(metric.velocityB) > activeVelocityThresholdMms ||
+                            cableBHasRange ||
+                            (loadBaselineB > 0f && metric.loadB > loadBaselineB + activeLoadDeltaKg)
+                        )
+                } ?: false
+
+                // Track if cable has ever been active (latching - once true, stays true for this set)
+                // Use guarded composition-time update instead of SideEffect to avoid
+                // redundant recomposition triggers (SideEffect + mutableState is an anti-pattern).
+                var cableAEverActive by remember { mutableStateOf(false) }
+                var cableBEverActive by remember { mutableStateOf(false) }
+                if (isCableACurrentlyActive && !cableAEverActive) cableAEverActive = true
+                if (isCableBCurrentlyActive && !cableBEverActive) cableBEverActive = true
+
+                val showCableA = cableAEverActive || isCableACurrentlyActive
+                val showCableB = cableBEverActive || isCableBCurrentlyActive
+
+                // Left Bar - show only when cable A is active/latched and metric data is available
+                if (showCableA && metric != null && !isCurrentExerciseBodyweight) {
+                    // Color this bar from cable A's own range. A low other cable must not paint it red.
+                    val isDangerA = repRanges?.isCableAInDangerZone(metric.positionA) ?: false
+
+                    EnhancedCablePositionBar(
+                        label = stringResource(Res.string.hud_cable_left_short),
+                        currentPosition = metric.positionA,
+                        velocity = metric.velocityA,
+                        minPosition = repRanges?.minPosA,
+                        maxPosition = repRanges?.maxPosA,
+                        // Ghost indicators: use last rep's rolling average positions
+                        ghostMin = repRanges?.lastRepBottomA,
+                        ghostMax = repRanges?.lastRepTopA,
+                        isDanger = isDangerA,
+                        modifier = Modifier
+                            .align(Alignment.CenterStart)
+                            .width(24.dp) // Thinner for HUD
+                            .fillMaxHeight(0.6f)
+                            .padding(start = 4.dp),
                     )
+                }
 
-                    2 -> StatsPage(
-                        metric = metric,
-                        weightUnit = weightUnit,
-                        formatWeight = formatWeight,
-                        isCurrentExerciseBodyweight = isCurrentExerciseBodyweight,
-                        latestBiomechanicsResult = latestBiomechanicsResult,
-                        vbtEnabled = vbtEnabled,
-                        velocityLossThresholdPercent = velocityLossThresholdPercent,
+                // Right Bar - show only when cable B is active/latched and metric data is available
+                if (showCableB && metric != null && !isCurrentExerciseBodyweight) {
+                    // Color this bar from cable B's own range. A low other cable must not paint it red.
+                    val isDangerB = repRanges?.isCableBInDangerZone(metric.positionB) ?: false
+
+                    EnhancedCablePositionBar(
+                        label = stringResource(Res.string.hud_cable_right_short),
+                        currentPosition = metric.positionB,
+                        velocity = metric.velocityB,
+                        minPosition = repRanges?.minPosB,
+                        maxPosition = repRanges?.maxPosB,
+                        // Ghost indicators: use last rep's rolling average positions
+                        ghostMin = repRanges?.lastRepBottomB,
+                        ghostMax = repRanges?.lastRepTopB,
+                        isDanger = isDangerB,
+                        modifier = Modifier
+                            .align(Alignment.CenterEnd)
+                            .width(24.dp) // Thinner for HUD
+                            .fillMaxHeight(0.6f)
+                            .padding(end = 4.dp),
                     )
                 }
             }
 
-            // Pager Indicator
+            // D-6 #2: Dedicated space above HudBottomBar so pager dots never overlap PER CABLE or gauge
             Row(
                 Modifier
                     .wrapContentHeight()
                     .fillMaxWidth()
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 8.dp),
+                    .padding(vertical = 8.dp),
                 horizontalArrangement = Arrangement.Center,
             ) {
                 repeat(pagerState.pageCount) { iteration ->
                     val color = if (pagerState.currentPage == iteration) {
                         MaterialTheme.colorScheme.primary
                     } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
                     }
                     Box(
                         modifier = Modifier
-                            .padding(2.dp)
+                            .padding(horizontal = 3.dp)
                             .clip(CircleShape)
                             .background(color)
                             .size(8.dp),
                     )
                 }
-            }
-
-            // PERIPHERAL VISION BARS (Pinned to edges, overlaying the pager)
-            // Detect activity quickly (movement/load), then latch per-cable for the set to avoid flicker.
-            val activePositionThresholdMm = 500f // Match handle detection threshold
-            val activeVelocityThresholdMms = 200.0 // Match auto-start velocity threshold
-            val activeRangeThresholdMm = 200f // Lower than ROM threshold for early visibility
-            val activeLoadDeltaKg = 1.0f // Above baseline to treat as engaged
-
-            val cableAHasRange = repRanges?.isCableAActive(activeRangeThresholdMm) == true
-            val cableBHasRange = repRanges?.isCableBActive(activeRangeThresholdMm) == true
-
-            val isCableACurrentlyActive = metric?.let { metric ->
-                !isCurrentExerciseBodyweight && (
-                    abs(metric.positionA) > activePositionThresholdMm ||
-                        abs(metric.velocityA) > activeVelocityThresholdMms ||
-                        cableAHasRange ||
-                        (loadBaselineA > 0f && metric.loadA > loadBaselineA + activeLoadDeltaKg)
-                    )
-            } ?: false
-
-            val isCableBCurrentlyActive = metric?.let { metric ->
-                !isCurrentExerciseBodyweight && (
-                    abs(metric.positionB) > activePositionThresholdMm ||
-                        abs(metric.velocityB) > activeVelocityThresholdMms ||
-                        cableBHasRange ||
-                        (loadBaselineB > 0f && metric.loadB > loadBaselineB + activeLoadDeltaKg)
-                    )
-            } ?: false
-
-            // Track if cable has ever been active (latching - once true, stays true for this set)
-            // Use guarded composition-time update instead of SideEffect to avoid
-            // redundant recomposition triggers (SideEffect + mutableState is an anti-pattern).
-            var cableAEverActive by remember { mutableStateOf(false) }
-            var cableBEverActive by remember { mutableStateOf(false) }
-            if (isCableACurrentlyActive && !cableAEverActive) cableAEverActive = true
-            if (isCableBCurrentlyActive && !cableBEverActive) cableBEverActive = true
-
-            val showCableA = cableAEverActive || isCableACurrentlyActive
-            val showCableB = cableBEverActive || isCableBCurrentlyActive
-
-            // Left Bar - show only when cable A is active/latched and metric data is available
-            if (showCableA && metric != null && !isCurrentExerciseBodyweight) {
-                // Color this bar from cable A's own range. A low other cable must not paint it red.
-                val isDangerA = repRanges?.isCableAInDangerZone(metric.positionA) ?: false
-
-                EnhancedCablePositionBar(
-                    label = "L",
-                    currentPosition = metric.positionA,
-                    velocity = metric.velocityA,
-                    minPosition = repRanges?.minPosA,
-                    maxPosition = repRanges?.maxPosA,
-                    // Ghost indicators: use last rep's rolling average positions
-                    ghostMin = repRanges?.lastRepBottomA,
-                    ghostMax = repRanges?.lastRepTopA,
-                    isDanger = isDangerA,
-                    modifier = Modifier
-                        .align(Alignment.CenterStart)
-                        .width(24.dp) // Thinner for HUD
-                        .fillMaxHeight(0.6f)
-                        .padding(start = 4.dp),
-                )
-            }
-
-            // Right Bar - show only when cable B is active/latched and metric data is available
-            if (showCableB && metric != null && !isCurrentExerciseBodyweight) {
-                // Color this bar from cable B's own range. A low other cable must not paint it red.
-                val isDangerB = repRanges?.isCableBInDangerZone(metric.positionB) ?: false
-
-                EnhancedCablePositionBar(
-                    label = "R",
-                    currentPosition = metric.positionB,
-                    velocity = metric.velocityB,
-                    minPosition = repRanges?.minPosB,
-                    maxPosition = repRanges?.maxPosB,
-                    // Ghost indicators: use last rep's rolling average positions
-                    ghostMin = repRanges?.lastRepBottomB,
-                    ghostMax = repRanges?.lastRepTopB,
-                    isDanger = isDangerB,
-                    modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .width(24.dp) // Thinner for HUD
-                        .fillMaxHeight(0.6f)
-                        .padding(end = 4.dp),
-                )
             }
         }
     }
@@ -307,13 +319,16 @@ private fun HudTopBar(connectionState: ConnectionState, workoutMode: String, onS
         modifier = Modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .height(buttonHeight)
-            .padding(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
+            .heightIn(min = buttonHeight)
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Left: Connection Status (Small Dot)
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        // Left: Connection Status (Small Dot) + mode label
+        Row(
+            modifier = Modifier.weight(1f),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Box(
                 modifier = Modifier
                     .size(12.dp)
@@ -327,23 +342,32 @@ private fun HudTopBar(connectionState: ConnectionState, workoutMode: String, onS
                 workoutMode,
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
 
-        // Right: STOP Button
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            // STOP Button (Prominent)
-            Button(
-                onClick = onStopWorkout,
-                modifier = Modifier.semantics { contentDescription = stopWorkoutLabel },
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                shape = MaterialTheme.shapes.medium,
-                contentPadding = PaddingValues(horizontal = 24.dp, vertical = 0.dp),
-            ) {
-                Icon(Icons.Default.Stop, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(stringResource(Res.string.stop_label), fontWeight = FontWeight.Bold)
-            }
+        // Right: STOP Button (explicit onError contentColor + 48dp minimum height)
+        Button(
+            onClick = onStopWorkout,
+            modifier = Modifier
+                .heightIn(min = 48.dp)
+                .semantics { contentDescription = stopWorkoutLabel },
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.error,
+                contentColor = MaterialTheme.colorScheme.onError,
+            ),
+            shape = MaterialTheme.shapes.medium,
+            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
+        ) {
+            Icon(Icons.Default.Stop, contentDescription = null)
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                stringResource(Res.string.stop_label),
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
@@ -376,31 +400,36 @@ private fun HudBottomBar(
                 weightUnit = weightUnit,
                 formatWeight = formatWeight,
             )
+            // Issue #1367 SD9: both value-slot branches (numeric/"Adaptive" and bodyweight
+            // "No machine load") get the rendered-cap weight treatment; the supporting
+            // labelSmall labels ("Weight/cable"/"Bodyweight"/rack context) stay unscaled.
+            val weightTextScale = LocalWeightTextScale.current
+            val valueStyle = MaterialTheme.typography.titleLarge.scaledForWeightValue(weightTextScale)
             Column {
                 if (isCurrentExerciseBodyweight) {
                     Text(
-                        "Bodyweight",
+                        stringResource(Res.string.label_bodyweight),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
                         "No machine load",
-                        style = MaterialTheme.typography.titleLarge,
+                        style = valueStyle,
                         fontWeight = FontWeight.Bold,
                     )
                 } else {
                     Text(
-                        "Weight/cable",
+                        stringResource(Res.string.hud_weight_per_cable_label),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
                         if (workoutParameters.isEchoMode) {
-                            "Adaptive"
+                            stringResource(Res.string.hud_adaptive)
                         } else {
                             formatWeight(selectedDisplayKg, weightUnit)
                         },
-                        style = MaterialTheme.typography.titleLarge,
+                        style = valueStyle,
                         fontWeight = FontWeight.Bold,
                     )
                 }
@@ -436,76 +465,129 @@ private fun ExecutionPage(
     onResetExerciseTimer: () -> Unit = {},
     currentWarmupSetIndex: Int = -1, // Issue #646: -1 = no warm-up phase
 ) {
-    Column(
-        modifier = Modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        // Exercise Name and Set Counter (only shown for routines/single exercise, NOT Just Lift)
-        // Display above the rep counter when exerciseName is available
-        // Sized larger to fill gap between top bar and rep counter
-        if (!workoutParameters.isJustLift && exerciseName != null) {
-            // Exercise Name - large and prominent
-            Text(
-                text = exerciseName,
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(horizontal = 16.dp),
-            )
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val availableHeight = maxHeight
+        val isCompactHeight = availableHeight < 460.dp
+        val isVeryCompactHeight = availableHeight < 380.dp
+        val counterSize = when {
+            isVeryCompactHeight -> 84.dp
+            isCompactHeight -> 96.dp
+            else -> 120.dp
+        }
+        val hudSize = when {
+            isVeryCompactHeight -> 136.dp
+            isCompactHeight -> 160.dp
+            else -> ResponsiveDimensions.componentSize(baseSize = 200.dp)
+        }
+        val headerSpacerHeight = when {
+            isVeryCompactHeight -> 8.dp
+            isCompactHeight -> 12.dp
+            else -> 24.dp
+        }
+        val gaugeSpacerHeight = when {
+            isVeryCompactHeight -> 12.dp
+            isCompactHeight -> 16.dp
+            else -> 32.dp
+        }
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Set Counter: "Set X / Y" - prominent secondary text
-            if (totalSets > 0) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .heightIn(min = maxHeight)
+                .padding(horizontal = 32.dp, vertical = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            // Exercise Name and Set Counter (only shown for routines/single exercise, NOT Just Lift)
+            // Display above the rep counter when exerciseName is available
+            if (!workoutParameters.isJustLift && exerciseName != null) {
                 Text(
-                    text = "Set ${currentSetIndex + 1} / $totalSets",
-                    style = MaterialTheme.typography.titleLarge,
+                    text = exerciseName,
+                    style = if (isCompactHeight) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    textAlign = TextAlign.Center,
+                )
+
+                Spacer(modifier = Modifier.height(if (isCompactHeight) 4.dp else 8.dp))
+
+                // Set Counter: "Set X / Y" - prominent secondary text
+                if (totalSets > 0) {
+                    Text(
+                        text = stringResource(Res.string.hud_set_of, currentSetIndex + 1, totalSets),
+                        style = if (isCompactHeight) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
+                // Issue #646: set-type badge (Calibration Reps / Warm-up Set N / Working Set)
+                val setType = setTypeLabel(repCount, currentWarmupSetIndex, showCalibrationLabel = true)
+                val setTypeText = when (setType) {
+                    SetTypeLabel.Calibration -> stringResource(Res.string.set_type_calibration)
+                    is SetTypeLabel.Warmup -> stringResource(Res.string.set_type_warmup, setType.setNumber)
+                    SetTypeLabel.Working -> stringResource(Res.string.set_type_working)
+                }
+                Text(
+                    text = setTypeText,
+                    style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+
+                Spacer(modifier = Modifier.height(headerSpacerHeight))
             }
 
-            // Issue #646: set-type badge (Calibration Reps / Warm-up Set N / Working Set)
-            val setType = setTypeLabel(repCount, currentWarmupSetIndex, showCalibrationLabel = true)
-            val setTypeText = when (setType) {
-                SetTypeLabel.Calibration -> stringResource(Res.string.set_type_calibration)
-                is SetTypeLabel.Warmup -> stringResource(Res.string.set_type_warmup, setType.setNumber)
-                SetTypeLabel.Working -> stringResource(Res.string.set_type_working)
-            }
-            Text(
-                text = setTypeText,
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
-            )
+            // Issue #192: Show countdown timer for timed exercises, rep counter for normal exercises
+            val timedRemainingSeconds = timedExerciseRemainingSeconds
+            if (isCurrentExerciseBodyweight) {
+                Text(
+                    stringResource(Res.string.hud_time_label),
+                    style = MaterialTheme.typography.labelLarge.copy(letterSpacing = 2.sp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
 
-            Spacer(modifier = Modifier.height(24.dp))
-        }
+                val remainingSeconds = timedExerciseRemainingSeconds
+                Text(
+                    text = remainingSeconds?.let { stringResource(Res.string.hud_seconds_short, it) } ?: "—",
+                    style = workoutCounterStyle,
+                    color = if ((remainingSeconds ?: Int.MAX_VALUE) <= 5) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    },
+                )
 
-        // Issue #192: Show countdown timer for timed exercises, rep counter for normal exercises
-        val timedRemainingSeconds = timedExerciseRemainingSeconds
-        if (isCurrentExerciseBodyweight) {
-            Text(
-                "TIME",
-                style = MaterialTheme.typography.labelLarge.copy(letterSpacing = 2.sp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+                // Issue #190: Timer control buttons for bodyweight timed exercises
+                if (timedExerciseRemainingSeconds != null) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    ExerciseTimerControls(
+                        isPaused = isExerciseTimerPaused,
+                        onPause = onPauseExerciseTimer,
+                        onResume = onResumeExerciseTimer,
+                        onReset = onResetExerciseTimer,
+                    )
+                }
+            } else if (timedRemainingSeconds != null) {
+                Text(
+                    stringResource(Res.string.hud_time_label),
+                    style = MaterialTheme.typography.labelLarge.copy(letterSpacing = 2.sp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
 
-            val remainingSeconds = timedExerciseRemainingSeconds
-            Text(
-                text = remainingSeconds?.let { "${it}s" } ?: "—",
-                style = workoutCounterStyle,
-                color = if ((remainingSeconds ?: Int.MAX_VALUE) <= 5) {
-                    MaterialTheme.colorScheme.error
-                } else {
-                    MaterialTheme.colorScheme.primary
-                },
-            )
+                // Large countdown display
+                Text(
+                    text = stringResource(Res.string.hud_seconds_short, timedRemainingSeconds),
+                    style = workoutCounterStyle,
+                    color = if (timedRemainingSeconds <= 5) {
+                        MaterialTheme.colorScheme.error // Highlight last 5 seconds
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    },
+                )
 
-            // Issue #190: Timer control buttons for bodyweight timed exercises
-            if (timedExerciseRemainingSeconds != null) {
+                // Issue #190: Timer control buttons for timed cable exercises
                 Spacer(modifier = Modifier.height(12.dp))
                 ExerciseTimerControls(
                     isPaused = isExerciseTimerPaused,
@@ -513,155 +595,132 @@ private fun ExecutionPage(
                     onResume = onResumeExerciseTimer,
                     onReset = onResetExerciseTimer,
                 )
-            }
-        } else if (timedRemainingSeconds != null) {
-            Text(
-                "TIME",
-                style = MaterialTheme.typography.labelLarge.copy(letterSpacing = 2.sp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
 
-            // Large countdown display
-            Text(
-                text = "${timedRemainingSeconds}s",
-                style = workoutCounterStyle,
-                color = if (timedRemainingSeconds <= 5) {
-                    MaterialTheme.colorScheme.error // Highlight last 5 seconds
-                } else {
-                    MaterialTheme.colorScheme.primary
-                },
-            )
+                // Timed cable exercises still count reps; show a secondary rep counter.
+                Spacer(modifier = Modifier.height(12.dp))
 
-            // Issue #190: Timer control buttons for timed cable exercises
-            Spacer(modifier = Modifier.height(12.dp))
-            ExerciseTimerControls(
-                isPaused = isExerciseTimerPaused,
-                onPause = onPauseExerciseTimer,
-                onResume = onResumeExerciseTimer,
-                onReset = onResetExerciseTimer,
-            )
-
-            // Timed cable exercises still count reps; show a secondary rep counter.
-            Spacer(modifier = Modifier.height(12.dp))
-
-            val repLabel = if (repCount.isWarmupComplete) "REPS" else "WARMUP"
-            Text(
-                repLabel,
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                letterSpacing = 2.sp,
-            )
-
-            val repText = if (repCount.isWarmupComplete) {
-                if (!workoutParameters.isJustLift && !workoutParameters.isAMRAP && workoutParameters.reps > 0) {
-                    "${repCount.workingReps} / ${workoutParameters.reps}"
-                } else {
-                    "${repCount.workingReps}"
-                }
-            } else {
-                if (workoutParameters.warmupReps > 0) {
-                    "${repCount.warmupReps} / ${workoutParameters.warmupReps}"
-                } else {
-                    "${repCount.warmupReps}"
-                }
-            }
-
-            Text(
-                text = repText,
-                style = MaterialTheme.typography.headlineLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-        } else {
-            // Normal exercise - show rep counter
-            // Issue #163: Animated Rep Counter with stable progress display
-            // Shows phase label and animated counter during working reps
-            // Shows warmup counter during warmup phase
-            Text(
-                if (repCount.isWarmupComplete) "REP" else "WARMUP",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                letterSpacing = 2.sp,
-            )
-
-            if (repCount.isWarmupComplete) {
-                // Issue #163: Animated working rep counter
-                // Shows the current rep being performed with animated visual feedback:
-                // - IDLE: Solid confirmed count
-                // - CONCENTRIC: Outline reveals bottom-to-top
-                // - ECCENTRIC: Fill reveals top-to-bottom
-                AnimatedRepCounter(
-                    nextRepNumber = repCount.workingReps + 1,
-                    phase = repCount.activeRepPhase,
-                    phaseProgress = repCount.phaseProgress,
-                    confirmedReps = repCount.workingReps,
-                    targetReps = workoutParameters.reps,
-                    size = 120.dp,
+                val repLabel = stringResource(
+                    if (repCount.isWarmupComplete) Res.string.hud_reps_label else Res.string.hud_warmup_label,
+                )
+                Text(
+                    repLabel,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    letterSpacing = 2.sp,
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
+                val repText = if (repCount.isWarmupComplete) {
+                    if (!workoutParameters.isJustLift && !workoutParameters.isAMRAP && workoutParameters.reps > 0) {
+                        "${repCount.workingReps} / ${workoutParameters.reps}"
+                    } else {
+                        "${repCount.workingReps}"
+                    }
+                } else {
+                    if (workoutParameters.warmupReps > 0) {
+                        "${repCount.warmupReps} / ${workoutParameters.warmupReps}"
+                    } else {
+                        "${repCount.warmupReps}"
+                    }
+                }
 
-                // Stable "X / Y" progress display - always visible and stable
-                if (!workoutParameters.isJustLift && !workoutParameters.isAMRAP && workoutParameters.reps > 0) {
-                    StableRepProgress(
+                Text(
+                    text = repText,
+                    style = MaterialTheme.typography.headlineLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            } else {
+                // Normal exercise - show rep counter
+                // Issue #163: Animated Rep Counter with stable progress display
+                // Shows phase label and animated counter during working reps
+                // Shows warmup counter during warmup phase
+                Text(
+                    stringResource(
+                        if (repCount.isWarmupComplete) Res.string.hud_rep_label else Res.string.hud_warmup_label,
+                    ),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    letterSpacing = 2.sp,
+                )
+
+                if (repCount.isWarmupComplete) {
+                    // Issue #163: Animated working rep counter
+                    // Shows the current rep being performed with animated visual feedback:
+                    // - IDLE: Static confirmed count
+                    // - CONCENTRIC: Outline reveals bottom-to-top
+                    // - ECCENTRIC: Fill reveals top-to-bottom
+                    AnimatedRepCounter(
+                        nextRepNumber = repCount.workingReps + 1,
+                        phase = repCount.activeRepPhase,
+                        phaseProgress = repCount.phaseProgress,
                         confirmedReps = repCount.workingReps,
                         targetReps = workoutParameters.reps,
+                        size = counterSize,
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Stable "X / Y" progress display - always visible and stable
+                    if (!workoutParameters.isJustLift && !workoutParameters.isAMRAP && workoutParameters.reps > 0) {
+                        StableRepProgress(
+                            confirmedReps = repCount.workingReps,
+                            targetReps = workoutParameters.reps,
+                        )
+                    }
+                } else {
+                    // Warmup counter (non-animated)
+                    Text(
+                        text = "${repCount.warmupReps} / ${workoutParameters.warmupReps}",
+                        style = workoutCounterStyle,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-            } else {
-                // Warmup counter (non-animated)
+            }
+
+            Spacer(modifier = Modifier.height(gaugeSpacerHeight))
+
+            // Circular Force Gauge
+            if (metric != null && !isCurrentExerciseBodyweight) {
+                // Current load is always per-cable resistance.
+                // Always use max(loadA, loadB) to show peak force (peak of both cables)
+                // For Echo mode: use heuristic kgMax (actual measured force)
+                //
+                // The heuristic data provides actual measured force via the machine's
+                // force telemetry (c7b73007-b245-4503-a1ed-9e4e97eb9802), polled at 4Hz.
+                // For Echo mode this is essential as the machine dynamically adjusts resistance.
+                val perCableKg = if (isEchoMode && echoForceKgMax > 0f) {
+                    echoForceKgMax
+                } else {
+                    // Use max of both loads - works for single and double cable exercises
+                    maxOf(metric.loadA, metric.loadB)
+                }
+                val targetDisplayWeight = workoutParameters.weightPerCableKg
+                val gaugeMax = (targetDisplayWeight * 1.5f).coerceAtLeast(20f)
+
+                // For Echo mode: show "—" when force data isn't available yet (Issue #52)
+                // This prevents showing "0 kg" during initial reps before heuristic data populates
+                val forceLabel = if (isEchoMode && perCableKg <= 0f) {
+                    "—"
+                } else {
+                    formatWeight(perCableKg, weightUnit)
+                }
+
+                CircularForceGauge(
+                    currentForce = perCableKg,
+                    maxForce = gaugeMax,
+                    velocity = (metric.velocityA + metric.velocityB) / 2.0,
+                    label = forceLabel,
+                    subLabel = stringResource(Res.string.hud_per_cable_upper),
+                    modifier = Modifier.size(hudSize),
+                )
+            } else if (isCurrentExerciseBodyweight) {
                 Text(
-                    text = "${repCount.warmupReps} / ${workoutParameters.warmupReps}",
-                    style = workoutCounterStyle,
+                    stringResource(Res.string.hud_bodyweight_exercise),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(32.dp))
-
-        // Circular Force Gauge
-        if (metric != null && !isCurrentExerciseBodyweight) {
-            // Current load is always per-cable resistance.
-            // Always use max(loadA, loadB) to show peak force (peak of both cables)
-            // For Echo mode: use heuristic kgMax (actual measured force)
-            //
-            // The heuristic data provides actual measured force via the machine's
-            // force telemetry (c7b73007-b245-4503-a1ed-9e4e97eb9802), polled at 4Hz.
-            // For Echo mode this is essential as the machine dynamically adjusts resistance.
-            val perCableKg = if (isEchoMode && echoForceKgMax > 0f) {
-                echoForceKgMax
             } else {
-                // Use max of both loads - works for single and double cable exercises
-                maxOf(metric.loadA, metric.loadB)
+                Text(stringResource(Res.string.waiting_for_data), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            val targetDisplayWeight = workoutParameters.weightPerCableKg
-            val gaugeMax = (targetDisplayWeight * 1.5f).coerceAtLeast(20f)
-
-            // For Echo mode: show "—" when force data isn't available yet (Issue #52)
-            // This prevents showing "0 kg" during initial reps before heuristic data populates
-            val forceLabel = if (isEchoMode && perCableKg <= 0f) {
-                "—"
-            } else {
-                formatWeight(perCableKg, weightUnit)
-            }
-
-            val hudSize = ResponsiveDimensions.componentSize(baseSize = 200.dp)
-            CircularForceGauge(
-                currentForce = perCableKg,
-                maxForce = gaugeMax,
-                velocity = (metric.velocityA + metric.velocityB) / 2.0,
-                label = forceLabel,
-                subLabel = "PER CABLE",
-                modifier = Modifier.size(hudSize),
-            )
-        } else if (isCurrentExerciseBodyweight) {
-            Text(
-                "Bodyweight exercise",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        } else {
-            Text(stringResource(Res.string.waiting_for_data), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -766,7 +825,7 @@ private fun StatsPage(
                     tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                 )
                 Text(
-                    "No machine metrics for bodyweight",
+                    stringResource(Res.string.hud_no_machine_metrics_bodyweight),
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -788,7 +847,7 @@ private fun StatsPage(
                     tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                 )
                 Text(
-                    "Waiting for Metrics...",
+                    stringResource(Res.string.hud_waiting_for_metrics),
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -808,7 +867,7 @@ private fun StatsPage(
     ) {
         // Title
         Text(
-            "Live Stats",
+            stringResource(Res.string.hud_live_stats),
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface,
@@ -836,31 +895,39 @@ private fun StatsPage(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Text(
-                        "MEAN CONCENTRIC VELOCITY",
+                        stringResource(Res.string.hud_mcv_upper),
                         style = MaterialTheme.typography.labelMedium,
                         color = zColor,
                         letterSpacing = 1.sp,
                     )
-                    Row(
+                    @OptIn(ExperimentalLayoutApi::class)
+                    FlowRow(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         StatColumn(
-                            label = "MCV",
-                            value = "${formatMcv(mcv)} m/s",
+                            label = stringResource(Res.string.hud_mcv_short),
+                            value = stringResource(Res.string.hud_mcv_value, formatMcv(mcv)),
                             color = zColor,
+                            modifier = Modifier.widthIn(min = 84.dp),
                         )
                         if (vbtEnabled) {
                             StatColumn(
-                                label = "Zone",
+                                label = stringResource(Res.string.hud_zone),
                                 value = velocityZoneLabel(zone),
                                 color = zColor,
+                                modifier = Modifier.widthIn(min = 84.dp),
                             )
                         }
                         StatColumn(
-                            label = "Peak",
-                            value = "${formatMcv(latestBiomechanicsResult.velocity.peakVelocityMmS)} m/s",
+                            label = stringResource(Res.string.hud_peak),
+                            value = stringResource(
+                                Res.string.hud_mcv_value,
+                                formatMcv(latestBiomechanicsResult.velocity.peakVelocityMmS),
+                            ),
                             color = zColor,
+                            modifier = Modifier.widthIn(min = 84.dp),
                         )
                     }
 
@@ -879,7 +946,7 @@ private fun StatsPage(
                                 horizontalArrangement = Arrangement.Center,
                             ) {
                                 StatColumn(
-                                    label = "Est. Reps Left",
+                                    label = stringResource(Res.string.hud_est_reps_left),
                                     value = "$repsRemaining",
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -903,7 +970,7 @@ private fun StatsPage(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Text(
-                    "LOAD",
+                    stringResource(Res.string.hud_load_upper),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary,
                     letterSpacing = 1.sp,
@@ -914,20 +981,20 @@ private fun StatsPage(
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         StatColumn(
-                            label = "Left",
+                            label = stringResource(Res.string.hud_left),
                             value = formatWeight(metric.loadA, weightUnit),
                             color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.weight(1f),
                         )
                         StatColumn(
-                            label = "Right",
+                            label = stringResource(Res.string.hud_right),
                             value = formatWeight(metric.loadB, weightUnit),
                             color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.weight(1f),
                         )
                     }
                     StatColumn(
-                        label = "Total",
+                        label = stringResource(Res.string.hud_total),
                         value = formatWeight(metric.totalLoad, weightUnit),
                         color = MaterialTheme.colorScheme.tertiary,
                         modifier = Modifier.fillMaxWidth(),
@@ -938,17 +1005,17 @@ private fun StatsPage(
                         horizontalArrangement = Arrangement.SpaceEvenly,
                     ) {
                         StatColumn(
-                            label = "Left",
+                            label = stringResource(Res.string.hud_left),
                             value = formatWeight(metric.loadA, weightUnit),
                             color = MaterialTheme.colorScheme.primary,
                         )
                         StatColumn(
-                            label = "Right",
+                            label = stringResource(Res.string.hud_right),
                             value = formatWeight(metric.loadB, weightUnit),
                             color = MaterialTheme.colorScheme.primary,
                         )
                         StatColumn(
-                            label = "Total",
+                            label = stringResource(Res.string.hud_total),
                             value = formatWeight(metric.totalLoad, weightUnit),
                             color = MaterialTheme.colorScheme.tertiary,
                         )
@@ -970,7 +1037,7 @@ private fun StatsPage(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Text(
-                    "VELOCITY",
+                    stringResource(Res.string.hud_velocity_upper),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.secondary,
                     letterSpacing = 1.sp,
@@ -980,13 +1047,13 @@ private fun StatsPage(
                     horizontalArrangement = Arrangement.SpaceEvenly,
                 ) {
                     StatColumn(
-                        label = "Left",
-                        value = "${metric.velocityA.toInt()} mm/s",
+                        label = stringResource(Res.string.hud_left),
+                        value = stringResource(Res.string.hud_velocity_value, metric.velocityA.toInt()),
                         color = MaterialTheme.colorScheme.secondary,
                     )
                     StatColumn(
-                        label = "Right",
-                        value = "${metric.velocityB.toInt()} mm/s",
+                        label = stringResource(Res.string.hud_right),
+                        value = stringResource(Res.string.hud_velocity_value, metric.velocityB.toInt()),
                         color = MaterialTheme.colorScheme.secondary,
                     )
                 }
@@ -1006,7 +1073,7 @@ private fun StatsPage(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Text(
-                    "POSITION",
+                    stringResource(Res.string.hud_position_upper),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.tertiary,
                     letterSpacing = 1.sp,
@@ -1016,13 +1083,13 @@ private fun StatsPage(
                     horizontalArrangement = Arrangement.SpaceEvenly,
                 ) {
                     StatColumn(
-                        label = "Left",
-                        value = "${metric.positionA.toInt()} mm",
+                        label = stringResource(Res.string.hud_left),
+                        value = stringResource(Res.string.hud_position_value, metric.positionA.toInt()),
                         color = MaterialTheme.colorScheme.tertiary,
                     )
                     StatColumn(
-                        label = "Right",
-                        value = "${metric.positionB.toInt()} mm",
+                        label = stringResource(Res.string.hud_right),
+                        value = stringResource(Res.string.hud_position_value, metric.positionB.toInt()),
                         color = MaterialTheme.colorScheme.tertiary,
                     )
                 }
@@ -1076,7 +1143,7 @@ private fun VelocityLossIndicator(
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Text(
-                "Velocity Loss",
+                stringResource(Res.string.hud_velocity_loss),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1120,7 +1187,7 @@ private fun VelocityLossIndicator(
         }
         if (shouldStopSet) {
             Text(
-                "THRESHOLD REACHED",
+                stringResource(Res.string.hud_threshold_reached),
                 style = MaterialTheme.typography.labelSmall,
                 color = colors.error,
                 fontWeight = FontWeight.Bold,
@@ -1168,6 +1235,7 @@ private fun StatColumn(label: String, value: String, color: Color, modifier: Mod
  * Issue #190: Pause/Resume/Reset controls for timed exercise countdown.
  * Styled to match RestTimerCard button pattern. Pure UI — no BLE side effects.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ExerciseTimerControls(
     isPaused: Boolean,
@@ -1175,13 +1243,14 @@ private fun ExerciseTimerControls(
     onResume: () -> Unit,
     onReset: () -> Unit,
 ) {
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         // Pause/Resume toggle
         FilledTonalButton(
             onClick = if (isPaused) onResume else onPause,
+            modifier = Modifier.heightIn(min = 48.dp),
             shape = MaterialTheme.shapes.medium,
             colors = if (isPaused) {
                 ButtonDefaults.filledTonalButtonColors(
@@ -1193,12 +1262,14 @@ private fun ExerciseTimerControls(
         ) {
             Icon(
                 if (isPaused) Icons.Default.PlayArrow else Icons.Default.Pause,
-                contentDescription = if (isPaused) "Resume Timer" else "Pause Timer",
+                contentDescription = stringResource(
+                    if (isPaused) Res.string.hud_cd_resume_timer else Res.string.hud_cd_pause_timer,
+                ),
                 modifier = Modifier.size(20.dp),
             )
             Spacer(modifier = Modifier.width(4.dp))
             Text(
-                if (isPaused) "Resume" else "Pause",
+                stringResource(if (isPaused) Res.string.rest_resume else Res.string.rest_pause),
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.Bold,
             )
@@ -1207,16 +1278,17 @@ private fun ExerciseTimerControls(
         // Reset button
         OutlinedButton(
             onClick = onReset,
+            modifier = Modifier.heightIn(min = 48.dp),
             shape = MaterialTheme.shapes.medium,
         ) {
             Icon(
                 Icons.Default.Replay,
-                contentDescription = "Reset Timer",
+                contentDescription = stringResource(Res.string.cd_reset_timer),
                 modifier = Modifier.size(20.dp),
             )
             Spacer(modifier = Modifier.width(4.dp))
             Text(
-                "Reset",
+                stringResource(Res.string.rest_reset),
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.Bold,
             )

@@ -1,24 +1,28 @@
 package com.devil.phoenixproject.presentation.components
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
+import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
+import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import com.devil.phoenixproject.ui.theme.ExpressiveMotion
 import com.devil.phoenixproject.ui.theme.qualityScoreColor
 import kotlinx.coroutines.delay
@@ -66,29 +70,42 @@ fun RepQualityIndicator(latestRepQualityScore: Int?, modifier: Modifier = Modifi
         pulseTarget = showScore && isExcellent && !reduceMotion
     }
 
+    val hudTopBarHeight = when (LocalWindowSizeClass.current.widthSizeClass) {
+        WindowWidthSizeClass.Expanded -> 80.dp
+        WindowWidthSizeClass.Medium -> 72.dp
+        WindowWidthSizeClass.Compact -> 64.dp
+    }
+
     Box(
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier
+            .fillMaxSize()
+            .statusBarsPadding(),
         contentAlignment = Alignment.TopCenter,
     ) {
         AnimatedVisibility(
             visible = showScore,
-            enter = fadeIn(animationSpec = tween(150)),
-            exit = fadeOut(animationSpec = tween(200)),
-            modifier = Modifier.padding(top = 80.dp),
+            enter = if (reduceMotion) EnterTransition.None else fadeIn(animationSpec = tween(150)),
+            exit = if (reduceMotion) ExitTransition.None else fadeOut(animationSpec = tween(200)),
+            modifier = Modifier.padding(top = hudTopBarHeight + 8.dp),
         ) {
-            Box(
-                modifier = Modifier
-                    .scale(pulseScale)
-                    .clip(MaterialTheme.shapes.medium)
-                    .background(Color.Black.copy(alpha = 0.6f))
-                    .padding(horizontal = 24.dp, vertical = 12.dp),
-                contentAlignment = Alignment.Center,
+            Surface(
+                modifier = Modifier.scale(pulseScale),
+                shape = MaterialTheme.shapes.medium,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                tonalElevation = 4.dp,
+                shadowElevation = 6.dp,
             ) {
-                Text(
-                    text = "$displayedScore",
-                    style = MaterialTheme.typography.headlineLarge,
-                    color = qualityScoreColor(displayedScore),
-                )
+                Box(
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = "$displayedScore",
+                        style = MaterialTheme.typography.headlineLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = qualityScoreColor(displayedScore),
+                    )
+                }
             }
         }
     }

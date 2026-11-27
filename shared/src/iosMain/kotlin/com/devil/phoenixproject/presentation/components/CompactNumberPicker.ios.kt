@@ -55,15 +55,23 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.presentation.util.ContentAwareFit
+import com.devil.phoenixproject.presentation.util.LocalWeightTextScale
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WindowHeightSizeClass
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
+import com.devil.phoenixproject.presentation.util.effectiveWeightTextScale
+import com.devil.phoenixproject.presentation.util.scaledForWeightValue
+import com.devil.phoenixproject.presentation.util.scaledSelectorButtonSizeDp
+import com.devil.phoenixproject.presentation.util.scaledSelectorIconSizeDp
+import com.devil.phoenixproject.presentation.util.scaledWeightWheelItemHeightDp
 import com.devil.phoenixproject.util.parseLocalizedDecimal
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -75,56 +83,98 @@ private data class PickerSizing(
     val selectedTextStyle: TextStyle,
     val unselectedTextStyle: TextStyle,
     val buttonSize: Dp,
+    val iconSize: Dp,
+    val labelTextStyle: TextStyle,
     val compactOverlayTextStyle: TextStyle,
 )
 
 @Composable
-private fun rememberPickerSizing(compactWheel: Boolean = false): PickerSizing {
+private fun rememberPickerSizing(
+    compactWheel: Boolean = false,
+    applySelectorScale: Boolean = false,
+): PickerSizing {
     val windowSizeClass = LocalWindowSizeClass.current
     val fontScale = LocalDensity.current.fontScale
+    val weightTextScale = LocalWeightTextScale.current
     val typography = MaterialTheme.typography
     val isCompactWidth = windowSizeClass.widthSizeClass == WindowWidthSizeClass.Compact
+    val preScaleEffective = if (applySelectorScale) {
+        effectiveWeightTextScale(weightTextScale, fontScale)
+    } else {
+        fontScale.coerceAtLeast(1f)
+    }
     val compactHeightMode =
         compactWheel ||
-            (isCompactWidth && windowSizeClass.heightSizeClass == WindowHeightSizeClass.Compact && fontScale <= 1.05f)
+            (isCompactWidth && windowSizeClass.heightSizeClass == WindowHeightSizeClass.Compact && preScaleEffective <= 1.05f)
 
-    val itemHeight: Dp
-    val selectedTextStyle: TextStyle
-    val buttonSize: Dp
-    val compactOverlayTextStyle: TextStyle
+    val baseItemHeight: Dp
+    val baseSelectedTextStyle: TextStyle
+    val baseButtonSize: Dp
+    val baseCompactOverlayTextStyle: TextStyle
 
     when {
         compactHeightMode -> {
             // Compact width + compact height (e.g. iPhone landscape)
-            itemHeight = 30.dp
-            selectedTextStyle = typography.titleMedium.copy(fontSize = 18.sp, lineHeight = 22.sp)
-            buttonSize = 40.dp
-            compactOverlayTextStyle = selectedTextStyle
+            baseItemHeight = 30.dp
+            baseSelectedTextStyle = typography.titleMedium.copy(fontSize = 18.sp, lineHeight = 22.sp)
+            baseButtonSize = 48.dp
+            baseCompactOverlayTextStyle = baseSelectedTextStyle
         }
 
         isCompactWidth -> {
             // Compact width + normal height (e.g. iPhone portrait)
-            itemHeight = 36.dp
-            selectedTextStyle = typography.titleLarge
-            buttonSize = 40.dp
-            compactOverlayTextStyle = typography.titleMedium.copy(fontSize = 18.sp, lineHeight = 22.sp)
+            baseItemHeight = 36.dp
+            baseSelectedTextStyle = typography.titleLarge
+            baseButtonSize = 48.dp
+            baseCompactOverlayTextStyle = typography.titleMedium.copy(fontSize = 18.sp, lineHeight = 22.sp)
         }
 
         else -> {
             // Medium+ width (iPad, large phones landscape)
-            itemHeight = 40.dp
-            selectedTextStyle = if (fontScale > 1.15f) typography.titleLarge else typography.headlineMedium
-            buttonSize = 48.dp
-            compactOverlayTextStyle = typography.titleMedium
+            baseItemHeight = 40.dp
+            baseSelectedTextStyle = if (fontScale > 1.15f) typography.titleLarge else typography.headlineMedium
+            baseButtonSize = 48.dp
+            baseCompactOverlayTextStyle = typography.titleMedium
         }
+    }
+
+    val baseUnselectedStyle = if (compactHeightMode) typography.bodyMedium else typography.bodyLarge
+    val baseLabelStyle = typography.labelMedium
+
+    val itemHeight: Dp
+    val selectedTextStyle: TextStyle
+    val unselectedTextStyle: TextStyle
+    val buttonSize: Dp
+    val iconSize: Dp
+    val labelTextStyle: TextStyle
+    val compactOverlayTextStyle: TextStyle
+    if (applySelectorScale) {
+        val effectiveScale = effectiveWeightTextScale(weightTextScale, fontScale)
+        itemHeight = scaledWeightWheelItemHeightDp(baseItemHeight.value, effectiveScale).dp
+        selectedTextStyle = baseSelectedTextStyle.scaledForWeightValue(weightTextScale, fontScale)
+        unselectedTextStyle = baseUnselectedStyle.scaledForWeightValue(weightTextScale, fontScale)
+        buttonSize = scaledSelectorButtonSizeDp(baseButtonSize.value, effectiveScale).dp
+        iconSize = scaledSelectorIconSizeDp(24f, effectiveScale).dp
+        labelTextStyle = baseLabelStyle.scaledForWeightValue(weightTextScale, fontScale)
+        compactOverlayTextStyle = baseCompactOverlayTextStyle.scaledForWeightValue(weightTextScale, fontScale)
+    } else {
+        itemHeight = scaledWeightWheelItemHeightDp(baseItemHeight.value, fontScale.coerceAtLeast(1f)).dp
+        selectedTextStyle = baseSelectedTextStyle
+        unselectedTextStyle = baseUnselectedStyle
+        buttonSize = baseButtonSize
+        iconSize = 24.dp
+        labelTextStyle = baseLabelStyle
+        compactOverlayTextStyle = baseCompactOverlayTextStyle
     }
 
     return PickerSizing(
         itemHeight = itemHeight,
         containerHeight = itemHeight * 3,
         selectedTextStyle = selectedTextStyle,
-        unselectedTextStyle = if (compactHeightMode) typography.bodyMedium else typography.bodyLarge,
+        unselectedTextStyle = unselectedTextStyle,
         buttonSize = buttonSize,
+        iconSize = iconSize,
+        labelTextStyle = labelTextStyle,
         compactOverlayTextStyle = compactOverlayTextStyle,
     )
 }
@@ -147,6 +197,7 @@ actual fun CompactNumberPicker(
     suffix: String,
     step: Float,
     compactWheel: Boolean,
+    applySelectorScale: Boolean,
 ) {
     val values = remember(range.start, range.endInclusive, step) {
         compactNumberPickerValues(range, step)
@@ -173,7 +224,7 @@ actual fun CompactNumberPicker(
     val coroutineScope = rememberCoroutineScope()
     val flingBehavior = rememberSnapFlingBehavior(lazyListState = listState)
     val focusManager = LocalFocusManager.current
-    val pickerSizing = rememberPickerSizing(compactWheel = compactWheel)
+    val pickerSizing = rememberPickerSizing(compactWheel = compactWheel, applySelectorScale = applySelectorScale)
 
     // Inline editing state
     var isEditing by remember { mutableStateOf(false) }
@@ -395,7 +446,7 @@ actual fun CompactNumberPicker(
         if (label.isNotEmpty()) {
             Text(
                 text = label,
-                style = MaterialTheme.typography.labelMedium,
+                style = pickerSizing.labelTextStyle,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(bottom = 8.dp),
@@ -439,6 +490,7 @@ actual fun CompactNumberPicker(
                 Icon(
                     imageVector = Icons.Default.Remove,
                     contentDescription = "Decrease $label",
+                    modifier = Modifier.size(pickerSizing.iconSize),
                     tint = if (values.isNotEmpty() && actionIndex > 0) {
                         MaterialTheme.colorScheme.primary
                     } else {
@@ -492,13 +544,50 @@ actual fun CompactNumberPicker(
                 contentAlignment = Alignment.Center,
             ) {
                 val showCenteredOverlay = !isEditing && values.isNotEmpty()
-                // Side-by-side pickers on narrow iPhone layouts do not have enough space
-                // for the full suffixed string at the large overlay style.
-                val useCompactOverlay = maxWidth < 110.dp
-                val overlayTextStyle =
-                    if (useCompactOverlay) pickerSizing.compactOverlayTextStyle else pickerSizing.selectedTextStyle
-                val editButtonSize = if (useCompactOverlay) 20.dp else 24.dp
-                val editIconSize = if (useCompactOverlay) 14.dp else 16.dp
+                val textMeasurer = rememberTextMeasurer()
+                val density = LocalDensity.current
+                val editButtonSize = 48.dp
+                val editIconSize = 18.dp
+                val previewIndexForWidth = if (listState.isScrollInProgress || isUserInteracting) {
+                    centeredVisibleIndex.coerceIn(values.indices)
+                } else {
+                    safeCurrentIndex
+                }
+                val fullPreviewText = if (values.isNotEmpty()) formatOverlayValue(values[previewIndexForWidth], useCompactOverlay = false) else ""
+                val textAvailableDp = (maxWidth.value - 44f).coerceAtLeast(32f)
+                val fullTextRequiredDp = if (fullPreviewText.isNotEmpty()) {
+                    ContentAwareFit.requiredTextWidthDp(
+                        text = fullPreviewText,
+                        style = pickerSizing.selectedTextStyle.copy(fontWeight = FontWeight.Bold),
+                        singleLine = true,
+                        measurer = textMeasurer,
+                        density = density,
+                    ).value
+                } else {
+                    0f
+                }
+                // Switch to compact overlay whenever measured full text or scaled width would crowd the wheel
+                val useCompactOverlay = maxWidth < 110.dp || fullTextRequiredDp > textAvailableDp
+                val baseOverlayStyle =
+                    (if (useCompactOverlay) pickerSizing.compactOverlayTextStyle else pickerSizing.selectedTextStyle)
+                        .copy(fontWeight = FontWeight.Bold)
+                val overlayPreviewText = if (values.isNotEmpty()) {
+                    formatOverlayValue(values[previewIndexForWidth], useCompactOverlay)
+                } else {
+                    ""
+                }
+                val overlayFitScale = ContentAwareFit.singleLineFitFontScale(
+                    text = overlayPreviewText,
+                    style = baseOverlayStyle,
+                    availableDp = textAvailableDp,
+                    measurer = textMeasurer,
+                    density = density,
+                )
+                val overlayTextStyle = if (overlayFitScale < 1f) {
+                    baseOverlayStyle.copy(fontSize = baseOverlayStyle.fontSize * overlayFitScale)
+                } else {
+                    baseOverlayStyle
+                }
 
                 LazyColumn(
                     state = listState,
@@ -543,8 +632,7 @@ actual fun CompactNumberPicker(
                                     BasicTextField(
                                         value = inputText,
                                         onValueChange = { inputText = it },
-                                        textStyle = TextStyle(
-                                            fontSize = pickerSizing.selectedTextStyle.fontSize,
+                                        textStyle = pickerSizing.selectedTextStyle.copy(
                                             fontWeight = FontWeight.Bold,
                                             color = MaterialTheme.colorScheme.onSurface,
                                             textAlign = TextAlign.Center,
@@ -573,10 +661,10 @@ actual fun CompactNumberPicker(
                                                 }
                                             },
                                     )
-                                    // Visible Done button for iOS
+                                    // Visible Done button for iOS (48dp touch target)
                                     IconButton(
                                         onClick = { commitEdit() },
-                                        modifier = Modifier.size(36.dp),
+                                        modifier = Modifier.size(48.dp),
                                     ) {
                                         Icon(
                                             imageVector = Icons.Default.Check,
@@ -624,6 +712,7 @@ actual fun CompactNumberPicker(
                     ) {
                         Text(
                             text = formatOverlayValue(values[previewIndex], useCompactOverlay),
+                            modifier = Modifier.padding(end = 40.dp, start = 4.dp),
                             style = overlayTextStyle,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface,
@@ -641,7 +730,7 @@ actual fun CompactNumberPicker(
                             Icon(
                                 imageVector = Icons.Default.Edit,
                                 contentDescription = "Edit $label",
-                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(editIconSize),
                             )
                         }
@@ -685,6 +774,7 @@ actual fun CompactNumberPicker(
                 Icon(
                     imageVector = Icons.Default.Add,
                     contentDescription = "Increase $label",
+                    modifier = Modifier.size(pickerSizing.iconSize),
                     tint = if (values.isNotEmpty() && actionIndex < values.lastIndex) {
                         MaterialTheme.colorScheme.primary
                     } else {
@@ -707,6 +797,7 @@ actual fun CompactNumberPicker(
     modifier: Modifier,
     label: String,
     suffix: String,
+    applySelectorScale: Boolean,
 ) {
     CompactNumberPicker(
         value = value.toFloat(),
@@ -717,5 +808,6 @@ actual fun CompactNumberPicker(
         suffix = suffix,
         step = 1.0f,
         compactWheel = false,
+        applySelectorScale = applySelectorScale,
     )
 }

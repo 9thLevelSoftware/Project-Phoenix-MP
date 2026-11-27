@@ -1,6 +1,8 @@
 package com.devil.phoenixproject.presentation.components.cycle
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -10,6 +12,7 @@ import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.CycleProgression
 import com.devil.phoenixproject.domain.model.percentLabel
 import com.devil.phoenixproject.presentation.components.ExpressiveSlider
+import com.devil.phoenixproject.presentation.components.PhoenixSheetHeader
 import org.jetbrains.compose.resources.stringResource
 import projectphoenix.shared.generated.resources.*
 import projectphoenix.shared.generated.resources.Res
@@ -21,7 +24,7 @@ fun ProgressionSettingsSheet(
     currentRotation: Int,
     onSave: (CycleProgression) -> Unit,
     onDismiss: () -> Unit,
-    sheetState: SheetState = rememberModalBottomSheetState(),
+    sheetState: SheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
 ) {
     var frequency by remember { mutableStateOf(progression.frequencyCycles) }
     var weightEnabled by remember { mutableStateOf(progression.weightIncreasePercent != null) }
@@ -37,18 +40,17 @@ fun ProgressionSettingsSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .navigationBarsPadding()
                 .padding(horizontal = 16.dp)
-                .padding(bottom = 32.dp),
+                .padding(bottom = 24.dp),
         ) {
-            // Header
-            Text(
-                text = "Progression Settings",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.align(Alignment.CenterHorizontally),
+            PhoenixSheetHeader(
+                title = "Progression Settings",
+                onClose = onDismiss,
             )
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
             // Frequency selector
             Text(
@@ -65,6 +67,7 @@ fun ProgressionSettingsSheet(
                 IconButton(
                     onClick = { if (frequency > 1) frequency-- },
                     enabled = frequency > 1,
+                    modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
                 ) {
                     Text(stringResource(Res.string.nav_previous), style = MaterialTheme.typography.titleLarge)
                 }
@@ -77,6 +80,7 @@ fun ProgressionSettingsSheet(
                 IconButton(
                     onClick = { if (frequency < 10) frequency++ },
                     enabled = frequency < 10,
+                    modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
                 ) {
                     Text(stringResource(Res.string.nav_next), style = MaterialTheme.typography.titleLarge)
                 }
@@ -216,7 +220,9 @@ fun ProgressionSettingsSheet(
                     )
                     onDismiss()
                 },
-                modifier = Modifier.align(Alignment.End),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp),
             ) {
                 Text(stringResource(Res.string.action_apply))
             }

@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import com.devil.phoenixproject.presentation.components.LoadingIndicator
 import com.devil.phoenixproject.presentation.components.LoadingIndicatorSize
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -24,25 +23,19 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import androidx.savedstate.read
-import app.cash.sqldelight.db.SqlDriver
 import com.devil.phoenixproject.data.repository.ActiveProfileContext
 import com.devil.phoenixproject.data.repository.ExerciseRepository
-import com.devil.phoenixproject.data.repository.IntervalsOutboxRepository
 import com.devil.phoenixproject.data.repository.ProfileContextRecoveryException
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
-import com.devil.phoenixproject.data.integration.intervals.IntervalsConnectionStore
-import com.devil.phoenixproject.data.integration.intervals.IntervalsExportCoordinator
 import com.devil.phoenixproject.domain.model.TrainingCycle
+import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.presentation.screen.*
 import com.devil.phoenixproject.presentation.viewmodel.AssessmentViewModel
-import com.devil.phoenixproject.presentation.viewmodel.IntervalsSettingsViewModel
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
-import com.devil.phoenixproject.presentation.viewmodel.RealIntervalsStatusSource
 import com.devil.phoenixproject.ui.theme.ThemeMode
-import com.devil.phoenixproject.util.ConnectivityChecker
 import kotlinx.coroutines.flow.StateFlow
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
@@ -76,6 +69,7 @@ private fun AssessmentDestination(
     exerciseId: String?,
     metricsFlow: StateFlow<WorkoutMetric?>,
     onNavigateBack: () -> Unit,
+    weightUnit: WeightUnit = WeightUnit.KG,
 ) {
     val profileRepository: UserProfileRepository = koinInject()
     val activeProfileContext by profileRepository.activeProfileContext.collectAsState()
@@ -98,6 +92,7 @@ private fun AssessmentDestination(
                 exerciseId = exerciseId,
                 onNavigateBack = onNavigateBack,
                 metricsFlow = metricsFlow,
+                weightUnit = weightUnit,
             )
         }
 
@@ -496,6 +491,8 @@ fun NavGraph(
                 onBackupDestinationChange = viewModel::setBackupDestination,
                 selectedLanguage = globalSettings.language,
                 onLanguageChange = viewModel::setLanguage,
+                weightTextScale = globalSettings.weightTextScale,
+                onWeightTextScaleChange = viewModel::setWeightTextScale,
             )
         }
 
@@ -720,13 +717,29 @@ fun NavGraph(
             val routines by viewModel.routines.collectAsState()
             val cycleRepository: TrainingCycleRepository = koinInject()
 
-            // Load cycle from repository
+            // Load cycle and any cycle-specific template routines ("cycle_routine_*")
+            // that are intentionally filtered out of viewModel.routines.
             var cycle by remember { mutableStateOf<TrainingCycle?>(null) }
+            var resolvedRoutines by remember(routines) { mutableStateOf(routines) }
             var isLoading by remember { mutableStateOf(true) }
 
-            LaunchedEffect(cycleId) {
+            LaunchedEffect(cycleId, routines) {
                 isLoading = true
-                cycle = cycleRepository.getCycleById(cycleId)
+                val loadedCycle = cycleRepository.getCycleById(cycleId)
+                cycle = loadedCycle
+                resolvedRoutines = if (loadedCycle != null) {
+                    val knownIds = routines.map { it.id }.toSet()
+                    val missingIds = loadedCycle.days
+                        .mapNotNull { it.routineId }
+                        .distinct()
+                        .filter { it !in knownIds }
+                    val extraRoutines = missingIds.mapNotNull { id ->
+                        viewModel.workoutRepository.getRoutineById(id)
+                    }
+                    routines + extraRoutines
+                } else {
+                    routines
+                }
                 isLoading = false
             }
 
@@ -752,7 +765,7 @@ fun NavGraph(
                     CycleReviewScreen(
                         cycleName = cycle!!.name,
                         days = cycle!!.days,
-                        routines = routines,
+                        routines = resolvedRoutines,
                         onSave = {
                             // Cycle is already saved, just navigate back to TrainingCycles
                             navController.navigate(NavigationRoutes.TrainingCycles.route) {
@@ -796,11 +809,13 @@ fun NavGraph(
         ) { backStackEntry ->
             val profileId =
                 backStackEntry.arguments?.read { getStringOrNull("profileId") }.orEmpty()
+            val weightUnit by viewModel.weightUnit.collectAsState()
             AssessmentDestination(
                 routeProfileId = profileId,
                 exerciseId = null,
                 onNavigateBack = { navController.popBackStack() },
                 metricsFlow = viewModel.currentMetric,
+                weightUnit = weightUnit,
             )
         }
 
@@ -840,11 +855,13 @@ fun NavGraph(
                 backStackEntry.arguments?.read { getStringOrNull("profileId") }.orEmpty()
             val exerciseId =
                 backStackEntry.arguments?.read { getStringOrNull("exerciseId") }.orEmpty()
+            val weightUnit by viewModel.weightUnit.collectAsState()
             AssessmentDestination(
                 routeProfileId = profileId,
                 exerciseId = exerciseId,
                 onNavigateBack = { navController.popBackStack() },
                 metricsFlow = viewModel.currentMetric,
+                weightUnit = weightUnit,
             )
         }
 
@@ -895,61 +912,6 @@ fun NavGraph(
                 onNavigateToExternalData = {
                     navController.navigate(NavigationRoutes.ExternalIntegrationHub.route)
                 },
-                onNavigateToSendWorkouts = {
-                    navController.navigate(NavigationRoutes.IntervalsSettings.route)
-                },
-                onSetTitle = { viewModel.updateTopBarTitle(it) },
-            )
-        }
-
-        // Intervals.icu "Send workouts" settings (issue #1384)
-        composable(
-            route = NavigationRoutes.IntervalsSettings.route,
-            enterTransition = {
-                slideIntoContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
-                    animationSpec = tween(300),
-                )
-            },
-            exitTransition = { fadeOut(animationSpec = tween(200)) },
-            popEnterTransition = { fadeIn(animationSpec = tween(200)) },
-            popExitTransition = {
-                slideOutOfContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
-                    animationSpec = tween(300),
-                )
-            },
-        ) {
-            // Issue #1384 (packet P3): the real Intervals status adapter over the Koin
-            // singletons (secure connection store, bounded export coordinator, outbox
-            // status projection). Screen and state machine stay unchanged. Leaving the
-            // route (back or pop) disposes the screen, which clears the ephemeral
-            // credential draft, and releases the adapter's derived-state scope.
-            val intervalsConnectionStore: IntervalsConnectionStore = koinInject()
-            val intervalsCoordinator: IntervalsExportCoordinator = koinInject()
-            val intervalsOutbox: IntervalsOutboxRepository = koinInject()
-            val intervalsProfiles: UserProfileRepository = koinInject()
-            val intervalsConnectivity: ConnectivityChecker = koinInject()
-            val intervalsScanDriver: SqlDriver = koinInject()
-            val intervalsStatusSource = remember(intervalsConnectionStore) {
-                RealIntervalsStatusSource(
-                    connectionStore = intervalsConnectionStore,
-                    coordinator = intervalsCoordinator,
-                    outbox = intervalsOutbox,
-                    userProfileRepository = intervalsProfiles,
-                    connectivity = intervalsConnectivity,
-                    outboxScanDriver = intervalsScanDriver,
-                )
-            }
-            DisposableEffect(intervalsStatusSource) {
-                onDispose { intervalsStatusSource.close() }
-            }
-            val intervalsViewModel = remember(intervalsStatusSource) {
-                IntervalsSettingsViewModel(statusSource = intervalsStatusSource)
-            }
-            IntervalsSettingsScreen(
-                viewModel = intervalsViewModel,
-                onNavigateBack = { navController.popBackStack() },
                 onSetTitle = { viewModel.updateTopBarTitle(it) },
             )
         }

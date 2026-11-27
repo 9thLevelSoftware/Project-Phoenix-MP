@@ -8,6 +8,7 @@ import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.UserPreferences
 import com.devil.phoenixproject.domain.model.VulgarTier
+import com.devil.phoenixproject.domain.model.WeightTextScale
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.util.BackupDestination
 import com.devil.phoenixproject.util.BackupDestination.Companion.toJson
@@ -89,6 +90,15 @@ interface PreferencesManager {
      */
     suspend fun resetOneShotWorkAfterRestore()
     suspend fun setBleCompatibilityMode(setting: BleCompatibilitySetting)
+
+    /**
+     * Issue #1367: global device-local weight-text-size preference. Mirrors
+     * [setBleCompatibilityMode] (the in-repo precedent for a global preference set
+     * from Settings): the delegating caller ([com.devil.phoenixproject.presentation.manager.SettingsManager])
+     * holds this interface, so the write must be reachable here. Never enters
+     * overlayProfile, backup, or portal codecs.
+     */
+    suspend fun setWeightTextScale(scale: WeightTextScale)
     fun getExerciseCatalogSource(): String
     suspend fun setExerciseCatalogSource(source: String)
 
@@ -136,6 +146,12 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
 
         // Shared with Android cold-start locale and workout notification copy.
         const val KEY_LANGUAGE = "language"
+        val SUPPORTED_LANGUAGE_CODES: Set<String> = setOf("en", "nl", "de", "es", "fr", "it")
+
+        fun normalizeLanguageCode(language: String?): String {
+            val normalized = language?.trim()?.lowercase().orEmpty()
+            return if (normalized in SUPPORTED_LANGUAGE_CODES) normalized else ""
+        }
         private const val KEY_VOICE_STOP_ENABLED = "voice_stop_enabled"
         private const val KEY_SAFE_WORD = "safe_word"
         private const val KEY_SAFE_WORD_CALIBRATED = "safe_word_calibrated"
@@ -159,6 +175,9 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
 
         // Issue #333: BLE small-MTU compatibility path (Auto/On/Off)
         private const val KEY_BLE_COMPATIBILITY_MODE = "ble_compatibility_mode"
+
+        // Issue #1367: weight text size (global/device-local; enum NAME stored)
+        private const val KEY_WEIGHT_TEXT_SCALE = "weight_text_scale"
 
         private const val KEY_EXERCISE_CATALOG_SOURCE = "exercise_catalog_source"
         private const val KEY_LAST_CONNECTED_MODEL = "last_connected_model"
@@ -201,7 +220,7 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
             autoBackupEnabled = settings.getBoolean(KEY_AUTO_BACKUP_ENABLED, false),
             includeRawTelemetryInBackups = settings.getBoolean(KEY_BACKUP_INCLUDE_RAW_TELEMETRY, false),
             backupDestination = BackupDestination.fromJson(settings.getStringOrNull(KEY_BACKUP_DESTINATION)),
-            language = settings.getStringOrNull(KEY_LANGUAGE) ?: "en",
+            language = normalizeLanguageCode(settings.getStringOrNull(KEY_LANGUAGE)),
             voiceStopEnabled = settings.getBoolean(KEY_VOICE_STOP_ENABLED, false),
             safeWord = settings.getStringOrNull(KEY_SAFE_WORD),
             safeWordCalibrated = settings.getBoolean(KEY_SAFE_WORD_CALIBRATED, false),
@@ -237,6 +256,10 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
             lastConnectedModel = settings.getStringOrNull(KEY_LAST_CONNECTED_MODEL)
                 ?.let { stored -> PhoenixModel.entries.find { model -> model.name == stored } }
                 ?: PhoenixModel.Unknown,
+            // Issue #1367: unknown/corrupt/absent -> STANDARD, never throws
+            weightTextScale = WeightTextScale.fromStorage(
+                settings.getStringOrNull(KEY_WEIGHT_TEXT_SCALE),
+            ),
         )
     }
 
@@ -282,8 +305,9 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
     }
 
     override suspend fun setLanguage(language: String) {
-        settings.putString(KEY_LANGUAGE, language)
-        updateAndEmit { copy(language = language) }
+        val normalized = normalizeLanguageCode(language)
+        settings.putString(KEY_LANGUAGE, normalized)
+        updateAndEmit { copy(language = normalized) }
     }
 
     internal suspend fun setVelocityLossThreshold(percent: Int) {
@@ -399,6 +423,18 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
         settings.putString(KEY_BLE_COMPATIBILITY_MODE, setting.name)
         BleCompatibilityMode.setting = setting
         updateAndEmit { copy(bleCompatibilityMode = setting) }
+    }
+
+    override suspend fun setWeightTextScale(scale: WeightTextScale) {
+        try {
+            settings.putString(KEY_WEIGHT_TEXT_SCALE, scale.name)
+        } catch (error: Exception) {
+            // SD10: a failed persistence write must not corrupt stored state and must not
+            // block the session-level choice from applying. The stored key keeps its
+            // previous value; the in-memory flow still reflects the user's pick.
+            Logger.e(error) { "Failed to persist weight_text_scale; applying in memory only" }
+        }
+        updateAndEmit { copy(weightTextScale = scale) }
     }
 
     internal fun isAdultsOnlyPrompted(): Boolean = settings.getBoolean(KEY_ADULTS_ONLY_PROMPTED, false)

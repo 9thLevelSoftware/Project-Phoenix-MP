@@ -15,6 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.RoutineGroup
 
@@ -82,6 +83,8 @@ fun RoutineGroupHeader(
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
 
@@ -93,10 +96,11 @@ fun RoutineGroupHeader(
                 Text("$routineCount")
             }
 
-            // Overflow menu
+            // Overflow menu (48dp touch target)
             Box {
                 IconButton(
                     onClick = { showOverflow = true },
+                    modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
                 ) {
                     Icon(
                         Icons.Default.MoreVert,

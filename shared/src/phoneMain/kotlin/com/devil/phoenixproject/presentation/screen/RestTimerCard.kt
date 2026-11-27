@@ -17,10 +17,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -61,6 +62,7 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import co.touchlab.kermit.Logger
@@ -78,6 +80,7 @@ import com.devil.phoenixproject.presentation.components.SliderWithButtons
 import com.devil.phoenixproject.presentation.components.WeightChangePerRepControl
 import com.devil.phoenixproject.presentation.manager.RestActionIdentity
 import com.devil.phoenixproject.presentation.manager.RestControlActions
+import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.labelAllCaps
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
@@ -240,24 +243,30 @@ fun RestTimerCard(
     //   - rely on the parent scroll for reachability on short viewports.
     // The equipment rack card keeps its own list scroll only because it is
     // height-bounded (heightIn(max = ...)), which is legal under this parent.
+    val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
+
     Box(
         modifier = modifier
             .fillMaxWidth()
             .background(screenBackgroundBrush())
-            .systemBarsPadding()
-            .padding(20.dp),
+            .padding(horizontal = 4.dp, vertical = 12.dp),
     ) {
-        // Subtle pulsing overlay to create an immersive feel
-        val infinite = rememberInfiniteTransition(label = "rest-pulse")
-        val pulse by infinite.animateFloat(
-            initialValue = 1f,
-            targetValue = 1.06f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 1600, easing = FastOutSlowInEasing),
-                repeatMode = RepeatMode.Reverse,
-            ),
-            label = "pulse",
-        )
+        // Subtle pulsing overlay to create an immersive feel (skipped when reduceMotion is active)
+        val pulse = if (reduceMotion) {
+            1f
+        } else {
+            val infinite = rememberInfiniteTransition(label = "rest-pulse")
+            val animatedPulse by infinite.animateFloat(
+                initialValue = 1f,
+                targetValue = 1.06f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(durationMillis = 1600, easing = FastOutSlowInEasing),
+                    repeatMode = RepeatMode.Reverse,
+                ),
+                label = "pulse",
+            )
+            animatedPulse
+        }
 
         // Accessibility: hidden node that announces countdown at key intervals.
         // Uses liveRegion(Polite) so TalkBack/VoiceOver reads changes without
@@ -288,16 +297,16 @@ fun RestTimerCard(
             // REST TIME Header - shows superset info if applicable
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 if (isSupersetTransition && supersetLabel != null) {
-                    // Show superset badge
+                    // Show superset badge with solid tonal container
                     Surface(
                         shape = MaterialTheme.shapes.extraSmall,
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                        color = MaterialTheme.colorScheme.primaryContainer,
                     ) {
                         Text(
                             text = supersetLabel,
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
                         )
                     }
@@ -346,7 +355,7 @@ fun RestTimerCard(
                         style = MaterialTheme.typography.displayLarge.copy(fontSize = 64.sp),
                         fontWeight = FontWeight.ExtraBold,
                         color = if (isRestPaused) {
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                            MaterialTheme.colorScheme.onSurfaceVariant
                         } else {
                             MaterialTheme.colorScheme.primary
                         },
@@ -382,6 +391,7 @@ fun RestTimerCard(
                         Logger.d(tag = "RestControlReceipt") { "tap action=${RestControlActions.EXTEND_REST}" }
                         onExtendRest(30)
                     },
+                    modifier = Modifier.heightIn(min = 48.dp),
                     shape = MaterialTheme.shapes.medium,
                     contentPadding = RestControlContentPadding,
                 ) {
@@ -405,6 +415,7 @@ fun RestTimerCard(
                         Logger.d(tag = "RestControlReceipt") { "tap action=${RestControlActions.TOGGLE_REST_PAUSE}" }
                         onToggleRestPause()
                     },
+                    modifier = Modifier.heightIn(min = 48.dp),
                     shape = MaterialTheme.shapes.medium,
                     contentPadding = RestControlContentPadding,
                     colors = if (isRestPaused) {
@@ -441,6 +452,7 @@ fun RestTimerCard(
                         Logger.d(tag = "RestControlReceipt") { "tap action=${RestControlActions.RESET_REST_TIMER}" }
                         onResetRest()
                     },
+                    modifier = Modifier.heightIn(min = 48.dp),
                     shape = MaterialTheme.shapes.medium,
                     contentPadding = RestControlContentPadding,
                 ) {
@@ -618,6 +630,7 @@ fun RestTimerCard(
                                     formatValue = { formatWeightWithUnit(it, weightUnit) },
                                     deltaText = deltaText,
                                     isDeltaPositive = deltaKg >= 0f,
+                                    isWeightValue = true,
                                 )
                             }
 
@@ -681,7 +694,7 @@ fun RestTimerCard(
                     enabled = !skipRestBlocked,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(56.dp)
+                        .heightIn(min = 56.dp)
                         .semantics {
                             if (skipRestBlocked) {
                                 contentDescription = skipRestBlockedText
@@ -708,6 +721,8 @@ fun RestTimerCard(
                         text = if (isLastExercise) stringResource(Res.string.rest_continue) else stringResource(Res.string.rest_skip),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
 
@@ -716,7 +731,7 @@ fun RestTimerCard(
                     onClick = onEndWorkout,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(48.dp),
+                        .heightIn(min = 48.dp),
                     shape = MaterialTheme.shapes.medium,
                 ) {
                     Icon(
@@ -887,9 +902,10 @@ private fun UnresolvedDropSetOffer(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Row(
+        FlowRow(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(Spacing.small),
+            verticalArrangement = Arrangement.spacedBy(Spacing.small),
         ) {
             offer.candidates.forEach { candidate ->
                 val percent = percentLabel((candidate.percentage.fraction * 100f).toInt())
@@ -909,8 +925,8 @@ private fun UnresolvedDropSetOffer(
                     enabled = candidate.enabled,
                     onClick = { selection = candidate.percentage },
                     modifier = Modifier
-                        .weight(1f)
-                        .height(48.dp)
+                        .widthIn(min = 84.dp)
+                        .heightIn(min = 48.dp)
                         .semantics {
                             role = Role.RadioButton
                             this.selected = selected
@@ -949,7 +965,7 @@ private fun UnresolvedDropSetOffer(
             enabled = retryEnabled,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(48.dp)
+                .heightIn(min = 48.dp)
                 .semantics {
                     if (!retryEnabled) {
                         contentDescription = retryDisabledText
@@ -963,7 +979,7 @@ private fun UnresolvedDropSetOffer(
             onClick = { onDeclineDropSet(identity) },
             modifier = Modifier
                 .fillMaxWidth()
-                .height(48.dp),
+                .heightIn(min = 48.dp),
         ) {
             Text(stringResource(Res.string.drop_set_skip))
         }

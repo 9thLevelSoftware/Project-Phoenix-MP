@@ -24,12 +24,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.presentation.components.ExerciseDemoImage
 import com.devil.phoenixproject.presentation.components.ExpressiveCard
 import com.devil.phoenixproject.presentation.components.LoadingIndicator
 import com.devil.phoenixproject.presentation.components.LoadingIndicatorSize
 import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
+import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
 import com.devil.phoenixproject.presentation.viewmodel.AssessmentStep
 import com.devil.phoenixproject.presentation.viewmodel.AssessmentUiEvent
 import com.devil.phoenixproject.presentation.viewmodel.AssessmentViewModel
@@ -39,6 +41,7 @@ import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.celebrationBackgroundBrush
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import com.devil.phoenixproject.util.KmpUtils
+import com.devil.phoenixproject.util.UnitConverter
 import kotlinx.coroutines.flow.StateFlow
 import org.jetbrains.compose.resources.stringResource
 import projectphoenix.shared.generated.resources.*
@@ -67,6 +70,7 @@ fun AssessmentWizardScreen(
     exerciseId: String? = null,
     onNavigateBack: () -> Unit,
     metricsFlow: StateFlow<WorkoutMetric?>? = null,
+    weightUnit: WeightUnit = WeightUnit.KG,
 ) {
     require(profileId.isNotBlank()) { "Assessment profileId must not be blank" }
     val currentStep by viewModel.currentStep.collectAsState()
@@ -90,6 +94,12 @@ fun AssessmentWizardScreen(
     }
 
     val backgroundGradient = screenBackgroundBrush()
+    val contentMaxWidth = ResponsiveDimensions.contentMaxWidth()
+    val widthModifier = if (contentMaxWidth != null) {
+        Modifier.widthIn(max = contentMaxWidth).fillMaxWidth()
+    } else {
+        Modifier.fillMaxWidth()
+    }
 
     Box(
         modifier = Modifier
@@ -103,51 +113,66 @@ fun AssessmentWizardScreen(
             is AssessmentStep.Results -> 4
             else -> null
         }
-        Column(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
             if (stepNumber != null) {
-                WizardStepIndicator(currentStep = stepNumber, totalSteps = 4)
+                Box(modifier = widthModifier) {
+                    WizardStepIndicator(currentStep = stepNumber, totalSteps = 4)
+                }
             }
-            Box(modifier = Modifier.weight(1f)) {
-                when (val step = currentStep) {
-                    is AssessmentStep.ExerciseSelection -> ExerciseSelectionContent(
-                        step = step,
-                        exercises = exercises,
-                        onSearchQueryChange = viewModel::updateSearchQuery,
-                        onExerciseSelected = viewModel::selectExercise,
-                    )
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                contentAlignment = Alignment.TopCenter,
+            ) {
+                Box(modifier = widthModifier.fillMaxHeight()) {
+                    when (val step = currentStep) {
+                        is AssessmentStep.ExerciseSelection -> ExerciseSelectionContent(
+                            step = step,
+                            exercises = exercises,
+                            onSearchQueryChange = viewModel::updateSearchQuery,
+                            onExerciseSelected = viewModel::selectExercise,
+                        )
 
-                    is AssessmentStep.Instruction -> InstructionContent(
-                        step = step,
-                        onStartAssessment = viewModel::startAssessment,
-                        onBack = viewModel::reset,
-                    )
+                        is AssessmentStep.Instruction -> InstructionContent(
+                            step = step,
+                            onStartAssessment = viewModel::startAssessment,
+                            onBack = viewModel::reset,
+                        )
 
-                    is AssessmentStep.ProgressiveLoading -> ProgressiveLoadingContent(
-                        step = step,
-                        onRecordSet = viewModel::recordSet,
-                        onStartCapture = { metricsFlow?.let { viewModel.startVelocityCapture(it) } },
-                        onStopCapture = { viewModel.stopVelocityCapture() },
-                        hasBleMetrics = metricsFlow != null,
-                        onCancel = viewModel::reset,
-                    )
+                        is AssessmentStep.ProgressiveLoading -> ProgressiveLoadingContent(
+                            step = step,
+                            weightUnit = weightUnit,
+                            onRecordSet = viewModel::recordSet,
+                            onStartCapture = { metricsFlow?.let { viewModel.startVelocityCapture(it) } },
+                            onStopCapture = { viewModel.stopVelocityCapture() },
+                            hasBleMetrics = metricsFlow != null,
+                            onCancel = viewModel::reset,
+                        )
 
-                    is AssessmentStep.Results -> ResultsContent(
-                        step = step,
-                        onAccept = { overrideKg ->
-                            viewModel.acceptResult(
-                                profileId = profileId,
-                                overrideKg = overrideKg,
-                            )
-                        },
-                        onDiscard = viewModel::reset,
-                    )
+                        is AssessmentStep.Results -> ResultsContent(
+                            step = step,
+                            weightUnit = weightUnit,
+                            onAccept = { overrideKg ->
+                                viewModel.acceptResult(
+                                    profileId = profileId,
+                                    overrideKg = overrideKg,
+                                )
+                            },
+                            onDiscard = viewModel::reset,
+                        )
 
-                    is AssessmentStep.Saving -> SavingContent()
+                        is AssessmentStep.Saving -> SavingContent()
 
-                    is AssessmentStep.Complete -> CompleteContent(
-                        step = step,
-                        onDone = onNavigateBack,
-                    )
+                        is AssessmentStep.Complete -> CompleteContent(
+                            step = step,
+                            weightUnit = weightUnit,
+                            onDone = onNavigateBack,
+                        )
+                    }
                 }
             }
         }
@@ -314,87 +339,93 @@ private fun InstructionContent(step: AssessmentStep.Instruction, onStartAssessme
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
             .padding(Spacing.medium),
     ) {
-        Text(
-            text = step.exercise.displayName,
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onBackground,
-        )
-
-        Spacer(modifier = Modifier.height(Spacing.medium))
-
-        if (step.images.isNotEmpty()) {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(220.dp),
-                shape = MaterialTheme.shapes.medium,
-            ) {
-                ExerciseDemoImage(
-                    imageUrls = step.images.map { it.url },
-                    modifier = Modifier.fillMaxSize(),
-                    contentDescription = step.exercise.displayName,
-                )
-            }
-            Spacer(modifier = Modifier.height(Spacing.medium))
-        }
-
-        // Instructions card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.medium,
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            ),
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState()),
         ) {
-            Column(
-                modifier = Modifier.padding(Spacing.medium),
-                verticalArrangement = Arrangement.spacedBy(Spacing.small),
+            Text(
+                text = step.exercise.displayName,
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground,
+            )
+
+            Spacer(modifier = Modifier.height(Spacing.medium))
+
+            if (step.images.isNotEmpty()) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(220.dp),
+                    shape = MaterialTheme.shapes.medium,
+                ) {
+                    ExerciseDemoImage(
+                        imageUrls = step.images.map { it.url },
+                        modifier = Modifier.fillMaxSize(),
+                        contentDescription = step.exercise.displayName,
+                    )
+                }
+                Spacer(modifier = Modifier.height(Spacing.medium))
+            }
+
+            // Instructions card
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.medium,
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                ),
             ) {
-                Text(
-                    text = "Assessment Protocol",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
+                Column(
+                    modifier = Modifier.padding(Spacing.medium),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.small),
+                ) {
+                    Text(
+                        text = "Assessment Protocol",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
 
-                val instructions = listOf(
-                    "You will perform 3-5 sets at progressively heavier weights.",
-                    "Perform 3 reps per set with maximum intent on the concentric (lifting) phase.",
-                    "The system will track your velocity to estimate your one-rep max.",
-                    "Start light (~40% of estimated max) and increase weight each set.",
-                )
+                    val instructions = listOf(
+                        "You will perform 3-5 sets at progressively heavier weights.",
+                        "Perform 3 reps per set with maximum intent on the concentric (lifting) phase.",
+                        "The system will track your velocity to estimate your one-rep max.",
+                        "Start light (~40% of estimated max) and increase weight each set.",
+                    )
 
-                instructions.forEachIndexed { index, instruction ->
-                    Row(verticalAlignment = Alignment.Top) {
-                        Text(
-                            text = "${index + 1}.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.width(24.dp),
-                        )
-                        Text(
-                            text = instruction,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
+                    instructions.forEachIndexed { index, instruction ->
+                        Row(verticalAlignment = Alignment.Top) {
+                            Text(
+                                text = "${index + 1}.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.width(24.dp),
+                            )
+                            Text(
+                                text = instruction,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
                     }
                 }
             }
         }
 
-        Spacer(modifier = Modifier.weight(1f))
+        Spacer(modifier = Modifier.height(Spacing.medium))
 
-        // Buttons
+        // Buttons anchored cleanly outside the scroll viewport
         Button(
             onClick = onStartAssessment,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(56.dp),
+                .heightIn(min = 56.dp),
             shape = MaterialTheme.shapes.medium,
         ) {
             Text(
@@ -408,7 +439,9 @@ private fun InstructionContent(step: AssessmentStep.Instruction, onStartAssessme
 
         TextButton(
             onClick = onBack,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp),
         ) {
             Text(stringResource(Res.string.action_back))
         }
@@ -420,13 +453,16 @@ private fun InstructionContent(step: AssessmentStep.Instruction, onStartAssessme
 @Composable
 private fun ProgressiveLoadingContent(
     step: AssessmentStep.ProgressiveLoading,
+    weightUnit: WeightUnit,
     onRecordSet: (Float, Float) -> Unit,
     onStartCapture: () -> Unit,
     onStopCapture: () -> Unit,
     hasBleMetrics: Boolean,
     onCancel: () -> Unit,
 ) {
-    var weightInput by remember(step.currentSetNumber) { mutableStateOf(step.suggestedWeightKg.toString()) }
+    var weightInput by remember(step.currentSetNumber, weightUnit) {
+        mutableStateOf(formatDisplayNumber(step.suggestedWeightKg, weightUnit))
+    }
     // Manual fallback fields only used when BLE metrics are unavailable
     var velocityInput by remember(step.currentSetNumber) { mutableStateOf("") }
 
@@ -466,7 +502,7 @@ private fun ProgressiveLoadingContent(
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
                 Text(
-                    text = "${step.suggestedWeightKg} kg",
+                    text = formatAssessmentWeight(step.suggestedWeightKg, weightUnit),
                     style = MaterialTheme.typography.displaySmall,
                     fontWeight = FontWeight.Black,
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -517,7 +553,7 @@ private fun ProgressiveLoadingContent(
                             modifier = Modifier.width(60.dp),
                         )
                         Text(
-                            text = "${set.loadKg} kg",
+                            text = formatAssessmentWeight(set.loadKg, weightUnit),
                             style = MaterialTheme.typography.bodyMedium,
                             modifier = Modifier.weight(1f),
                         )
@@ -562,6 +598,7 @@ private fun ProgressiveLoadingContent(
                     isCapturing = step.isCapturing,
                     liveVelocityMs = step.liveVelocityMs,
                     suggestedWeight = step.suggestedWeightKg,
+                    weightUnit = weightUnit,
                     onStartCapture = onStartCapture,
                     onStopCapture = onStopCapture,
                 )
@@ -570,6 +607,7 @@ private fun ProgressiveLoadingContent(
                 ManualInputSection(
                     weightInput = weightInput,
                     velocityInput = velocityInput,
+                    weightUnit = weightUnit,
                     onWeightChange = { weightInput = it },
                     onVelocityChange = { velocityInput = it },
                     onRecordSet = onRecordSet,
@@ -581,7 +619,9 @@ private fun ProgressiveLoadingContent(
 
         TextButton(
             onClick = onCancel,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp),
             enabled = !step.isCapturing,
         ) {
             Text(stringResource(Res.string.cancel_assessment))
@@ -597,6 +637,7 @@ private fun BleVelocityCaptureSection(
     isCapturing: Boolean,
     liveVelocityMs: Float?,
     suggestedWeight: Float,
+    weightUnit: WeightUnit,
     onStartCapture: () -> Unit,
     onStopCapture: () -> Unit,
 ) {
@@ -616,7 +657,7 @@ private fun BleVelocityCaptureSection(
             if (!isCapturing) {
                 // Pre-set instructions
                 Text(
-                    text = "Set the machine to ${KmpUtils.formatFloat(suggestedWeight, 1)} kg",
+                    text = "Set the machine to ${formatAssessmentWeight(suggestedWeight, weightUnit)}",
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -633,7 +674,7 @@ private fun BleVelocityCaptureSection(
                     onClick = onStartCapture,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(56.dp),
+                        .heightIn(min = 56.dp),
                     shape = MaterialTheme.shapes.medium,
                 ) {
                     Text(
@@ -683,7 +724,7 @@ private fun BleVelocityCaptureSection(
                     onClick = onStopCapture,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(56.dp),
+                        .heightIn(min = 56.dp),
                     shape = MaterialTheme.shapes.medium,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.tertiary,
@@ -707,10 +748,12 @@ private fun BleVelocityCaptureSection(
 private fun ManualInputSection(
     weightInput: String,
     velocityInput: String,
+    weightUnit: WeightUnit,
     onWeightChange: (String) -> Unit,
     onVelocityChange: (String) -> Unit,
     onRecordSet: (Float, Float) -> Unit,
 ) {
+    val unitSuffix = if (weightUnit == WeightUnit.LB) "lbs" else "kg"
     Text(
         text = "Log This Set",
         style = MaterialTheme.typography.titleSmall,
@@ -723,6 +766,7 @@ private fun ManualInputSection(
         value = weightInput,
         onValueChange = onWeightChange,
         label = { Text(stringResource(Res.string.actual_weight_label)) },
+        suffix = { Text(unitSuffix) },
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
         modifier = Modifier.fillMaxWidth(),
         singleLine = true,
@@ -743,20 +787,20 @@ private fun ManualInputSection(
 
     Spacer(modifier = Modifier.height(Spacing.medium))
 
-    val weight = weightInput.toFloatOrNull()
+    val enteredWeight = weightInput.toFloatOrNull()
     val velocity = velocityInput.toFloatOrNull()
-    val canLog = weight != null && weight > 0f && velocity != null && velocity > 0f
+    val canLog = enteredWeight != null && enteredWeight > 0f && velocity != null && velocity > 0f
 
     Button(
         onClick = {
-            if (weight != null && velocity != null) {
-                onRecordSet(weight, velocity)
+            if (enteredWeight != null && velocity != null) {
+                onRecordSet(parseDisplayWeightToKg(enteredWeight, weightUnit), velocity)
             }
         },
         enabled = canLog,
         modifier = Modifier
             .fillMaxWidth()
-            .height(56.dp),
+            .heightIn(min = 56.dp),
         shape = MaterialTheme.shapes.medium,
     ) {
         Text(
@@ -769,9 +813,22 @@ private fun ManualInputSection(
 
 // ---------- Step 4: Results ----------
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ResultsContent(step: AssessmentStep.Results, onAccept: (Float?) -> Unit, onDiscard: () -> Unit) {
-    var overrideText by remember { mutableStateOf(step.overrideValueKg) }
+private fun ResultsContent(
+    step: AssessmentStep.Results,
+    weightUnit: WeightUnit,
+    onAccept: (Float?) -> Unit,
+    onDiscard: () -> Unit,
+) {
+    var overrideText by remember(step.overrideValueKg, weightUnit) {
+        mutableStateOf(
+            step.overrideValueKg.toFloatOrNull()
+                ?.let { formatDisplayNumber(it, weightUnit) }
+                ?: step.overrideValueKg,
+        )
+    }
+    val unitSuffix = if (weightUnit == WeightUnit.LB) "lbs" else "kg"
 
     Column(
         modifier = Modifier
@@ -808,7 +865,7 @@ private fun ResultsContent(step: AssessmentStep.Results, onAccept: (Float?) -> U
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
                 Text(
-                    text = "${KmpUtils.formatFloat(step.estimatedOneRepMaxKg, 1)} kg",
+                    text = formatAssessmentWeight(step.estimatedOneRepMaxKg, weightUnit),
                     style = MaterialTheme.typography.displayMedium,
                     fontWeight = FontWeight.Black,
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -837,18 +894,18 @@ private fun ResultsContent(step: AssessmentStep.Results, onAccept: (Float?) -> U
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             ),
         ) {
-            Row(
+            FlowRow(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(Spacing.medium),
-                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Spacing.small),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Text(
                     text = "Regression Quality:",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
-                Spacer(modifier = Modifier.width(Spacing.small))
                 Text(
                     text = "$confidenceText (R² = ${KmpUtils.formatFloat(step.r2, 2)})",
                     style = MaterialTheme.typography.bodyMedium,
@@ -886,7 +943,7 @@ private fun ResultsContent(step: AssessmentStep.Results, onAccept: (Float?) -> U
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Text(
-                        text = "${point.loadKg} kg",
+                        text = formatAssessmentWeight(point.loadKg, weightUnit),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Bold,
                     )
@@ -915,6 +972,7 @@ private fun ResultsContent(step: AssessmentStep.Results, onAccept: (Float?) -> U
             onValueChange = { overrideText = it },
             label = { Text(stringResource(Res.string.enter_estimate_label)) },
             supportingText = { Text(stringResource(Res.string.leave_empty_hint)) },
+            suffix = { Text(unitSuffix) },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
@@ -926,12 +984,14 @@ private fun ResultsContent(step: AssessmentStep.Results, onAccept: (Float?) -> U
         // Accept button
         Button(
             onClick = {
-                val override = overrideText.toFloatOrNull()
-                onAccept(override)
+                val overrideKg = overrideText.toFloatOrNull()?.let {
+                    parseDisplayWeightToKg(it, weightUnit)
+                }
+                onAccept(overrideKg)
             },
             modifier = Modifier
                 .fillMaxWidth()
-                .height(56.dp),
+                .heightIn(min = 56.dp),
             shape = MaterialTheme.shapes.medium,
         ) {
             Text(
@@ -946,7 +1006,9 @@ private fun ResultsContent(step: AssessmentStep.Results, onAccept: (Float?) -> U
         // Discard button
         OutlinedButton(
             onClick = onDiscard,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp),
         ) {
             Text(stringResource(Res.string.action_discard))
         }
@@ -981,7 +1043,7 @@ private fun SavingContent() {
 // ---------- Step 6: Complete ----------
 
 @Composable
-private fun CompleteContent(step: AssessmentStep.Complete, onDone: () -> Unit) {
+private fun CompleteContent(step: AssessmentStep.Complete, weightUnit: WeightUnit, onDone: () -> Unit) {
     // exercise-library-13: SpringBouncy entrance on icon + celebrationBackgroundBrush +
     // hero metric at displayMedium. reduceMotion: iconReady OR reduceMotion = 1f immediately.
     val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
@@ -1032,7 +1094,7 @@ private fun CompleteContent(step: AssessmentStep.Complete, onDone: () -> Unit) {
             )
             // Hero metric: displayMedium per charter (was titleLarge) — 1RM value on its own line
             Text(
-                text = "${KmpUtils.formatFloat(step.finalOneRepMaxKg, 1)} kg",
+                text = formatAssessmentWeight(step.finalOneRepMaxKg, weightUnit),
                 style = MaterialTheme.typography.displayMedium,
                 color = MaterialTheme.colorScheme.primary,
             )
@@ -1043,7 +1105,7 @@ private fun CompleteContent(step: AssessmentStep.Complete, onDone: () -> Unit) {
                 onClick = onDone,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(56.dp),
+                    .heightIn(min = 56.dp),
                 shape = MaterialTheme.shapes.medium,
             ) {
                 Text(
@@ -1055,3 +1117,16 @@ private fun CompleteContent(step: AssessmentStep.Complete, onDone: () -> Unit) {
         }
     }
 }
+
+private fun formatDisplayNumber(kg: Float, weightUnit: WeightUnit): String {
+    val display = if (weightUnit == WeightUnit.LB) UnitConverter.kgToLb(kg) else kg
+    return KmpUtils.formatFloat(display, 1)
+}
+
+private fun formatAssessmentWeight(kg: Float, weightUnit: WeightUnit): String {
+    val suffix = if (weightUnit == WeightUnit.LB) "lbs" else "kg"
+    return "${formatDisplayNumber(kg, weightUnit)} $suffix"
+}
+
+private fun parseDisplayWeightToKg(displayWeight: Float, weightUnit: WeightUnit): Float =
+    if (weightUnit == WeightUnit.LB) UnitConverter.lbToKg(displayWeight) else displayWeight

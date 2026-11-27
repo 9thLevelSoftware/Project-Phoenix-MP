@@ -115,6 +115,67 @@ class WindowSizeClassTest {
         )
     }
 
+    // ========== Issue #1367 (T19): effective weight text scale pressure ==========
+
+    @Test
+    fun compactWidthWithEffectiveWeightScaleUsesCompactAccessibilityLayout() {
+        // E = 2.0 at OS fontScale 1.0 (Extra large at default device text) must drive the
+        // compact layout even though the OS font scale alone would not (SD7).
+        val window = WindowSizeClass(
+            widthSizeClass = WindowWidthSizeClass.Compact,
+            heightSizeClass = WindowHeightSizeClass.Medium,
+            widthDp = 390.dp,
+            heightDp = 844.dp,
+        )
+
+        assertTrue(
+            shouldUseCompactAccessibilityLayout(
+                windowSizeClass = window,
+                fontScale = 1f,
+                boldTextEnabled = false,
+                effectiveWeightTextScale = 2.0f,
+            ),
+        )
+    }
+
+    @Test
+    fun effectiveWeightScaleOfOneKeepsExistingBehavior() {
+        val window = WindowSizeClass(
+            widthSizeClass = WindowWidthSizeClass.Compact,
+            heightSizeClass = WindowHeightSizeClass.Medium,
+            widthDp = 390.dp,
+            heightDp = 844.dp,
+        )
+
+        assertFalse(
+            shouldUseCompactAccessibilityLayout(
+                windowSizeClass = window,
+                fontScale = 1f,
+                boldTextEnabled = false,
+                effectiveWeightTextScale = 1.0f,
+            ),
+        )
+    }
+
+    @Test
+    fun widerLayoutsIgnoreEffectiveWeightScaleForCompactAccessibility() {
+        val window = WindowSizeClass(
+            widthSizeClass = WindowWidthSizeClass.Medium,
+            heightSizeClass = WindowHeightSizeClass.Medium,
+            widthDp = 700.dp,
+            heightDp = 844.dp,
+        )
+
+        assertFalse(
+            shouldUseCompactAccessibilityLayout(
+                windowSizeClass = window,
+                fontScale = 1f,
+                boldTextEnabled = false,
+                effectiveWeightTextScale = 2.0f,
+            ),
+        )
+    }
+
     // ========== Issue #571: shouldStackWeightCards ==========
     //
     // The helper is reduced to `heightSizeClass == Compact` (see WindowSizeClass.kt). The

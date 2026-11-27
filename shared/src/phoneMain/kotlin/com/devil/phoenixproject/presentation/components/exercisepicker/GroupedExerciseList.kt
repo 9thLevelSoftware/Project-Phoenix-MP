@@ -3,6 +3,7 @@ package com.devil.phoenixproject.presentation.components.exercisepicker
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -126,6 +127,7 @@ fun GroupedExerciseList(
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(end = if (grouped) 52.dp else 0.dp, bottom = 16.dp),
         ) {
             if (grouped) {
                 groupedExercises.forEach { (letter: Char, exerciseList: List<Exercise>) ->

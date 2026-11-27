@@ -14,11 +14,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -260,6 +261,21 @@ fun WorkoutTab(
 
             // Rep Quality Score overlay (Phoenix+ tier only, passed as null for Free)
             RepQualityIndicator(latestRepQualityScore = latestRepQualityScore)
+
+            // D-1: Mount AutoStopOverlay inside the active HUD Box above HudBottomBar so
+            // Just Lift / AMRAP auto-stop countdowns are visible during active workouts.
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .navigationBarsPadding()
+                    .padding(start = 16.dp, end = 16.dp, bottom = 96.dp),
+                contentAlignment = Alignment.BottomCenter,
+            ) {
+                AutoStopOverlay(
+                    autoStopState = autoStopState,
+                    isJustLift = workoutParameters.isJustLift,
+                )
+            }
         }
         return
     }
@@ -273,7 +289,6 @@ fun WorkoutTab(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .navigationBarsPadding() // Keep content above the soft navigation buttons
                 .padding(
                     start = 20.dp,
                     end = 20.dp,
@@ -417,13 +432,11 @@ fun WorkoutTab(
                         }
                     }
 
-                    // Full-screen wrapper with proper system bar padding
+                    // Summary card wrapper inside the scrolling workout tab column
                     Box(
                         modifier = Modifier
-                            .fillMaxSize()
-                            .background(screenBackgroundBrush())
-                            .systemBarsPadding()
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp),
                     ) {
                         SetSummaryCard(
                             summary = workoutState,
@@ -1058,7 +1071,7 @@ private fun CompletedCard(
                     onClick = onStartNextExercise,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(56.dp),
+                        .heightIn(min = 56.dp),
                     enabled = nextExerciseStartGate.startEnabled,
                     shape = MaterialTheme.shapes.medium,
                     elevation = ButtonDefaults.buttonElevation(
@@ -1082,7 +1095,7 @@ private fun CompletedCard(
                     onClick = onResetForNewWorkout,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(56.dp),
+                        .heightIn(min = 56.dp),
                     enabled = startGate.startEnabled,
                     shape = MaterialTheme.shapes.medium,
                     elevation = ButtonDefaults.buttonElevation(
@@ -1143,106 +1156,120 @@ private fun BodyweightRepEntryDialog(
         onDismissRequest = {},
         title = { Text(stringResource(Res.string.bodyweight_reps_title)) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(Spacing.medium)) {
-                Text(
-                    stringResource(
-                        Res.string.bodyweight_set_progress,
-                        entry.exerciseName,
-                        entry.currentSet,
-                        entry.totalSets,
-                    ),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            // Use LazyColumn rather than a second .verticalScroll modifier in WorkoutTab
+            // so compact screens can scroll while preserving the single-scroll contract.
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(Spacing.medium),
+            ) {
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(Spacing.medium)) {
+                        Text(
+                            stringResource(
+                                Res.string.bodyweight_set_progress,
+                                entry.exerciseName,
+                                entry.currentSet,
+                                entry.totalSets,
+                            ),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
 
-                OutlinedTextField(
-                    value = repsText,
-                    onValueChange = { value ->
-                        repsText = value.filter { it.isDigit() }.take(3)
-                    },
-                    label = { Text(stringResource(Res.string.bodyweight_reps_completed)) },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                        OutlinedTextField(
+                            value = repsText,
+                            onValueChange = { value ->
+                                repsText = value.filter { it.isDigit() }.take(3)
+                            },
+                            label = { Text(stringResource(Res.string.bodyweight_reps_completed)) },
+                            isError = reps <= 0,
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
 
-                ExposedDropdownMenuBox(
-                    expanded = expanded,
-                    onExpandedChange = { expanded = it },
-                ) {
-                    OutlinedTextField(
-                        value = selectedVariant.label,
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text(stringResource(Res.string.bodyweight_variant)) },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                        modifier = Modifier
-                            .menuAnchor()
-                            .fillMaxWidth(),
-                        singleLine = true,
-                    )
-                    ExposedDropdownMenu(
-                        expanded = expanded,
-                        onDismissRequest = { expanded = false },
-                    ) {
-                        entry.variants.forEach { variant ->
-                            DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        stringResource(
-                                            Res.string.bodyweight_variant_percent,
-                                            variant.label,
-                                            (variant.percentage * 100).toInt(),
-                                        ),
+                        ExposedDropdownMenuBox(
+                            expanded = expanded,
+                            onExpandedChange = { expanded = it },
+                        ) {
+                            OutlinedTextField(
+                                value = selectedVariant.label,
+                                onValueChange = {},
+                                readOnly = true,
+                                label = { Text(stringResource(Res.string.bodyweight_variant)) },
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                                modifier = Modifier
+                                    .menuAnchor()
+                                    .fillMaxWidth(),
+                                singleLine = true,
+                            )
+                            ExposedDropdownMenu(
+                                expanded = expanded,
+                                onDismissRequest = { expanded = false },
+                            ) {
+                                entry.variants.forEach { variant ->
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(
+                                                stringResource(
+                                                    Res.string.bodyweight_variant_percent,
+                                                    variant.label,
+                                                    (variant.percentage * 100).toInt(),
+                                                ),
+                                            )
+                                        },
+                                        onClick = {
+                                            selectedVariant = variant
+                                            expanded = false
+                                        },
                                     )
-                                },
-                                onClick = {
-                                    selectedVariant = variant
-                                    expanded = false
-                                },
+                                }
+                            }
+                        }
+
+                        if (entry.bodyWeightKg > 0f) {
+                            Text(
+                                stringResource(
+                                    Res.string.bodyweight_effective_load,
+                                    formatWeight(effectiveWeightKg, weightUnit),
+                                ),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                            if (rackLoadContributionSummary != null) {
+                                Text(
+                                    stringResource(
+                                        Res.string.bodyweight_effective_load_includes,
+                                        rackLoadContributionSummary,
+                                    ),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            Text(
+                                stringResource(
+                                    Res.string.bodyweight_volume,
+                                    formatWeight(volumeKg, weightUnit),
+                                ),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        } else {
+                            Text(
+                                stringResource(Res.string.bodyweight_no_weight_volume),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
                             )
                         }
                     }
                 }
-
-                if (entry.bodyWeightKg > 0f) {
-                    Text(
-                        stringResource(
-                            Res.string.bodyweight_effective_load,
-                            formatWeight(effectiveWeightKg, weightUnit),
-                        ),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                    if (rackLoadContributionSummary != null) {
-                        Text(
-                            stringResource(
-                                Res.string.bodyweight_effective_load_includes,
-                                rackLoadContributionSummary,
-                            ),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Text(
-                        stringResource(
-                            Res.string.bodyweight_volume,
-                            formatWeight(volumeKg, weightUnit),
-                        ),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                } else {
-                    Text(
-                        stringResource(Res.string.bodyweight_no_weight_volume),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
             }
         },
         confirmButton = {
-            Button(onClick = { onConfirm(reps, selectedVariant) }) {
+            Button(
+                onClick = { if (reps > 0) onConfirm(reps, selectedVariant) },
+                enabled = reps > 0,
+                modifier = Modifier.heightIn(min = 48.dp),
+            ) {
                 Text(stringResource(Res.string.save_set))
             }
         },

@@ -1,6 +1,11 @@
 package com.devil.phoenixproject.presentation.screen
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -43,6 +48,7 @@ import com.devil.phoenixproject.presentation.components.RpeIndicator
 import com.devil.phoenixproject.presentation.util.AchievedLoadPresentation
 import com.devil.phoenixproject.presentation.util.ContentAwareFit
 import com.devil.phoenixproject.presentation.util.DurationFormatter
+import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
 import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.qualityScoreColor
@@ -553,6 +559,7 @@ fun SetSummaryCard(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ExerciseTagSection(
     taggedExerciseName: String?,
@@ -571,15 +578,17 @@ private fun ExerciseTagSection(
             MaterialTheme.colorScheme.surfaceContainerHigh
         },
     ) {
-        Row(
+        FlowRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
         ) {
             Row(
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .weight(1f)
+                    .widthIn(min = 160.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
@@ -608,7 +617,7 @@ private fun ExerciseTagSection(
                         Text(
                             text = stringResource(Res.string.tag_exercise_hint),
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
                         )
                     } else {
                         Text(
@@ -619,23 +628,35 @@ private fun ExerciseTagSection(
                     }
                 }
             }
-            if (isUntagged) {
-                FilledTonalButton(onClick = onClick) {
-                    Text(stringResource(Res.string.tag_exercise_action))
-                }
-            } else {
-                TextButton(onClick = onClick) {
-                    Text(stringResource(Res.string.action_change))
-                }
-                // #972: Clear is its own control and must never open the picker.
-                if (onClear != null) {
-                    TextButton(
-                        onClick = onClear,
-                        colors = ButtonDefaults.textButtonColors(
-                            contentColor = MaterialTheme.colorScheme.error,
-                        ),
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (isUntagged) {
+                    FilledTonalButton(
+                        onClick = onClick,
+                        modifier = Modifier.heightIn(min = 48.dp),
                     ) {
-                        Text(stringResource(Res.string.action_clear_label))
+                        Text(stringResource(Res.string.tag_exercise_action))
+                    }
+                } else {
+                    TextButton(
+                        onClick = onClick,
+                        modifier = Modifier.heightIn(min = 48.dp),
+                    ) {
+                        Text(stringResource(Res.string.action_change))
+                    }
+                    // #972: Clear is its own control and must never open the picker.
+                    if (onClear != null) {
+                        TextButton(
+                            onClick = onClear,
+                            modifier = Modifier.heightIn(min = 48.dp),
+                            colors = ButtonDefaults.textButtonColors(
+                                contentColor = MaterialTheme.colorScheme.error,
+                            ),
+                        ) {
+                            Text(stringResource(Res.string.action_clear_label))
+                        }
                     }
                 }
             }
@@ -998,13 +1019,17 @@ private fun VelocitySummaryCard(biomechanics: BiomechanicsSetSummary) {
             }
 
             // Stats row: Avg MCV, Peak, Velocity Loss
-            Row(
+            @OptIn(ExperimentalLayoutApi::class)
+            FlowRow(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
+                verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
             ) {
                 // Avg MCV
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Column(
+                    modifier = Modifier.widthIn(min = 84.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
                     Text(
                         "Avg MCV",
                         style = MaterialTheme.typography.labelSmall,
@@ -1024,7 +1049,10 @@ private fun VelocitySummaryCard(biomechanics: BiomechanicsSetSummary) {
                 }
 
                 // Peak Velocity
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Column(
+                    modifier = Modifier.widthIn(min = 84.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
                     Text(
                         "Peak",
                         style = MaterialTheme.typography.labelSmall,
@@ -1044,7 +1072,10 @@ private fun VelocitySummaryCard(biomechanics: BiomechanicsSetSummary) {
                 }
 
                 // Velocity Loss
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Column(
+                    modifier = Modifier.widthIn(min = 84.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
                     Text(
                         "Velocity Loss",
                         style = MaterialTheme.typography.labelSmall,
@@ -1120,9 +1151,11 @@ private fun VelocitySummaryCard(biomechanics: BiomechanicsSetSummary) {
                     }
 
                     // Zone labels with counts
-                    Row(
+                    @OptIn(ExperimentalLayoutApi::class)
+                    FlowRow(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         for (zone in activeZones) {
                             val count = biomechanics.zoneDistribution[zone] ?: 0
@@ -1308,13 +1341,17 @@ private fun ForceCurveSummaryCard(avgForceCurve: ForceCurveResult, strengthProfi
             }
 
             // Stats row: Sticking Point, Peak Force, Min Force
-            Row(
+            @OptIn(ExperimentalLayoutApi::class)
+            FlowRow(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
+                verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
             ) {
                 // Sticking Point
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Column(
+                    modifier = Modifier.widthIn(min = 84.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
                     Text(
                         "Sticking Point",
                         style = MaterialTheme.typography.labelSmall,
@@ -1328,7 +1365,10 @@ private fun ForceCurveSummaryCard(avgForceCurve: ForceCurveResult, strengthProfi
                     )
                 }
                 // Peak Force
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Column(
+                    modifier = Modifier.widthIn(min = 84.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
                     Text(
                         "Peak Force",
                         style = MaterialTheme.typography.labelSmall,
@@ -1342,7 +1382,10 @@ private fun ForceCurveSummaryCard(avgForceCurve: ForceCurveResult, strengthProfi
                     )
                 }
                 // Min Force (interior, excluding edges)
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Column(
+                    modifier = Modifier.widthIn(min = 84.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
                     Text(
                         "Min Force",
                         style = MaterialTheme.typography.labelSmall,
@@ -1435,13 +1478,17 @@ private fun AsymmetrySummaryCard(biomechanics: BiomechanicsSetSummary) {
             }
 
             // Main stats row: Avg Asymmetry, Dominant Side, Trend
-            Row(
+            @OptIn(ExperimentalLayoutApi::class)
+            FlowRow(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
+                verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
             ) {
                 // Avg Asymmetry
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Column(
+                    modifier = Modifier.widthIn(min = 84.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
                     Text(
                         "Avg Asymmetry",
                         style = MaterialTheme.typography.labelSmall,
@@ -1456,7 +1503,10 @@ private fun AsymmetrySummaryCard(biomechanics: BiomechanicsSetSummary) {
                 }
 
                 // Dominant Side
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Column(
+                    modifier = Modifier.widthIn(min = 84.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
                     Text(
                         "Dominant Side",
                         style = MaterialTheme.typography.labelSmall,
@@ -1476,7 +1526,10 @@ private fun AsymmetrySummaryCard(biomechanics: BiomechanicsSetSummary) {
                 }
 
                 // Trend
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Column(
+                    modifier = Modifier.widthIn(min = 84.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
                     Text(
                         "Trend",
                         style = MaterialTheme.typography.labelSmall,
@@ -1490,7 +1543,7 @@ private fun AsymmetrySummaryCard(biomechanics: BiomechanicsSetSummary) {
                     val trendColor = when (trend) {
                         AsymmetryTrend.WORSENING -> AccessibilityTheme.colors.error
                         AsymmetryTrend.IMPROVING -> AccessibilityTheme.colors.success
-                        AsymmetryTrend.STABLE -> Color.Gray
+                        AsymmetryTrend.STABLE -> MaterialTheme.colorScheme.onSurfaceVariant
                     }
                     val trendLabel = when (trend) {
                         AsymmetryTrend.WORSENING -> "Worsening"
@@ -1642,7 +1695,7 @@ private fun QualityStatsSection(quality: SetQualitySummary) {
                     }
                     val trendColor = when (quality.trend) {
                         QualityTrend.IMPROVING -> AccessibilityTheme.colors.success
-                        QualityTrend.STABLE -> Color.Gray
+                        QualityTrend.STABLE -> MaterialTheme.colorScheme.onSurfaceVariant
                         QualityTrend.DECLINING -> AccessibilityTheme.colors.error
                     }
                     Icon(
@@ -1660,7 +1713,7 @@ private fun QualityStatsSection(quality: SetQualitySummary) {
                 }
                 val trendLabelColor = when (quality.trend) {
                     QualityTrend.IMPROVING -> AccessibilityTheme.colors.success
-                    QualityTrend.STABLE -> Color.Gray
+                    QualityTrend.STABLE -> MaterialTheme.colorScheme.onSurfaceVariant
                     QualityTrend.DECLINING -> AccessibilityTheme.colors.error
                 }
                 Text(
@@ -1671,13 +1724,17 @@ private fun QualityStatsSection(quality: SetQualitySummary) {
             }
 
             // Stats row: Average (large), Best, Worst
-            Row(
+            @OptIn(ExperimentalLayoutApi::class)
+            FlowRow(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
+                verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
             ) {
                 // Average score (large, color-coded)
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Column(
+                    modifier = Modifier.widthIn(min = 84.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
                     Text(
                         "Average",
                         style = MaterialTheme.typography.labelSmall,
@@ -1691,7 +1748,10 @@ private fun QualityStatsSection(quality: SetQualitySummary) {
                     )
                 }
                 // Best rep
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Column(
+                    modifier = Modifier.widthIn(min = 84.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
                     Text(
                         "Best",
                         style = MaterialTheme.typography.labelSmall,
@@ -1705,7 +1765,10 @@ private fun QualityStatsSection(quality: SetQualitySummary) {
                     )
                 }
                 // Worst rep
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Column(
+                    modifier = Modifier.widthIn(min = 84.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
                     Text(
                         "Worst",
                         style = MaterialTheme.typography.labelSmall,
@@ -1721,8 +1784,16 @@ private fun QualityStatsSection(quality: SetQualitySummary) {
             }
 
             // Swipeable content: sparkline vs radar chart
+            val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
             AnimatedContent(
                 targetState = showRadar,
+                transitionSpec = {
+                    if (reduceMotion) {
+                        EnterTransition.None togetherWith ExitTransition.None
+                    } else {
+                        fadeIn() togetherWith fadeOut()
+                    }
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable { showRadar = !showRadar },
@@ -1738,7 +1809,7 @@ private fun QualityStatsSection(quality: SetQualitySummary) {
             Text(
                 text = if (showRadar) "Tap for sparkline" else "Tap for component radar",
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.fillMaxWidth(),
                 textAlign = TextAlign.Center,
             )
@@ -1841,39 +1912,12 @@ private fun RadarChart(quality: SetQualitySummary) {
     val axisValues = listOf(avgRom / 30f, avgVelocity / 25f, avgEccentric / 25f, avgSmoothness / 20f)
     val numAxes = 4
 
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        // Top label: ROM
-        Text(
-            "ROM: ${KmpUtils.formatFloat(avgRom, 1)}/30",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth(),
-        )
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val stackSideLabels = maxWidth < 300.dp || LocalDensity.current.fontScale >= 1.5f
+        val sideLabelWidth = (maxWidth * 0.25f).coerceIn(64.dp, 92.dp)
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            // Left label: Smoothness
-            Text(
-                "${KmpUtils.formatFloat(avgSmoothness, 1)}/20\nSmooth",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.width(56.dp),
-            )
-
-            // Canvas for radar chart (no text)
-            Canvas(
-                modifier = Modifier
-                    .weight(1f)
-                    .height(120.dp),
-            ) {
+        val radarCanvas: @Composable (Modifier) -> Unit = { canvasModifier ->
+            Canvas(modifier = canvasModifier.height(120.dp)) {
                 val centerX = size.width / 2f
                 val centerY = size.height / 2f
                 val radius = minOf(centerX, centerY) - 4.dp.toPx()
@@ -1929,25 +1973,78 @@ private fun RadarChart(quality: SetQualitySummary) {
                     drawCircle(color = strokeColor, radius = 3.dp.toPx(), center = Offset(x, y))
                 }
             }
+        }
 
-            // Right label: Velocity
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            // Top label: ROM
             Text(
-                "${KmpUtils.formatFloat(avgVelocity, 1)}/25\nVelocity",
+                "ROM: ${KmpUtils.formatFloat(avgRom, 1)}/30",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.width(56.dp),
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            if (stackSideLabels) {
+                radarCanvas(Modifier.fillMaxWidth())
+                @OptIn(ExperimentalLayoutApi::class)
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        "Smooth: ${KmpUtils.formatFloat(avgSmoothness, 1)}/20",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        "Velocity: ${KmpUtils.formatFloat(avgVelocity, 1)}/25",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    // Left label: Smoothness
+                    Text(
+                        "${KmpUtils.formatFloat(avgSmoothness, 1)}/20\nSmooth",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.width(sideLabelWidth),
+                    )
+
+                    // Canvas for radar chart (no text)
+                    radarCanvas(Modifier.weight(1f))
+
+                    // Right label: Velocity
+                    Text(
+                        "${KmpUtils.formatFloat(avgVelocity, 1)}/25\nVelocity",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.width(sideLabelWidth),
+                    )
+                }
+            }
+
+            // Bottom label: Eccentric
+            Text(
+                "Eccentric: ${KmpUtils.formatFloat(avgEccentric, 1)}/25",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
             )
         }
-
-        // Bottom label: Eccentric
-        Text(
-            "Eccentric: ${KmpUtils.formatFloat(avgEccentric, 1)}/25",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth(),
-        )
     }
 }
 

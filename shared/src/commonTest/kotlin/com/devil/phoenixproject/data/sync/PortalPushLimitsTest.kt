@@ -1235,6 +1235,19 @@ class PortalPushLimitsTest {
     // ==================== codex #856 P1: the rejection fingerprint covers telemetry ====================
 
     @Test
+    fun sessionFingerprintChangesWhenOnlyCompletionChanges() {
+        val manager = createManager()
+        val inProgress = stubPortalSession("sess-completed")
+        val finished = inProgress.copy(completedAt = "2026-11-23T19:00:00Z")
+
+        assertTrue(
+            manager.sessionContentFingerprint(inProgress, emptyList()) !=
+                manager.sessionContentFingerprint(finished, emptyList()),
+            "a rejected finish must be retried even when the sets are identical",
+        )
+    }
+
+    @Test
     fun sessionFingerprintChangesWhenOnlyTheRawTelemetryChanges() {
         val manager = createManager()
         val dto = stubPortalSession("sess-telemetry")

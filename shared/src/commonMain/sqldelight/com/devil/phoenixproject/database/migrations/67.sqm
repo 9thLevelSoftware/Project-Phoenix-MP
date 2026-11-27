@@ -1,0 +1,1 @@
+ALTER TABLE WorkoutSession ADD COLUMN workout_completed_at_ms INTEGER;

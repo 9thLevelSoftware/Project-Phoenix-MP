@@ -12,6 +12,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.RoutineGroup
 import com.devil.phoenixproject.presentation.components.ConfirmEditTextField
+import com.devil.phoenixproject.presentation.components.PhoenixModalDialogFrame
 
 /**
  * Dialog for moving routine(s) to a group.
@@ -29,71 +30,105 @@ fun MoveToGroupDialog(
     onCreateNewGroup: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Existing groups
-                groups.forEach { group ->
-                    val isCurrentGroup = group.id == currentGroupId
-                    Surface(
-                        onClick = {
-                            if (!isCurrentGroup) {
-                                onGroupSelected(group.id)
-                            }
-                        },
-                        shape = MaterialTheme.shapes.small,
-                        color = if (isCurrentGroup) {
-                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
-                        } else {
-                            MaterialTheme.colorScheme.surfaceContainerHigh
-                        },
-                        enabled = !isCurrentGroup,
+    PhoenixModalDialogFrame(
+        title = title,
+        subtitle = subtitle,
+        onDismiss = onDismiss,
+        actions = {
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier.heightIn(min = 48.dp),
+            ) {
+                Text("Cancel")
+            }
+        },
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            // Existing groups
+            groups.forEach { group ->
+                val isCurrentGroup = group.id == currentGroupId
+                Surface(
+                    onClick = {
+                        if (!isCurrentGroup) {
+                            onGroupSelected(group.id)
+                        }
+                    },
+                    shape = MaterialTheme.shapes.small,
+                    color = if (isCurrentGroup) {
+                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+                    } else {
+                        MaterialTheme.colorScheme.surfaceContainerHigh
+                    },
+                    enabled = !isCurrentGroup,
+                    modifier = Modifier.heightIn(min = 48.dp),
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
+                        Text(
+                            text = group.name,
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = if (isCurrentGroup) FontWeight.Bold else FontWeight.Medium,
+                            color = if (isCurrentGroup) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurface
+                            },
+                            modifier = Modifier.weight(1f),
+                        )
+                        if (isCurrentGroup) {
                             Text(
-                                text = group.name,
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = if (isCurrentGroup) FontWeight.Bold else FontWeight.Medium,
-                                color = if (isCurrentGroup) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.onSurface
-                                },
-                                modifier = Modifier.weight(1f),
+                                text = "Current",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
                             )
-                            if (isCurrentGroup) {
-                                Text(
-                                    text = "Current",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.primary,
-                                )
-                            }
                         }
                     }
                 }
+            }
 
-                Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(4.dp))
 
-                // "New Group..." option
+            // "New Group..." option
+            Surface(
+                onClick = onCreateNewGroup,
+                shape = MaterialTheme.shapes.small,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                modifier = Modifier.heightIn(min = 48.dp),
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Default.Add,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                    Text(
+                        text = "New Group...",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+
+            // "Remove from Group" option (only if currently in a group)
+            if (currentGroupId != null) {
                 Surface(
-                    onClick = onCreateNewGroup,
+                    onClick = onRemoveFromGroup,
                     shape = MaterialTheme.shapes.small,
                     color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    modifier = Modifier.heightIn(min = 48.dp),
                 ) {
                     Row(
                         modifier = Modifier
@@ -103,57 +138,22 @@ fun MoveToGroupDialog(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Icon(
-                            Icons.Default.Add,
+                            Icons.Default.FolderOff,
                             contentDescription = null,
                             modifier = Modifier.size(20.dp),
-                            tint = MaterialTheme.colorScheme.primary,
+                            tint = MaterialTheme.colorScheme.error,
                         )
                         Text(
-                            text = "New Group...",
+                            text = "Remove from Group",
                             style = MaterialTheme.typography.bodyLarge,
                             fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.primary,
+                            color = MaterialTheme.colorScheme.error,
                         )
                     }
                 }
-
-                // "Remove from Group" option (only if currently in a group)
-                if (currentGroupId != null) {
-                    Surface(
-                        onClick = onRemoveFromGroup,
-                        shape = MaterialTheme.shapes.small,
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Icon(
-                                Icons.Default.FolderOff,
-                                contentDescription = null,
-                                modifier = Modifier.size(20.dp),
-                                tint = MaterialTheme.colorScheme.error,
-                            )
-                            Text(
-                                text = "Remove from Group",
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = FontWeight.Medium,
-                                color = MaterialTheme.colorScheme.error,
-                            )
-                        }
-                    }
-                }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
-        },
-    )
+        }
+    }
 }
 
 /**
@@ -168,30 +168,20 @@ fun GroupNameDialog(
 ) {
     var name by remember(initialName) { mutableStateOf(initialName) }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = {
-            ConfirmEditTextField(
-                value = name,
-                onValueChange = { name = it },
-                label = { Text("Group name") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { onConfirm(name.trim()) },
-                enabled = name.isNotBlank(),
-            ) {
-                Text("Save")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
-        },
-    )
+    PhoenixModalDialogFrame(
+        title = title,
+        onDismiss = onDismiss,
+        confirmLabel = "Save",
+        onConfirm = { onConfirm(name.trim()) },
+        dismissLabel = "Cancel",
+        confirmEnabled = name.isNotBlank(),
+    ) {
+        ConfirmEditTextField(
+            value = name,
+            onValueChange = { name = it },
+            label = { Text("Group name") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
 }

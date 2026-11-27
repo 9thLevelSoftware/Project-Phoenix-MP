@@ -8,10 +8,8 @@ import com.devil.phoenixproject.data.garmin.GarminControlPreferences
 import com.devil.phoenixproject.data.garmin.IosGarminCompanionTransport
 import com.devil.phoenixproject.data.integration.HealthIntegration
 import com.devil.phoenixproject.data.integration.HealthWorkoutWriter
-import com.devil.phoenixproject.data.integration.intervals.IntegrationStorageGate
 import com.devil.phoenixproject.data.local.DatabaseFileNames
 import com.devil.phoenixproject.data.local.DriverFactory
-import com.devil.phoenixproject.data.local.IosIntegrationBackupExclusionGate
 import com.devil.phoenixproject.data.local.legacyLibraryRootPath
 import com.devil.phoenixproject.data.repository.BleRepository
 import com.devil.phoenixproject.data.repository.KableBleRepository
@@ -101,14 +99,8 @@ actual val platformModule: Module = module {
         val keychainSettings = KeychainSettings(service = KEYCHAIN_SERVICE_NAME)
         val legacySettings: Settings = get() // NSUserDefaults
         migrateTokensToKeychain(legacySettings, keychainSettings)
+        purgeRetiredDirectExportSecrets(keychainSettings)
         keychainSettings
-    }
-
-    // Integration storage fail-closed seam (issue #1384, integration-model §6):
-    // integration data may only be stored while the live database family's backup
-    // exclusion is proven; a false result fails the integration closed.
-    single<IntegrationStorageGate> {
-        IntegrationStorageGate { IosIntegrationBackupExclusionGate.integrationStoragePermitted() }
     }
     single { OAuthLauncher() }
     single<BleRepository> { KableBleRepository() }
@@ -170,8 +162,6 @@ actual val platformModule: Module = module {
             profileRecoveryActivityTracker = get(),
             recentJustLiftExerciseStore = get(),
             hrmBleManager = getOrNull(),
-            // Issue #1384 (packet P3): real completion finalizer (symmetric with Android).
-            completionFinalizer = get(),
         )
     }
 }

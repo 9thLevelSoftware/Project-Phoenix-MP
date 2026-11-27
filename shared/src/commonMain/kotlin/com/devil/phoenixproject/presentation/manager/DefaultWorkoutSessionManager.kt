@@ -5,7 +5,6 @@ import com.devil.phoenixproject.data.ble.HrmBleManager
 import com.devil.phoenixproject.data.integration.ExternalActivityRepository
 import com.devil.phoenixproject.data.integration.HealthIntegration
 import com.devil.phoenixproject.data.integration.IntegrationSyncCursorRepository
-import com.devil.phoenixproject.data.integration.intervals.RoutineCompletionFinalizer
 import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.preferences.RecentJustLiftExerciseStore
 import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeLookupKey
@@ -244,12 +243,6 @@ class DefaultWorkoutSessionManager(
             minimumWeightPerCableKg = exercise.dropSetMinWeightKg,
         )
     },
-    /**
-     * Issue #1384 (packet P3): the narrow completion-finalizer seam, threaded into
-     * [ActiveSessionEngine] so every routine-finish path durably admits its FINALIZE
-     * request. Defaults to the no-op for construction sites not yet wired.
-     */
-    private val completionFinalizer: RoutineCompletionFinalizer = RoutineCompletionFinalizer.NoOp,
     private val transitionIdGenerator: () -> String = KmpUtils::randomUUID,
     private val offerIdGenerator: () -> String = KmpUtils::randomUUID,
     private val syncTriggerManager: SyncTriggerManager?,
@@ -366,6 +359,7 @@ class DefaultWorkoutSessionManager(
         equipmentRackRepository = equipmentRackRepository,
         applyEquipmentRackLoadUseCase = applyEquipmentRackLoadUseCase,
         scope = scope,
+        syncTriggerManager = syncTriggerManager,
     ).also { rfm ->
         rfm.lifecycleDelegate = object : RoutineFlowManager.WorkoutLifecycleDelegate {
             override fun resetRepCounter() {
@@ -446,7 +440,6 @@ class DefaultWorkoutSessionManager(
         elapsedRealtimeProvider = elapsedRealtimeProvider,
         wallClockMillisProvider = wallClockMillisProvider,
         hrmBleManager = hrmBleManager,
-        completionFinalizer = completionFinalizer,
     )
 
     companion object {
@@ -1435,25 +1428,15 @@ class DefaultWorkoutSessionManager(
                                     }
                             }
                         }
-                        // Issue #1384: the summary no-next-step finish durably admits the
-                        // routine FINALIZE request BEFORE the ID reset / runtime cleanup /
-                        // completion UI. Health and backup stay independent of Intervals;
-                        // on a local persistence failure the owning routine state is
-                        // preserved (no ID reset, no completion UI).
-                        if (activeSessionEngine.admitRoutineCompletion(
-                                com.devil.phoenixproject.data.integration.intervals.IntervalsFinishReason.NORMAL_FINISH,
-                            )
-                        ) {
-                            activeSessionEngine.supersedeConfigurationInputIntent()
-                            coordinator._workoutState.value = WorkoutState.Idle
-                            showRoutineComplete()
-                            // Clear routine session context so stale IDs don't leak into next routine
-                            activeSessionEngine.mutateConfigurationInputs {
-                                coordinator.currentRoutineSessionId = null
-                                coordinator.currentRoutineName = null
-                                coordinator.currentRoutineId = null
-                                coordinator._completedRoutineSetKeys.value = emptySet()
-                            }
+                        activeSessionEngine.supersedeConfigurationInputIntent()
+                        coordinator._workoutState.value = WorkoutState.Idle
+                        showRoutineComplete()
+                        // Clear routine session context so stale IDs don't leak into next routine
+                        activeSessionEngine.mutateConfigurationInputs {
+                            coordinator.currentRoutineSessionId = null
+                            coordinator.currentRoutineName = null
+                            coordinator.currentRoutineId = null
+                            coordinator._completedRoutineSetKeys.value = emptySet()
                         }
                         return@launch
                     }

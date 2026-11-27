@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.Card
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -35,7 +34,9 @@ import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.effectiveTotalVolumeKg
 import com.devil.phoenixproject.domain.usecase.CurrentOneRepMax
 import com.devil.phoenixproject.domain.usecase.CurrentOneRepMaxSource
+import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
+import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
 import com.devil.phoenixproject.presentation.viewmodel.ProfileLoadable
 import com.devil.phoenixproject.presentation.viewmodel.ProfilePrHighlights
 import com.devil.phoenixproject.util.KmpUtils
@@ -212,32 +213,48 @@ fun ProfilePrHighlightsCard(
 private fun PrHighlightsRow(highlights: ProfilePrHighlights, weightUnit: WeightUnit) {
     val repsLabel = stringResource(Res.string.label_reps)
     val perCableLabel = stringResource(Res.string.label_per_cable)
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        PrCell(
-            label = stringResource(Res.string.profile_pr_max_weight),
-            value = highlights.maxWeightPerCableKg?.let { weightValue(it, weightUnit) } ?: "—",
-            modifier = Modifier.weight(1f),
-        )
-        PrCell(
-            label = stringResource(Res.string.profile_pr_estimated_one_rep_max),
-            value = highlights.estimatedOneRepMaxPerCableKg
-                ?.let { weightValue(it, weightUnit) }
-                ?: "—",
-            modifier = Modifier.weight(1f),
-        )
-        // maxVolumeKg is a legacy-named per-cable kg x reps value; never multiply cable count.
-        val maxVolume = highlights.maxVolumeKg?.let {
-            "${WeightDisplayFormatter.formatPerCableWeight(it, weightUnit)} " +
-                "${unitSuffix(weightUnit)} × $repsLabel · $perCableLabel"
-        } ?: "—"
-        PrCell(
-            label = stringResource(Res.string.profile_pr_max_volume),
-            value = maxVolume,
-            modifier = Modifier.weight(1f),
-        )
+    val stackPrMetrics = isCompactAccessibilityLayout() || LocalWindowSizeClass.current.widthDp < 360.dp
+    val maxWeightLabel = stringResource(Res.string.profile_pr_max_weight)
+    val maxWeightValue = highlights.maxWeightPerCableKg?.let { weightValue(it, weightUnit) } ?: "—"
+    val est1RmLabel = stringResource(Res.string.profile_pr_estimated_one_rep_max)
+    val est1RmValue = highlights.estimatedOneRepMaxPerCableKg?.let { weightValue(it, weightUnit) } ?: "—"
+    val maxVolumeLabel = stringResource(Res.string.profile_pr_max_volume)
+    // maxVolumeKg is a legacy-named per-cable kg x reps value; never multiply cable count.
+    val maxVolumeValue = highlights.maxVolumeKg?.let {
+        "${WeightDisplayFormatter.formatPerCableWeight(it, weightUnit)} " +
+            "${unitSuffix(weightUnit)} × $repsLabel · $perCableLabel"
+    } ?: "—"
+
+    if (stackPrMetrics) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            PrCell(label = maxWeightLabel, value = maxWeightValue, modifier = Modifier.fillMaxWidth())
+            PrCell(label = est1RmLabel, value = est1RmValue, modifier = Modifier.fillMaxWidth())
+            PrCell(label = maxVolumeLabel, value = maxVolumeValue, modifier = Modifier.fillMaxWidth())
+        }
+    } else {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            PrCell(
+                label = maxWeightLabel,
+                value = maxWeightValue,
+                modifier = Modifier.weight(1f),
+            )
+            PrCell(
+                label = est1RmLabel,
+                value = est1RmValue,
+                modifier = Modifier.weight(1f),
+            )
+            PrCell(
+                label = maxVolumeLabel,
+                value = maxVolumeValue,
+                modifier = Modifier.weight(1f),
+            )
+        }
     }
 }
 
@@ -292,11 +309,13 @@ fun ProfileRecentHistoryCard(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(vertical = 6.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
                                 text = KmpUtils.formatTimestamp(session.timestamp, "MMM d"),
                                 style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.weight(1f),
                             )
                             val volume = session.effectiveTotalVolumeKg()
                             Text(
@@ -311,7 +330,10 @@ fun ProfileRecentHistoryCard(
                         }
                     }
                     if (selectedExerciseId.isNotBlank()) {
-                        TextButton(onClick = { onViewFullHistory(selectedExerciseId) }) {
+                        TextButton(
+                            onClick = { onViewFullHistory(selectedExerciseId) },
+                            modifier = Modifier.heightIn(min = 48.dp),
+                        ) {
                             Text(stringResource(Res.string.profile_view_full_history))
                         }
                     }
@@ -323,14 +345,9 @@ fun ProfileRecentHistoryCard(
 
 @Composable
 private fun InsightCard(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            content()
-        }
+    PhoenixSectionCard(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        content()
     }
 }
 

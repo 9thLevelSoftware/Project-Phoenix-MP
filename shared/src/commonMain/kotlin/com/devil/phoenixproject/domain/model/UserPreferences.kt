@@ -70,6 +70,9 @@ data class UserPreferences(
     // offline, so they pick a per-cable ceiling from this instead of assuming the widest
     // hardware. Commands never use it — they use the LIVE connected model.
     val lastConnectedModel: PhoenixModel = PhoenixModel.Unknown,
+    // Issue #1367: weight-text-size preference for the weight selection surfaces.
+    // Global + device-local on purpose: NOT in overlayProfile, backup, or portal codecs.
+    val weightTextScale: WeightTextScale = WeightTextScale.STANDARD,
 ) {
     /**
      * Get the effective weight increment in the user's display unit.

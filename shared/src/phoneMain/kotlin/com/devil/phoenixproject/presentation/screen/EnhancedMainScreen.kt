@@ -8,6 +8,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -15,17 +16,23 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AutoAwesome
@@ -68,6 +75,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
@@ -77,6 +85,7 @@ import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -92,8 +101,10 @@ import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.presentation.components.ConnectionLostDialog
 import com.devil.phoenixproject.presentation.components.HapticFeedbackEffect
 import com.devil.phoenixproject.presentation.components.ProfileAddDialog
+import com.devil.phoenixproject.presentation.components.ProfileColors
 import com.devil.phoenixproject.presentation.components.ProfileRecoveryDialog
 import com.devil.phoenixproject.presentation.components.ProfileSwitcherSheet
+import com.devil.phoenixproject.presentation.components.normalizedProfileColorIndex
 import com.devil.phoenixproject.presentation.navigation.BottomNavItem
 import com.devil.phoenixproject.presentation.manager.MachineSafetyUiState
 import com.devil.phoenixproject.presentation.navigation.NavGraph
@@ -101,6 +112,7 @@ import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.theme.phoenixBottomNavigationContainerColor
 import com.devil.phoenixproject.presentation.theme.phoenixTopAppBarContainerColor
 import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
+import com.devil.phoenixproject.presentation.util.LocalWeightTextScale
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WindowHeightSizeClass
 import com.devil.phoenixproject.presentation.util.calculateWindowSizeClass
@@ -117,21 +129,83 @@ import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
 import projectphoenix.shared.generated.resources.Res
-import projectphoenix.shared.generated.resources.workout_save_retry_failed
-import projectphoenix.shared.generated.resources.workout_save_failed
 import projectphoenix.shared.generated.resources.action_retry
 import projectphoenix.shared.generated.resources.cd_analytics
 import projectphoenix.shared.generated.resources.cd_back
+import projectphoenix.shared.generated.resources.cd_cloud_sync
+import projectphoenix.shared.generated.resources.external_workouts
 import projectphoenix.shared.generated.resources.cd_home
 import projectphoenix.shared.generated.resources.cd_open_profile_switcher
 import projectphoenix.shared.generated.resources.cd_profile
 import projectphoenix.shared.generated.resources.cd_settings
+import projectphoenix.shared.generated.resources.connecting
+import projectphoenix.shared.generated.resources.custom_equipment_title
+import projectphoenix.shared.generated.resources.cycles_title
+import projectphoenix.shared.generated.resources.diagnostics_title
+import projectphoenix.shared.generated.resources.equipment_rack_title
+import projectphoenix.shared.generated.resources.external_activities_title
+import projectphoenix.shared.generated.resources.external_measurements
+import projectphoenix.shared.generated.resources.external_programs_title
+import projectphoenix.shared.generated.resources.external_routines_title
+import projectphoenix.shared.generated.resources.home_action_cycles
+import projectphoenix.shared.generated.resources.home_action_routines
+import projectphoenix.shared.generated.resources.hrm_status_connected
+import projectphoenix.shared.generated.resources.insights_title
+import projectphoenix.shared.generated.resources.integrations_data_title
+import projectphoenix.shared.generated.resources.just_lift
+import projectphoenix.shared.generated.resources.label_equipment
+import projectphoenix.shared.generated.resources.main_cd_connected
+import projectphoenix.shared.generated.resources.main_cd_connecting
+import projectphoenix.shared.generated.resources.main_cd_error
+import projectphoenix.shared.generated.resources.main_cd_tap_connect
+import projectphoenix.shared.generated.resources.main_connect_action
+import projectphoenix.shared.generated.resources.main_connect_connecting
+import projectphoenix.shared.generated.resources.main_connect_full_click
+import projectphoenix.shared.generated.resources.main_sync_complete
+import projectphoenix.shared.generated.resources.main_sync_error_tap
+import projectphoenix.shared.generated.resources.main_sync_partial_retry
+import projectphoenix.shared.generated.resources.main_syncing
+import projectphoenix.shared.generated.resources.nav_achievements
+import projectphoenix.shared.generated.resources.nav_activities_short
+import projectphoenix.shared.generated.resources.nav_analytics
+import projectphoenix.shared.generated.resources.nav_app_fallback
+import projectphoenix.shared.generated.resources.nav_assessment_short
+import projectphoenix.shared.generated.resources.nav_choose_workout
+import projectphoenix.shared.generated.resources.nav_complete
+import projectphoenix.shared.generated.resources.nav_cycle_review
+import projectphoenix.shared.generated.resources.nav_cycle_short
+import projectphoenix.shared.generated.resources.nav_daily_routines
+import projectphoenix.shared.generated.resources.nav_data_short
+import projectphoenix.shared.generated.resources.nav_edit_routine
+import projectphoenix.shared.generated.resources.nav_edit_short
+import projectphoenix.shared.generated.resources.nav_exercise
 import projectphoenix.shared.generated.resources.nav_insights
+import projectphoenix.shared.generated.resources.nav_logs_short
+import projectphoenix.shared.generated.resources.nav_metrics_short
+import projectphoenix.shared.generated.resources.nav_playground_short
+import projectphoenix.shared.generated.resources.nav_portal_short
 import projectphoenix.shared.generated.resources.nav_profile
+import projectphoenix.shared.generated.resources.nav_program
+import projectphoenix.shared.generated.resources.nav_program_playground
+import projectphoenix.shared.generated.resources.nav_programs_short
+import projectphoenix.shared.generated.resources.nav_rack_short
+import projectphoenix.shared.generated.resources.nav_review_short
+import projectphoenix.shared.generated.resources.nav_routine
+import projectphoenix.shared.generated.resources.nav_single_exercise
+import projectphoenix.shared.generated.resources.nav_strength_assessment
+import projectphoenix.shared.generated.resources.nav_training_cycle
+import projectphoenix.shared.generated.resources.nav_workout
+import projectphoenix.shared.generated.resources.phoenix_portal
 import projectphoenix.shared.generated.resources.profile_create_failed
 import projectphoenix.shared.generated.resources.profile_recovery_retry_failed
 import projectphoenix.shared.generated.resources.profile_switch_blocked_during_workout
 import projectphoenix.shared.generated.resources.profile_switch_failed
+import projectphoenix.shared.generated.resources.reconnect
+import projectphoenix.shared.generated.resources.settings_connection_logs
+import projectphoenix.shared.generated.resources.settings_integrations
+import projectphoenix.shared.generated.resources.settings_title
+import projectphoenix.shared.generated.resources.workout_save_failed
+import projectphoenix.shared.generated.resources.workout_save_retry_failed
 
 /**
  * Enhanced main screen with dynamic top bar and bottom navigation.
@@ -174,8 +248,11 @@ fun EnhancedMainScreen(
     val profiles by profileRepository.allProfiles.collectAsState()
     val activeProfileContext by profileRepository.activeProfileContext.collectAsState()
     val switcherState by profileSwitcherViewModel.uiState.collectAsState()
-    val readyProfileId =
-        (activeProfileContext as? ActiveProfileContext.Ready)?.profile?.id
+    val readyProfile = (activeProfileContext as? ActiveProfileContext.Ready)?.profile
+    val readyProfileId = readyProfile?.id
+    val activeProfileBadgeColor = readyProfile?.let {
+        ProfileColors[normalizedProfileColorIndex(it.colorIndex)]
+    }
     val repositorySwitching = activeProfileContext is ActiveProfileContext.Switching
     val repositorySwitchTarget =
         (activeProfileContext as? ActiveProfileContext.Switching)?.targetProfileId
@@ -198,16 +275,14 @@ fun EnhancedMainScreen(
     val isAuthenticated by syncManager.isAuthenticated.collectAsState()
     val lastSyncTime by syncManager.lastSyncTime.collectAsState()
     val serverDeletionNotice by syncManager.serverDeletionNotice.collectAsState()
-    val serverDeletionNoticeSnackbarHostState = remember { SnackbarHostState() }
-    // Shared/opened routine CSV files (#1242) report on their own host.
-    val sharedCsvImportSnackbarHostState = remember { SnackbarHostState() }
+    val snackbarHostState = remember { SnackbarHostState() }
 
     // Keep the notice pending until its snackbar has been displayed and dismissed. The
     // acknowledgement is conditional, so a newer notice merged while this one is visible
     // remains queued for the next snackbar.
     LaunchedEffect(serverDeletionNotice) {
         serverDeletionNotice?.let { notice ->
-            serverDeletionNoticeSnackbarHostState.showSnackbar(
+            snackbarHostState.showSnackbar(
                 message = notice.message,
                 duration = SnackbarDuration.Long,
             )
@@ -230,7 +305,7 @@ fun EnhancedMainScreen(
     LaunchedEffect(saveFailureOffer) {
         val failedSessionId = saveFailureOffer?.sessionId ?: return@LaunchedEffect
         // Indefinite: losing a set is not a message to miss.
-        val action = serverDeletionNoticeSnackbarHostState.showSnackbar(
+        val action = snackbarHostState.showSnackbar(
             message = saveFailedMessage,
             actionLabel = saveRetryLabel,
             withDismissAction = true,
@@ -241,7 +316,7 @@ fun EnhancedMainScreen(
             // follow-up message runs on a scope that outlives it.
             if (!viewModel.retryWorkoutSave(failedSessionId)) {
                 saveFailureScope.launch {
-                    serverDeletionNoticeSnackbarHostState.showSnackbar(
+                    snackbarHostState.showSnackbar(
                         message = saveRetryUnavailable,
                         duration = SnackbarDuration.Short,
                     )
@@ -336,36 +411,68 @@ fun EnhancedMainScreen(
             currentRoute == NavigationRoutes.Settings.route
     }
 
-    // Show back button for all screens except Home
-    val showBackButton = remember(currentRoute) {
-        currentRoute != NavigationRoutes.Home.route
+    // Show back button only on non-bottom-bar sub-screens (never on root 5 tabs)
+    val showBackButton = remember(shouldShowBottomBar) {
+        !shouldShowBottomBar
+    }
+
+    val routeOwnsStaticTitle = remember(currentRoute) {
+        currentRoute == NavigationRoutes.LinkAccount.route ||
+            currentRoute.startsWith("strength_assessment")
+    }
+    LaunchedEffect(routeOwnsStaticTitle, currentRoute) {
+        if (routeOwnsStaticTitle) {
+            viewModel.updateTopBarTitle("")
+        }
     }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val windowSizeClass = calculateWindowSizeClass(maxWidth, maxHeight)
         val platformAccessibilitySettings = rememberPlatformAccessibilitySettings()
+        // Issue #1367: global device-local weight text size (SD6). globalSettings is
+        // initialized synchronously from the loaded preferences, so the saved choice is
+        // applied before first paint (SD10 — no Standard flash on cold start).
+        val globalSettings by viewModel.globalSettings.collectAsState()
 
         CompositionLocalProvider(
             LocalWindowSizeClass provides windowSizeClass,
             LocalPlatformAccessibilitySettings provides platformAccessibilitySettings,
+            LocalWeightTextScale provides globalSettings.weightTextScale,
         ) {
             val useCompactTopBar = isCompactAccessibilityLayout() ||
                 windowSizeClass.heightSizeClass == WindowHeightSizeClass.Compact
+            val fontScale = LocalDensity.current.fontScale
+            val hideTopBarSubtitle = useCompactTopBar || fontScale >= 1.3f
             // Cycle editor and review publish the cycle name through topBarTitle.
             // On those routes that name wins; a blank name uses the static fallback.
-            val fullTopBarTitle = cycleShellTitle(currentRoute, topBarTitle)
-                ?: if (topBarTitle.isNotEmpty()) {
-                    topBarTitle
-                } else {
-                    getScreenTitle(
-                        route = currentRoute,
-                        profileTitle = profileTitle,
-                        routineName = currentRoutineName,
-                        exerciseName = selectedExerciseName,
-                    )
-                }
+            val cycleFallback = stringResource(Res.string.nav_training_cycle)
+            val reviewFallback = stringResource(Res.string.nav_cycle_review)
+            val compactCycleFallback = stringResource(Res.string.nav_cycle_short)
+            val compactReviewFallback = stringResource(Res.string.nav_review_short)
+            val fullTopBarTitle = cycleShellTitle(
+                route = currentRoute,
+                cycleName = topBarTitle,
+                cycleFallback = cycleFallback,
+                reviewFallback = reviewFallback,
+            ) ?: if (!routeOwnsStaticTitle && topBarTitle.isNotEmpty()) {
+                topBarTitle
+            } else {
+                getScreenTitle(
+                    route = currentRoute,
+                    profileTitle = profileTitle,
+                    routineName = currentRoutineName,
+                    exerciseName = selectedExerciseName,
+                )
+            }
             val visibleTopBarTitle = if (useCompactTopBar) {
-                getCompactScreenTitle(currentRoute, fullTopBarTitle)
+                getCompactScreenTitle(
+                    route = currentRoute,
+                    title = fullTopBarTitle,
+                    fullCycleFallback = cycleFallback,
+                    compactCycleFallback = compactCycleFallback,
+                    fullReviewFallback = reviewFallback,
+                    compactReviewFallback = compactReviewFallback,
+                )
             } else {
                 fullTopBarTitle
             }
@@ -373,15 +480,11 @@ fun EnhancedMainScreen(
             Scaffold(
                 contentWindowInsets = WindowInsets(0, 0, 0, 0),
                 snackbarHost = {
-                    Box {
-                        SnackbarHost(hostState = serverDeletionNoticeSnackbarHostState)
-                        SnackbarHost(hostState = sharedCsvImportSnackbarHostState)
-                    }
+                    SnackbarHost(hostState = snackbarHostState)
                 },
                 topBar = {
                     if (shouldShowTopBar) {
                         TopAppBar(
-                            modifier = Modifier.statusBarsPadding(),
                             title = {
                                 Column(
                                     modifier = Modifier.fillMaxWidth(),
@@ -389,24 +492,32 @@ fun EnhancedMainScreen(
                                 ) {
                                     Text(
                                         text = visibleTopBarTitle,
-                                        style = MaterialTheme.typography.titleLarge,
+                                        style = if (hideTopBarSubtitle) {
+                                            MaterialTheme.typography.titleMedium
+                                        } else {
+                                            MaterialTheme.typography.titleLarge
+                                        },
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.onSurface,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                     )
-                                    Text(
-                                        text = "Project Phoenix",
-                                        style = MaterialTheme.typography.labelSmall.copy(
-                                            brush = Brush.linearGradient(
-                                                colors = listOf(
-                                                    Color(0xFFF97316),
-                                                    Color(0xFFEF4444),
+                                    if (!hideTopBarSubtitle) {
+                                        Text(
+                                            text = stringResource(Res.string.nav_app_fallback),
+                                            style = MaterialTheme.typography.labelSmall.copy(
+                                                brush = Brush.linearGradient(
+                                                    colors = listOf(
+                                                        Color(0xFFF97316),
+                                                        Color(0xFFEF4444),
+                                                    ),
                                                 ),
+                                                fontWeight = FontWeight.Medium,
                                             ),
-                                            fontWeight = FontWeight.Medium,
-                                        ),
-                                    )
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
                                 }
                             },
                             navigationIcon = {
@@ -486,12 +597,14 @@ fun EnhancedMainScreen(
                             currentRoute = currentRoute,
                             isHomeRoute = isHomeRoute,
                             isCompactHeight = useCompactTopBar,
+                            analyticsLabel = stringResource(Res.string.nav_analytics),
                             analyticsContentDescription = stringResource(Res.string.cd_analytics),
                             homeContentDescription = stringResource(Res.string.cd_home),
                             insightsContentDescription = stringResource(Res.string.nav_insights),
                             profileContentDescription = profileContentDescription,
                             openProfileSwitcherDescription = openProfileSwitcherDescription,
                             settingsContentDescription = stringResource(Res.string.cd_settings),
+                            profileBadgeColor = activeProfileBadgeColor,
                             onAnalyticsClick = {
                                 if (currentRoute != NavigationRoutes.Analytics.route) {
                                     navController.navigate(NavigationRoutes.Analytics.route) {
@@ -547,6 +660,16 @@ fun EnhancedMainScreen(
                 // Global haptic feedback effect - ensures sounds/haptics work on all screens
                 HapticFeedbackEffect(hapticEvents = viewModel.hapticEvents)
 
+                val contentModifier = if (!shouldShowBottomBar && shouldShowTopBar) {
+                    Modifier
+                        .padding(padding)
+                        .windowInsetsPadding(
+                            WindowInsets.navigationBars.only(WindowInsetsSides.Bottom),
+                        )
+                } else {
+                    Modifier.padding(padding)
+                }
+
                 Box(modifier = Modifier.fillMaxSize()) {
                     // Use proper padding to account for TopAppBar and system bars
                     NavGraph(
@@ -560,7 +683,7 @@ fun EnhancedMainScreen(
                         onDynamicColorEnabledChange = onDynamicColorEnabledChange,
                         onOpenProfileSwitcher = profileSwitcherViewModel::openSwitcher,
                         onProfileRecoveryRequired = profileSwitcherViewModel::requireRecovery,
-                        modifier = Modifier.padding(padding),
+                        modifier = contentModifier,
                     )
                 }
             }
@@ -635,7 +758,7 @@ fun EnhancedMainScreen(
             SharedCsvImportHost(
                 viewModel = viewModel,
                 navController = navController,
-                snackbarHostState = sharedCsvImportSnackbarHostState,
+                snackbarHostState = snackbarHostState,
             )
         } // CompositionLocalProvider
     } // BoxWithConstraints
@@ -646,12 +769,14 @@ private fun PhoenixBottomNavigationBar(
     currentRoute: String,
     isHomeRoute: Boolean,
     isCompactHeight: Boolean,
+    analyticsLabel: String,
     analyticsContentDescription: String,
     homeContentDescription: String,
     insightsContentDescription: String,
     profileContentDescription: String,
     openProfileSwitcherDescription: String,
     settingsContentDescription: String,
+    profileBadgeColor: Color?,
     onAnalyticsClick: () -> Unit,
     onHomeClick: () -> Unit,
     onInsightsClick: () -> Unit,
@@ -660,7 +785,7 @@ private fun PhoenixBottomNavigationBar(
     onSettingsClick: () -> Unit,
 ) {
     val containerColor = phoenixBottomNavigationContainerColor(MaterialTheme.colorScheme)
-    val barHeight = remember(isCompactHeight) { if (isCompactHeight) 56.dp else 60.dp }
+    val minBarHeight = remember(isCompactHeight) { if (isCompactHeight) 64.dp else 68.dp }
 
     Box(
         modifier = Modifier
@@ -671,7 +796,7 @@ private fun PhoenixBottomNavigationBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(barHeight)
+                .heightIn(min = minBarHeight)
                 .padding(horizontal = 8.dp)
                 .selectableGroup(),
             horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -684,6 +809,13 @@ private fun PhoenixBottomNavigationBar(
                     BottomNavItem.HOME -> Icons.Default.Home
                     BottomNavItem.PROFILE -> Icons.Default.Person
                     BottomNavItem.SETTINGS -> Icons.Default.Settings
+                }
+                val label = when (item) {
+                    BottomNavItem.ANALYTICS -> analyticsLabel
+                    BottomNavItem.INSIGHTS -> insightsContentDescription
+                    BottomNavItem.HOME -> homeContentDescription
+                    BottomNavItem.PROFILE -> profileContentDescription
+                    BottomNavItem.SETTINGS -> settingsContentDescription
                 }
                 val contentDescription = when (item) {
                     BottomNavItem.ANALYTICS -> analyticsContentDescription
@@ -723,6 +855,7 @@ private fun PhoenixBottomNavigationBar(
                 }
                 PhoenixBottomNavigationItem(
                     icon = icon,
+                    label = label,
                     contentDescription = contentDescription,
                     selected = selected,
                     testTag = testTag,
@@ -732,6 +865,8 @@ private fun PhoenixBottomNavigationBar(
                     longClickLabel = openProfileSwitcherDescription.takeIf {
                         item == BottomNavItem.PROFILE
                     },
+                    badgeColor = profileBadgeColor.takeIf { item == BottomNavItem.PROFILE },
+                    badgeBorderColor = containerColor,
                 )
             }
         }
@@ -742,6 +877,7 @@ private fun PhoenixBottomNavigationBar(
 @Composable
 private fun PhoenixBottomNavigationItem(
     icon: ImageVector,
+    label: String,
     contentDescription: String,
     selected: Boolean,
     testTag: String,
@@ -749,6 +885,8 @@ private fun PhoenixBottomNavigationItem(
     modifier: Modifier = Modifier,
     onLongClick: (() -> Unit)? = null,
     longClickLabel: String? = null,
+    badgeColor: Color? = null,
+    badgeBorderColor: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
 ) {
     val selectedContainerColor = if (selected) {
         MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
@@ -790,12 +928,39 @@ private fun PhoenixBottomNavigationItem(
             .testTag(testTag),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            modifier = Modifier.size(26.dp),
-            tint = iconColor,
-        )
+        Column(
+            modifier = Modifier.padding(horizontal = 2.dp, vertical = 6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Box(contentAlignment = Alignment.TopEnd) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(22.dp),
+                    tint = iconColor,
+                )
+                if (badgeColor != null) {
+                    Box(
+                        modifier = Modifier
+                            .offset(x = 3.dp, y = (-1).dp)
+                            .size(8.dp)
+                            .background(badgeColor, CircleShape)
+                            .border(1.5.dp, badgeBorderColor, CircleShape),
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                color = iconColor,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 
@@ -827,17 +992,24 @@ private fun SyncStatusIcon(syncState: SyncState, isAuthenticated: Boolean, lastS
         (lastSyncTime > 0L || syncState is SyncState.Syncing || syncState is SyncState.Success)
     if (!isVisible) return
 
-    // Spinning animation for syncing state
-    val infiniteTransition = rememberInfiniteTransition(label = "syncSpin")
-    val rotation by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1200, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
-        label = "syncRotation",
-    )
+    val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
+    val rotation: Float
+    if (reduceMotion) {
+        rotation = 0f
+    } else {
+        // Spinning animation for syncing state
+        val infiniteTransition = rememberInfiniteTransition(label = "syncSpin")
+        val animatedRotation by infiniteTransition.animateFloat(
+            initialValue = 0f,
+            targetValue = 360f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 1200, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart,
+            ),
+            label = "syncRotation",
+        )
+        rotation = animatedRotation
+    }
 
     // Success pulse animation (brief green pulse that fades)
     val successAlpha by androidx.compose.animation.core.animateFloatAsState(
@@ -902,7 +1074,7 @@ private fun SyncStatusIcon(syncState: SyncState, isAuthenticated: Boolean, lastS
 
     Box(
         modifier = Modifier
-            .size(36.dp)
+            .minimumInteractiveComponentSize()
             .then(
                 if (clickable) {
                     Modifier.clickable(
@@ -918,11 +1090,11 @@ private fun SyncStatusIcon(syncState: SyncState, isAuthenticated: Boolean, lastS
         Icon(
             imageVector = icon,
             contentDescription = when (displayState) {
-                is SyncState.Syncing -> "Syncing"
-                is SyncState.Success -> "Sync complete"
-                is SyncState.Error -> "Sync error, tap to fix"
-                is SyncState.PartialSuccess -> "Partial sync, tap to retry"
-                else -> "Cloud sync"
+                is SyncState.Syncing -> stringResource(Res.string.main_syncing)
+                is SyncState.Success -> stringResource(Res.string.main_sync_complete)
+                is SyncState.Error -> stringResource(Res.string.main_sync_error_tap)
+                is SyncState.PartialSuccess -> stringResource(Res.string.main_sync_partial_retry)
+                else -> stringResource(Res.string.cd_cloud_sync)
             },
             tint = tint,
             modifier = Modifier
@@ -956,63 +1128,81 @@ private fun ConnectionStatusIndicator(
     val isConnecting = connectionState is ConnectionState.Connecting ||
         connectionState is ConnectionState.Scanning
     val isError = connectionState is ConnectionState.Error
+    val reduceMotion = LocalPlatformAccessibilitySettings.current.reduceMotion
+    val fontScale = LocalDensity.current.fontScale
 
     // Animated gradient offset for connecting state
-    val infiniteTransition = rememberInfiniteTransition(label = "connecting")
-    val gradientOffset by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
-        label = "gradientOffset",
-    )
+    val gradientOffset: Float
+    if (reduceMotion) {
+        gradientOffset = 0.25f
+    } else {
+        val infiniteTransition = rememberInfiniteTransition(label = "connecting")
+        val animatedOffset by infiniteTransition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(1000, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart,
+            ),
+            label = "gradientOffset",
+        )
+        gradientOffset = animatedOffset
+    }
 
     val buttonText = if (compact) {
         when {
-            isConnected -> "Connected"
-            isConnecting -> "Connecting"
-            isError -> "Retry"
-            else -> "Connect"
+            isConnected -> stringResource(Res.string.hrm_status_connected)
+            isConnecting -> stringResource(Res.string.main_connect_connecting)
+            isError -> stringResource(Res.string.action_retry)
+            else -> stringResource(Res.string.main_connect_action)
         }
     } else {
         when {
-            isConnected -> "Connected"
-            isConnecting -> "Connecting..."
-            isError -> "Reconnect"
-            else -> "Click to Connect"
+            isConnected -> stringResource(Res.string.hrm_status_connected)
+            isConnecting -> stringResource(Res.string.connecting)
+            isError -> stringResource(Res.string.reconnect)
+            else -> stringResource(Res.string.main_connect_full_click)
         }
     }
 
     val contentDescription = when {
-        isConnected -> "Connected to machine. Tap to disconnect"
-        isConnecting -> "Connecting to machine"
-        isError -> "Connection error. Tap to reconnect"
-        else -> "Tap to connect to machine"
+        isConnected -> stringResource(Res.string.main_cd_connected)
+        isConnecting -> stringResource(Res.string.main_cd_connecting)
+        isError -> stringResource(Res.string.main_cd_error)
+        else -> stringResource(Res.string.main_cd_tap_connect)
     }
 
-    // Connection status colors from AccessibilityTheme
-    val blueColor = Color(0xFF3B82F6) // Blue -- informational, not semantic status
-    val greenColor = AccessibilityTheme.colors.success
-    val redColor = AccessibilityTheme.colors.error
+    // High-contrast WCAG AA connection pill fills and inks
+    val blueFill = Color(0xFF1D4ED8)
+    val connectingGreenStop = Color(0xFF15803D)
+    val redFill = Color(0xFFB91C1C)
+    val connectedFill = AccessibilityTheme.colors.success
+    val connectedInk = AccessibilityTheme.colors.onSuccess
+    val textColor = if (isConnected) connectedInk else Color.White
 
-    // Touch target wrapper: minimumInteractiveComponentSize ensures ≥48×48dp interactive area
+    // Touch target wrapper: minimumInteractiveComponentSize ensures >=48x48dp interactive area
     // (transparent — no visual background here)
+    val widthCapModifier = if (fontScale > 1.0f) {
+        Modifier
+    } else {
+        Modifier.widthIn(max = if (compact) 124.dp else 180.dp)
+    }
+
     Box(
         modifier = Modifier
             .minimumInteractiveComponentSize()
-            .widthIn(max = if (compact) 124.dp else 180.dp)
+            .then(widthCapModifier)
             .padding(end = 8.dp)
             .clickable(
                 onClick = onToggleConnection,
                 role = Role.Button,
-            ),
+            )
+            .semantics { this.contentDescription = contentDescription },
         contentAlignment = Alignment.Center,
     ) {
         // Visual pill: restored to pre-Phase-1 32dp height.
         // shapes.medium = 20dp radius; with height=32dp the radius exceeds height/2 (16dp),
-        // so path corners are clamped to 16dp → proper stadium/pill shape. Keep shapes.medium.
+        // so path corners are clamped to 16dp -> proper stadium/pill shape. Keep shapes.medium.
         Box(
             modifier = Modifier
                 .heightIn(min = 32.dp)
@@ -1023,11 +1213,11 @@ private fun ConnectionStatusIndicator(
                         Modifier.background(
                             brush = Brush.horizontalGradient(
                                 colors = listOf(
-                                    blueColor,
-                                    greenColor,
-                                    blueColor,
-                                    greenColor,
-                                    blueColor,
+                                    blueFill,
+                                    connectingGreenStop,
+                                    blueFill,
+                                    connectingGreenStop,
+                                    blueFill,
                                 ),
                                 startX = -200f + (gradientOffset * 600f),
                                 endX = 200f + (gradientOffset * 600f),
@@ -1037,9 +1227,9 @@ private fun ConnectionStatusIndicator(
                         // Static background for other states
                         Modifier.background(
                             color = when {
-                                isConnected -> greenColor
-                                isError -> redColor
-                                else -> blueColor
+                                isConnected -> connectedFill
+                                isError -> redFill
+                                else -> blueFill
                             },
                         )
                     },
@@ -1050,7 +1240,7 @@ private fun ConnectionStatusIndicator(
             Text(
                 text = buttonText,
                 style = MaterialTheme.typography.labelSmall,
-                color = Color.White,
+                color = textColor,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -1065,10 +1255,15 @@ private fun ConnectionStatusIndicator(
  * review route's cycle name). A non-blank name is shown trimmed. A blank name uses
  * the static fallback. Returns null for every other route.
  */
-internal fun cycleShellTitle(route: String, cycleName: String): String? {
+internal fun cycleShellTitle(
+    route: String,
+    cycleName: String,
+    cycleFallback: String = "Training Cycle",
+    reviewFallback: String = "Cycle Review",
+): String? {
     val fallback = when {
-        route.startsWith("cycle_editor") -> "Training Cycle"
-        route.startsWith("cycleReview") -> "Cycle Review"
+        route.startsWith("cycle_editor") -> cycleFallback
+        route.startsWith("cycleReview") -> reviewFallback
         else -> return null
     }
     return cycleName.trim().ifEmpty { fallback }
@@ -1078,11 +1273,26 @@ internal fun cycleShellTitle(route: String, cycleName: String): String? {
  * Compact top-bar label for cycle routes. A real cycle name is kept (the bar
  * ellipsizes it). The static fallbacks stay short.
  */
-internal fun compactCycleShellTitle(route: String, title: String): String? = when {
+internal fun compactCycleShellTitle(
+    route: String,
+    title: String,
+    fullCycleFallback: String = "Training Cycle",
+    compactCycleFallback: String = "Cycle",
+    fullReviewFallback: String = "Cycle Review",
+    compactReviewFallback: String = "Review",
+): String? = when {
     route.startsWith("cycle_editor") ->
-        if (title.isBlank() || title == "Training Cycle") "Cycle" else title
+        if (title.isBlank() || title == fullCycleFallback || title == "Training Cycle") {
+            compactCycleFallback
+        } else {
+            title
+        }
     route.startsWith("cycleReview") ->
-        if (title.isBlank() || title == "Cycle Review") "Review" else title
+        if (title.isBlank() || title == fullReviewFallback || title == "Cycle Review") {
+            compactReviewFallback
+        } else {
+            title
+        }
     else -> null
 }
 
@@ -1097,6 +1307,7 @@ internal fun shouldKeepScreenOnForRoute(route: String, isInWorkoutSession: Boole
  * Routine and exercise flows fill in the loaded name. Cycle editor and review
  * titles are resolved earlier by [cycleShellTitle].
  */
+@Composable
 private fun getScreenTitle(
     route: String,
     profileTitle: String,
@@ -1104,64 +1315,116 @@ private fun getScreenTitle(
     exerciseName: String = "",
 ): String = when {
     // Main tabs (static titles)
-    route == NavigationRoutes.Home.route -> "Choose Your Workout"
+    route == NavigationRoutes.Home.route -> stringResource(Res.string.nav_choose_workout)
 
-    route == NavigationRoutes.DailyRoutines.route -> "Daily Routines"
+    route == NavigationRoutes.DailyRoutines.route -> stringResource(Res.string.nav_daily_routines)
 
-    route == NavigationRoutes.TrainingCycles.route -> "Training Cycles"
+    route == NavigationRoutes.TrainingCycles.route -> stringResource(Res.string.cycles_title)
 
-    route == NavigationRoutes.Analytics.route -> "Analytics"
+    route == NavigationRoutes.Analytics.route -> stringResource(Res.string.nav_analytics)
 
-    route == NavigationRoutes.SmartInsights.route -> "Smart Insights"
+    route == NavigationRoutes.SmartInsights.route -> stringResource(Res.string.insights_title)
 
     route == NavigationRoutes.Profile.route -> profileTitle
 
-    route == NavigationRoutes.Settings.route -> "Settings"
+    route == NavigationRoutes.Settings.route -> stringResource(Res.string.settings_title)
 
-    route == NavigationRoutes.EquipmentRack.route -> "Equipment Rack"
+    route == NavigationRoutes.EquipmentRack.route -> stringResource(Res.string.equipment_rack_title)
 
-    route == NavigationRoutes.JustLift.route -> "Just Lift"
+    route == NavigationRoutes.CustomEquipment.route -> stringResource(Res.string.custom_equipment_title)
 
-    isSingleExerciseRoute(route) -> "Single Exercise"
+    route == NavigationRoutes.JustLift.route -> stringResource(Res.string.just_lift)
+
+    isSingleExerciseRoute(route) -> stringResource(Res.string.nav_single_exercise)
 
     // Routine flow (dynamic - uses routine name)
-    route == NavigationRoutes.RoutineOverview.route -> routineName.ifEmpty { "Routine" }
+    route == NavigationRoutes.RoutineOverview.route -> routineName.ifEmpty { stringResource(Res.string.nav_routine) }
 
-    route == NavigationRoutes.SetReady.route -> routineName.ifEmpty { "Routine" }
+    route == NavigationRoutes.SetReady.route -> routineName.ifEmpty { stringResource(Res.string.nav_routine) }
 
     // Exercise detail (dynamic - uses exercise name)
-    route.startsWith("exercise_detail") -> exerciseName.ifEmpty { "Exercise" }
+    route.startsWith("exercise_detail") -> exerciseName.ifEmpty { stringResource(Res.string.nav_exercise) }
 
     // Routine editor (dynamic - uses routine name)
-    route.startsWith("routine_editor") -> routineName.ifEmpty { "Edit Routine" }
+    route.startsWith("routine_editor") -> routineName.ifEmpty { stringResource(Res.string.nav_edit_routine) }
 
     // Static titles
-    route == NavigationRoutes.Badges.route -> "Achievements"
+    route == NavigationRoutes.Badges.route -> stringResource(Res.string.nav_achievements)
 
-    route == NavigationRoutes.ConnectionLogs.route -> "Connection Logs"
+    route == NavigationRoutes.ConnectionLogs.route -> stringResource(Res.string.settings_connection_logs)
 
-    route == NavigationRoutes.Diagnostics.route -> "Diagnostics"
+    route == NavigationRoutes.Diagnostics.route -> stringResource(Res.string.diagnostics_title)
 
-    route == NavigationRoutes.RoutineComplete.route -> "Complete"
+    route == NavigationRoutes.LinkAccount.route -> stringResource(Res.string.phoenix_portal)
+
+    route == NavigationRoutes.Integrations.route -> stringResource(Res.string.settings_integrations)
+
+    route == NavigationRoutes.ExternalIntegrationHub.route -> stringResource(Res.string.integrations_data_title)
+
+    route == NavigationRoutes.ExternalActivities.route -> stringResource(Res.string.external_activities_title)
+
+    route == NavigationRoutes.ExternalRoutines.route -> stringResource(Res.string.external_routines_title)
+
+    route.startsWith("external_routine/") -> stringResource(Res.string.nav_routine)
+
+    route == NavigationRoutes.ExternalPrograms.route -> stringResource(Res.string.external_programs_title)
+
+    route.startsWith("external_program/") -> stringResource(Res.string.nav_program)
+
+    route.startsWith("external_program_playground/") -> stringResource(Res.string.nav_program_playground)
+
+    route == NavigationRoutes.ExternalMeasurementTrends.route -> stringResource(Res.string.external_measurements)
+
+    route.startsWith("strength_assessment") -> stringResource(Res.string.nav_strength_assessment)
+
+    route == NavigationRoutes.RoutineComplete.route -> stringResource(Res.string.nav_complete)
 
     // Active workout - hidden, but provide fallback
-    route == NavigationRoutes.ActiveWorkout.route -> "Workout"
+    route == NavigationRoutes.ActiveWorkout.route -> stringResource(Res.string.nav_workout)
 
     // Fallback
-    else -> "Project Phoenix"
+    else -> stringResource(Res.string.nav_app_fallback)
 }
 
-private fun getCompactScreenTitle(route: String, title: String): String {
-    compactCycleShellTitle(route, title)?.let { return it }
+@Composable
+private fun getCompactScreenTitle(
+    route: String,
+    title: String,
+    fullCycleFallback: String = "Training Cycle",
+    compactCycleFallback: String = "Cycle",
+    fullReviewFallback: String = "Cycle Review",
+    compactReviewFallback: String = "Review",
+): String {
+    compactCycleShellTitle(
+        route = route,
+        title = title,
+        fullCycleFallback = fullCycleFallback,
+        compactCycleFallback = compactCycleFallback,
+        fullReviewFallback = fullReviewFallback,
+        compactReviewFallback = compactReviewFallback,
+    )?.let { return it }
     return when {
-        route == NavigationRoutes.Home.route -> "Workouts"
-        route == NavigationRoutes.DailyRoutines.route -> "Routines"
-        route == NavigationRoutes.TrainingCycles.route -> "Cycles"
-        route == NavigationRoutes.SmartInsights.route -> "Insights"
+        route == NavigationRoutes.Home.route -> stringResource(Res.string.external_workouts)
+        route == NavigationRoutes.DailyRoutines.route -> stringResource(Res.string.home_action_routines)
+        route == NavigationRoutes.TrainingCycles.route -> stringResource(Res.string.home_action_cycles)
+        route == NavigationRoutes.SmartInsights.route -> stringResource(Res.string.nav_insights)
         route == NavigationRoutes.Profile.route -> title
-        route == NavigationRoutes.EquipmentRack.route -> "Rack"
-        isSingleExerciseRoute(route) -> "Exercise"
-        route.startsWith("routine_editor") -> "Edit"
+        route == NavigationRoutes.EquipmentRack.route -> stringResource(Res.string.nav_rack_short)
+        route == NavigationRoutes.CustomEquipment.route -> stringResource(Res.string.label_equipment)
+        route == NavigationRoutes.ConnectionLogs.route -> stringResource(Res.string.nav_logs_short)
+        route == NavigationRoutes.LinkAccount.route -> stringResource(Res.string.nav_portal_short)
+        route == NavigationRoutes.Integrations.route -> stringResource(Res.string.settings_integrations)
+        route == NavigationRoutes.ExternalIntegrationHub.route -> stringResource(Res.string.nav_data_short)
+        route == NavigationRoutes.ExternalActivities.route -> stringResource(Res.string.nav_activities_short)
+        route == NavigationRoutes.ExternalRoutines.route -> stringResource(Res.string.home_action_routines)
+        route.startsWith("external_routine/") -> if (title.isBlank()) stringResource(Res.string.nav_routine) else title
+        route == NavigationRoutes.ExternalPrograms.route -> stringResource(Res.string.nav_programs_short)
+        route.startsWith("external_program/") -> if (title.isBlank()) stringResource(Res.string.nav_program) else title
+        route.startsWith("external_program_playground/") -> stringResource(Res.string.nav_playground_short)
+        route == NavigationRoutes.ExternalMeasurementTrends.route -> stringResource(Res.string.nav_metrics_short)
+        route.startsWith("strength_assessment") -> stringResource(Res.string.nav_assessment_short)
+        isSingleExerciseRoute(route) -> stringResource(Res.string.nav_exercise)
+        route.startsWith("routine_editor") -> stringResource(Res.string.nav_edit_short)
         else -> title
     }
 }

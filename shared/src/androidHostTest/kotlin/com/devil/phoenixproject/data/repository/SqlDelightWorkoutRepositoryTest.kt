@@ -49,6 +49,27 @@ class SqlDelightWorkoutRepositoryTest {
     }
 
     @Test
+    fun `routine completion persists once and marks only that routines sets dirty`() = runTest {
+        repository.saveSession(createTestSession("finished-set").copy(routineSessionId = "finished"))
+        repository.saveSession(createTestSession("ongoing-set").copy(routineSessionId = "ongoing"))
+        val queries = database.phoenixDatabaseQueries
+        val before = queries.selectSessionById("finished-set").executeAsOne()
+        assertNull(before.workout_completed_at_ms)
+
+        val completedAtMs = before.timestamp + 60_000L
+        repository.markRoutineWorkoutComplete("other-profile", "finished", completedAtMs)
+        assertNull(repository.getSession("finished-set")?.workoutCompletedAtMs)
+        repository.markRoutineWorkoutComplete("default", "finished", completedAtMs)
+        repository.markRoutineWorkoutComplete("default", "finished", completedAtMs + 1L)
+
+        val finished = queries.selectSessionById("finished-set").executeAsOne()
+        assertEquals(completedAtMs, repository.getSession("finished-set")?.workoutCompletedAtMs)
+        assertEquals(completedAtMs, finished.updatedAt)
+        assertEquals(before.local_sync_generation + 1L, finished.local_sync_generation)
+        assertNull(repository.getSession("ongoing-set")?.workoutCompletedAtMs)
+    }
+
+    @Test
     fun `getSession returns null for non-existent session`() = runTest {
         val result = repository.getSession("non-existent")
         assertNull(result)

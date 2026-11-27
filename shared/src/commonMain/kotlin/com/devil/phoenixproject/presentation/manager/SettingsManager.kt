@@ -12,6 +12,7 @@ import com.devil.phoenixproject.domain.model.JustLiftDefaultsDocument
 import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.SingleExerciseDefaultsDocument
 import com.devil.phoenixproject.domain.model.UserPreferences
+import com.devil.phoenixproject.domain.model.WeightTextScale
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutPreferences
 import com.devil.phoenixproject.util.BackupDestination
@@ -260,6 +261,12 @@ class SettingsManager(
 
     fun setBleCompatibilityMode(setting: BleCompatibilitySetting) {
         scope.launch { globalPreferences.setBleCompatibilityMode(setting) }
+    }
+
+    // Issue #1367: global/device-local weight text size. Deliberately NOT part of
+    // overlayProfile — the field stays global precisely because it is absent there.
+    fun setWeightTextScale(scale: WeightTextScale) {
+        scope.launch { globalPreferences.setWeightTextScale(scale) }
     }
 
     fun kgToDisplay(kg: Float, unit: WeightUnit): Float = when (unit) {

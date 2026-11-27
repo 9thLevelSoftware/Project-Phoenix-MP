@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.di
 
+import com.russhwolf.settings.Settings
 import org.koin.core.qualifier.named
 
 /**
@@ -15,10 +16,21 @@ import org.koin.core.qualifier.named
  */
 val SecureSettingsQualifier = named("secureSettings")
 
+private const val RETIRED_INSTALLATION_ID_KEY = "intervals.installationId"
+private const val RETIRED_API_KEY_PREFIX = "intervals.apiKey."
+
 /**
- * Koin qualifier for the Intervals.icu export's dedicated [io.ktor.client.engine.HttpClientEngine]
- * seam (issue #1384 packet P4). The real client builds its own engine when nothing is
- * bound here; tests bind a MockEngine under this qualifier. The Intervals client never
- * shares the portal client's engine, headers or retry policy.
+ * One-way cleanup of retired v1.1.1 direct-export keys from secure storage.
+ * Portal auth tokens (`portal_*`) are never touched.
  */
-val IntervalsHttpClientQualifier = named("intervalsHttpClient")
+internal fun purgeRetiredDirectExportSecrets(settings: Settings) {
+    runCatching {
+        val retiredKeys = settings.keys.filter { key ->
+            key == RETIRED_INSTALLATION_ID_KEY || key.startsWith(RETIRED_API_KEY_PREFIX)
+        }
+        for (key in retiredKeys) {
+            settings.remove(key)
+        }
+    }
+}
+
