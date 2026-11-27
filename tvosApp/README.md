@@ -109,6 +109,25 @@ is copied into `$(BUILT_PRODUCTS_DIR)/KotlinFrameworks`, matching the live
 project's framework search path. Never copy Debug into a Release archive or
 fall back to a stale framework after a compiler failure.
 
+## Signing a local Apple TV build in Xcode
+
+Open `tvosApp/PhoenixTV.xcodeproj` and select the `PhoenixTV` scheme and a
+physical Apple TV destination. The app and UI test targets default to the same
+Apple development team as the phone project (`BDJDR669ZV`), with automatic
+signing in Debug and Release. Xcode can manage a development profile after the
+Apple TV is paired and registered with that team. A phone provisioning profile
+cannot sign a tvOS app.
+
+The `local` helper above deliberately disables signing, including for device
+builds. Use Xcode's Product > Run or Product > Archive for a signed local build;
+select the team in Signing & Capabilities if building under another account.
+Ensure `JAVA_HOME` points to JDK 17 before starting the framework build.
+
+For TestFlight, use the signed archive/export workflow described below. It
+requires an Apple Distribution certificate and a tvOS App Store provisioning
+profile. A development certificate or a successful unsigned build does not
+satisfy those distribution requirements.
+
 ## Real telemetry versus deterministic simulator fixtures
 
 Device framework composition uses `KableBleRepository` and the vendored
