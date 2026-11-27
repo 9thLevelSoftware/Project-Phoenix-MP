@@ -274,7 +274,6 @@
     <string name="label_bodyweight">Peso corporal</string>
     <string name="label_equipment">Equipamiento</string>
     <string name="delete_exercise_title">¿Eliminar ejercicio?</string>
-    <string name="delete_exercise_message">¿Seguro que quieres eliminar &quot;%1$s&quot;? Esta acción no se puede deshacer.</string>
 
     <!-- ==================== Exercise Detail ==================== -->
 
@@ -565,7 +564,6 @@
     <!-- Settings / Preferences -->
     <string name="cd_settings">Configuración</string>
     <string name="cd_appearance">Configuración de apariencia</string>
-    <string name="cd_dynamic_color">Ajuste de colores dinámicos de Material You</string>
     <string name="cd_developer_tools">Herramientas para desarrolladores</string>
     <string name="cd_app_info">Información de la aplicación</string>
     <string name="cd_support_developer">Apoyar al desarrollador</string>
@@ -960,7 +958,6 @@
     <string name="settings_weight_text_size_standard">Estándar</string>
     <string name="settings_weight_text_size_large">Grande</string>
     <string name="settings_weight_text_size_extra_large">Muy grande</string>
-    <string name="cd_weight_text_size">Tamaño de controles de entrenamiento</string>
     <!-- Issue #1358: custom-exercise photos (Phase 1) -->
     <string name="media_photos_count">Fotos · %1$d de %2$d</string>
     <string name="media_add_photos">Añadir fotos</string>
@@ -987,7 +984,6 @@
     <string name="media_save_media_failed">Ejercicio guardado; no se pudieron guardar las fotos. Vuelve a añadirlas.</string>
     <string name="media_save_busy">Las fotos siguen añadiéndose. Espera a que termine la selección y luego guarda.</string>
     <string name="media_cleanup_pending">Algunas copias locales no se pudieron eliminar. Phoenix lo reintentará.</string>
-    <string name="media_delete_cleanup_transient">Ejercicio eliminado. Limpiando fotos locales…</string>
     <string name="media_save_failed">No se pudo guardar el ejercicio. Inténtalo de nuevo.</string>
     <string name="media_delete_failed">No se pudo eliminar el ejercicio. Inténtalo de nuevo.</string>
     <string name="delete_exercise_media_message">¿Eliminar este ejercicio y sus fotos? Tus originales no cambian.</string>

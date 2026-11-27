@@ -74,7 +74,7 @@ actual val platformModule: Module = module {
 
     // Encrypted preferences for auth tokens (JWT, refresh token, email)
     single<Settings>(SecureSettingsQualifier) {
-        SharedPreferencesSettings(get<AndroidPreferenceStores>().encrypted).also(::purgeRetiredDirectExportSecrets)
+        SharedPreferencesSettings(get<AndroidPreferenceStores>().encrypted)
     }
 
     single { OAuthLauncher(androidContext()) }

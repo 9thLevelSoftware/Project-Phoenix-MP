@@ -1,5 +1,7 @@
 package com.devil.phoenixproject.presentation.util
 
+import com.devil.phoenixproject.testutil.findProjectRoot
+import com.devil.phoenixproject.testutil.readProjectFile
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -20,26 +22,13 @@ import kotlin.test.assertTrue
  */
 class WeightDisplaySourceGuardTest {
 
-    private val projectRoot: File by lazy {
-        // Navigate from test class output to project root
-        // androidHostTest runs from the project directory; find shared/src/commonMain
-        var dir = File(System.getProperty("user.dir") ?: ".")
-        // Walk up until we find the shared module marker
-        while (!File(dir, "shared/src/commonMain").exists()) {
-            dir = dir.parentFile ?: break
-        }
-        dir
-    }
+    private val projectRoot: File by lazy { findProjectRoot() }
 
     private val commonMainRoot: File
         get() = File(projectRoot, "shared/src/commonMain/kotlin")
 
-    private fun readSourceFile(relativePath: String): String? {
-        val commonFile = File(commonMainRoot, relativePath)
-        if (commonFile.exists()) return commonFile.readText()
-        val phoneFile = File(projectRoot, "shared/src/phoneMain/kotlin/$relativePath")
-        return if (phoneFile.exists()) phoneFile.readText() else null
-    }
+    private fun readSourceFile(relativePath: String): String? =
+        readProjectFile("shared/src/commonMain/kotlin/$relativePath")
 
     private fun assertNoFormatterImport(source: String, fileName: String) {
         val importPattern = "import.*WeightDisplayFormatter"

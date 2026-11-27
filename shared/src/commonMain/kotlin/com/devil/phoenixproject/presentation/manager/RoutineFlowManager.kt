@@ -1271,64 +1271,18 @@ class RoutineFlowManager(
         val routine = coordinator._loadedRoutine.value ?: return
         val exercise = routine.exercises.getOrNull(exerciseIndex) ?: return
         val isNewExercise = exerciseIndex != coordinator._currentExerciseIndex.value
-        val rackSelection = resolveDefaultRackSelection(exercise)
         val setWeight = lifecycleDelegate.resolveOccurrenceSetWeight(exercise, setIndex)
-        val rawSetReps = exercise.setReps.getOrNull(setIndex)
-        val setReps = rawSetReps ?: exercise.reps
-        val preserveRestEditedProgression = shouldPreserveRestEditedProgression()
-        val progressionKg = if (preserveRestEditedProgression) {
-            coordinator._workoutParameters.value.progressionRegressionKg
-        } else {
-            exercise.progressionKg
-        }
-        val setEchoLevel = exercise.getEchoLevelForSet(setIndex)
-        val readyState = RoutineFlowState.SetReady(
+        val setReps = exercise.setReps.getOrNull(setIndex) ?: exercise.reps
+        val initializeWarmups = (isNewExercise || reinitializeWarmups) && setIndex == 0
+        publishSetReadyState(
+            exercise = exercise,
             exerciseIndex = exerciseIndex,
             setIndex = setIndex,
-            adjustedWeight = setWeight,
-            adjustedReps = setReps,
-            adjustedProgressionKg = progressionKg,
-            echoLevel = if (exercise.programMode is ProgramMode.Echo) setEchoLevel else null,
-            eccentricLoadPercent = if (exercise.programMode is ProgramMode.Echo) exercise.eccentricLoad.percentage else null,
-        )
-        val isSetAmrap = exercise.isAmrapSet(setIndex)
-        val initializeWarmups = (isNewExercise || reinitializeWarmups) && setIndex == 0
-        val hasVariableWarmups = initializeWarmups && exercise.warmupSets.isNotEmpty() && !exercise.exercise.isBodyweight
-        val nextParams = coordinator._workoutParameters.value.copy(
-            programMode = exercise.programMode,
-            weightPerCableKg = setWeight,
+            weight = setWeight,
             reps = setReps,
-            echoLevel = setEchoLevel,
-            eccentricLoad = exercise.eccentricLoad,
-            selectedExerciseId = exercise.exercise.id,
-            stallDetectionEnabled = exercise.stallDetectionEnabled,
-            repCountTiming = exercise.repCountTiming,
-            stopAtTop = exercise.stopAtTop,
-            isAMRAP = isSetAmrap,
-            progressionRegressionKg = progressionKg,
-            isJustLift = false,
-            useAutoStart = false,
+            initializeWarmups = initializeWarmups,
+            callerLabel = "enterSetReady",
         )
-        lifecycleDelegate.mutateConfigurationInputs {
-            coordinator._currentExerciseIndex.value = exerciseIndex
-            coordinator._currentSetIndex.value = setIndex
-            publishRackSelection(rackSelection)
-            if (!preserveRestEditedProgression) {
-                coordinator._userAdjustedWeightDuringRest = false
-            }
-            coordinator._routineFlowState.value = readyState
-            if (initializeWarmups) {
-                coordinator._currentWarmupSetIndex.value = if (hasVariableWarmups) 0 else -1
-            }
-            coordinator.preWarmupWorkingParameters = null
-            coordinator._workoutParameters.value = nextParams.withPublishedRackSelection(
-                coordinator._workoutParameters.value,
-            )
-        }
-
-        Logger.d {
-            "enterSetReady: exercise=${exercise.exercise.name}, set=$setIndex, isAMRAP=$isSetAmrap, stallDetection=${exercise.stallDetectionEnabled}"
-        }
         // Issue #357: Log weight source for PR% debugging
         val weightFromList = exercise.setWeightsPerCableKg.getOrNull(setIndex)
         Logger.d(tag = "RoutineFlowManager") {
@@ -1336,10 +1290,6 @@ class RoutineFlowManager(
                 "fallback weightPerCableKg=${exercise.weightPerCableKg}, using=$setWeight, " +
                 "usePercentOfPR=${exercise.usePercentOfPR}, setWeights.size=${exercise.setWeightsPerCableKg.size}"
         }
-        if (hasVariableWarmups) {
-            Logger.d(tag = "RoutineFlowManager") { "Issue #356: SetReady init warm-up for ${exercise.exercise.name}: ${exercise.warmupSets.size} sets" }
-        }
-        clearWeightRecommendationIfNotTarget(exercise.exercise.id, setIndex)
     }
 
     /**
@@ -1350,6 +1300,26 @@ class RoutineFlowManager(
         val routine = coordinator._loadedRoutine.value ?: return
         val exercise = routine.exercises.getOrNull(exerciseIndex) ?: return
         val isNewExercise = exerciseIndex != coordinator._currentExerciseIndex.value
+        publishSetReadyState(
+            exercise = exercise,
+            exerciseIndex = exerciseIndex,
+            setIndex = setIndex,
+            weight = adjustedWeight,
+            reps = adjustedReps,
+            initializeWarmups = isNewExercise && setIndex == 0,
+            callerLabel = "enterSetReadyWithAdjustments",
+        )
+    }
+
+    private fun publishSetReadyState(
+        exercise: RoutineExercise,
+        exerciseIndex: Int,
+        setIndex: Int,
+        weight: Float,
+        reps: Int,
+        initializeWarmups: Boolean,
+        callerLabel: String,
+    ) {
         val rackSelection = resolveDefaultRackSelection(exercise)
         val preserveRestEditedProgression = shouldPreserveRestEditedProgression()
         val progressionKg = if (preserveRestEditedProgression) {
@@ -1361,19 +1331,18 @@ class RoutineFlowManager(
         val readyState = RoutineFlowState.SetReady(
             exerciseIndex = exerciseIndex,
             setIndex = setIndex,
-            adjustedWeight = adjustedWeight,
-            adjustedReps = adjustedReps,
+            adjustedWeight = weight,
+            adjustedReps = reps,
             adjustedProgressionKg = progressionKg,
             echoLevel = if (exercise.programMode is ProgramMode.Echo) setEchoLevel else null,
             eccentricLoadPercent = if (exercise.programMode is ProgramMode.Echo) exercise.eccentricLoad.percentage else null,
         )
         val isSetAmrap = exercise.isAmrapSet(setIndex)
-        val initializeWarmups = isNewExercise && setIndex == 0
         val hasVariableWarmups = initializeWarmups && exercise.warmupSets.isNotEmpty() && !exercise.exercise.isBodyweight
         val nextParams = coordinator._workoutParameters.value.copy(
             programMode = exercise.programMode,
-            weightPerCableKg = adjustedWeight,
-            reps = adjustedReps,
+            weightPerCableKg = weight,
+            reps = reps,
             echoLevel = setEchoLevel,
             eccentricLoad = exercise.eccentricLoad,
             selectedExerciseId = exercise.exercise.id,
@@ -1403,10 +1372,10 @@ class RoutineFlowManager(
         }
 
         Logger.d {
-            "enterSetReadyWithAdjustments: exercise=${exercise.exercise.name}, set=$setIndex, isAMRAP=$isSetAmrap, stallDetection=${exercise.stallDetectionEnabled}"
+            "$callerLabel: exercise=${exercise.exercise.name}, set=$setIndex, isAMRAP=$isSetAmrap, stallDetection=${exercise.stallDetectionEnabled}"
         }
         if (hasVariableWarmups) {
-            Logger.d(tag = "RoutineFlowManager") { "Issue #356: SetReadyWithAdjustments init warm-up for ${exercise.exercise.name}: ${exercise.warmupSets.size} sets" }
+            Logger.d(tag = "RoutineFlowManager") { "Issue #356: $callerLabel init warm-up for ${exercise.exercise.name}: ${exercise.warmupSets.size} sets" }
         }
         clearWeightRecommendationIfNotTarget(exercise.exercise.id, setIndex)
     }

@@ -286,7 +286,6 @@ Er enthält keine Authentifizierungs-/Sitzungstokens, Supabase-Konfiguration ode
     <string name="label_bodyweight">Körpergewicht</string>
     <string name="label_equipment">Gerät</string>
     <string name="delete_exercise_title">Übung löschen?</string>
-    <string name="delete_exercise_message">Möchtest du „%1$s“ wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.</string>
 
     <!-- ==================== Exercise Detail ==================== -->
 
@@ -577,7 +576,6 @@ Er enthält keine Authentifizierungs-/Sitzungstokens, Supabase-Konfiguration ode
     <!-- Settings / Preferences -->
     <string name="cd_settings">Einstellungen</string>
     <string name="cd_appearance">Darstellungseinstellungen</string>
-    <string name="cd_dynamic_color">Einstellung für dynamische Material You-Farben</string>
     <string name="cd_developer_tools">Entwicklertools</string>
     <string name="cd_app_info">App-Informationen</string>
     <string name="cd_support_developer">Entwickler unterstützen</string>
@@ -972,7 +970,6 @@ Er enthält keine Authentifizierungs-/Sitzungstokens, Supabase-Konfiguration ode
     <string name="settings_weight_text_size_standard">Standard</string>
     <string name="settings_weight_text_size_large">Groß</string>
     <string name="settings_weight_text_size_extra_large">Sehr groß</string>
-    <string name="cd_weight_text_size">Größe der Trainingssteuerung</string>
     <!-- Issue #1358: custom-exercise photos (Phase 1) -->
     <string name="media_photos_count">Fotos · %1$d von %2$d</string>
     <string name="media_add_photos">Fotos hinzufügen</string>
@@ -999,7 +996,6 @@ Er enthält keine Authentifizierungs-/Sitzungstokens, Supabase-Konfiguration ode
     <string name="media_save_media_failed">Übung gespeichert; Fotos konnten nicht gespeichert werden. Füge Fotos erneut hinzu.</string>
     <string name="media_save_busy">Fotos werden noch hinzugefügt. Warte, bis die Auswahl abgeschlossen ist, und speichere dann.</string>
     <string name="media_cleanup_pending">Einige lokale Kopien konnten nicht entfernt werden. Phoenix versucht es später erneut.</string>
-    <string name="media_delete_cleanup_transient">Übung gelöscht. Lokale Fotos werden bereinigt…</string>
     <string name="media_save_failed">Übung konnte nicht gespeichert werden. Versuche es erneut.</string>
     <string name="media_delete_failed">Übung konnte nicht gelöscht werden. Versuche es erneut.</string>
     <string name="delete_exercise_media_message">Diese Übung und ihre Fotos löschen? Deine Originale bleiben unverändert.</string>

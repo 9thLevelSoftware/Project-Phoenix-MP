@@ -304,9 +304,9 @@ internal class IosSoundManager {
 
     private fun loadAllSounds() {
         loadSounds()
-        loadBadgeSounds()
-        loadPRSounds()
-        loadRepCountSounds()
+        loadNamedSoundPool(IOS_BADGE_SOUND_FILES, badgeSoundPlayers, "badge celebration sounds", ::loadSound)
+        loadNamedSoundPool(IOS_PR_SOUND_FILES, prSoundPlayers, "PR celebration sounds", ::loadSound)
+        loadRepCountSoundPool(repCountSoundPlayers, ::loadSound)
         // Issue #611: verbal encouragement pools (PR #612 Sounds/ drop-in names).
         val targets = listOf(
             encouragementNeutralSoundPlayers,
@@ -315,7 +315,7 @@ internal class IosSoundManager {
             encouragementDominatrixSoundPlayers,
         )
         IOS_ENCOURAGEMENT_POOL_SPECS.zip(targets).forEach { (spec, destination) ->
-            loadEncouragementSounds(spec.prefix, spec.count, destination, spec.label)
+            loadNumberedSoundPool(spec.prefix, spec.count, destination, spec.label, ::loadSound)
         }
         IosAudioDiagnostics.record(AUDIO_DIAGNOSTIC_TAG, "players_loaded") {
             "${playerCountsSummary()} ${IosAudioDiagnostics.sessionDetails()}"
@@ -514,38 +514,6 @@ internal class IosSoundManager {
         countdownTickPlayer = loadSound("beep")
     }
 
-    private fun loadBadgeSounds() {
-        loadNamedSounds(IOS_BADGE_SOUND_FILES, badgeSoundPlayers, "badge celebration sounds")
-    }
-
-    private fun loadPRSounds() {
-        loadNamedSounds(IOS_PR_SOUND_FILES, prSoundPlayers, "PR celebration sounds")
-    }
-
-    // Named celebration clips. Missing files are skipped, same as the numbered pools.
-    private fun loadNamedSounds(
-        fileNames: List<String>,
-        destination: MutableList<AVAudioPlayer?>,
-        label: String,
-    ) {
-        loadNamedSoundPool(fileNames, destination, label, ::loadSound)
-    }
-
-    private fun loadRepCountSounds() {
-        loadRepCountSoundPool(repCountSoundPlayers, ::loadSound)
-    }
-
-    // Issue #611: numbered verbal-encouragement pool. Bare filenames match PR #612's
-    // `Sounds/` drop-in contract (no extension; loadSound() tries .caf/.m4a/.wav/.mp3).
-    private fun loadEncouragementSounds(
-        prefix: String,
-        count: Int,
-        destination: MutableList<AVAudioPlayer?>,
-        label: String,
-    ) {
-        loadNumberedSoundPool(prefix, count, destination, label, ::loadSound)
-    }
-
     private fun loadSound(fileName: String): AVAudioPlayer? {
         // Try different audio formats in order of preference
         val extensions = listOf("caf", "m4a", "wav", "mp3")
@@ -584,7 +552,20 @@ internal class IosSoundManager {
             // is not active a cue only arms recovery for the next foreground.
             val outcome = recoveryPolicy.playCue<AVAudioPlayer>(
                 appActive = { isAppActive() },
-                selectPlayer = { selectPlayer(event) },
+                selectPlayer = {
+                    selectIosSoundPlayer(
+                        event = event,
+                        eventPlayers = players,
+                        badgePlayers = badgeSoundPlayers,
+                        prPlayers = prSoundPlayers,
+                        repCountPlayers = repCountSoundPlayers,
+                        countdownTickPlayer = countdownTickPlayer,
+                        neutralPlayers = encouragementNeutralSoundPlayers,
+                        mildPlayers = encouragementMildSoundPlayers,
+                        strongPlayers = encouragementStrongSoundPlayers,
+                        dominatrixPlayers = encouragementDominatrixSoundPlayers,
+                    )
+                },
                 play = { player, isRetry ->
                     // Issue #522: Defensively re-prepare the chosen player. The
                     // lifecycle observers and the recovery policy own session
@@ -620,19 +601,6 @@ internal class IosSoundManager {
             log.w { "Sound playback failed for $event: ${e.message}" }
         }
     }
-
-    private fun selectPlayer(event: HapticEvent): AVAudioPlayer? = selectIosSoundPlayer(
-        event = event,
-        eventPlayers = players,
-        badgePlayers = badgeSoundPlayers,
-        prPlayers = prSoundPlayers,
-        repCountPlayers = repCountSoundPlayers,
-        countdownTickPlayer = countdownTickPlayer,
-        neutralPlayers = encouragementNeutralSoundPlayers,
-        mildPlayers = encouragementMildSoundPlayers,
-        strongPlayers = encouragementStrongSoundPlayers,
-        dominatrixPlayers = encouragementDominatrixSoundPlayers,
-    )
 
     fun release() {
         IosAudioDiagnostics.record(AUDIO_DIAGNOSTIC_TAG, "manager_release")

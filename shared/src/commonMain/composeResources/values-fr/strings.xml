@@ -273,7 +273,6 @@
     <string name="label_bodyweight">Poids corporel</string>
     <string name="label_equipment">Équipement</string>
     <string name="delete_exercise_title">Supprimer l'exercice ?</string>
-    <string name="delete_exercise_message">Êtes-vous sûr de vouloir supprimer « %1$s » ? Cette action est irréversible.</string>
 
     <!-- ==================== Exercise Detail ==================== -->
 
@@ -563,7 +562,6 @@
     <!-- Settings / Preferences -->
     <string name="cd_settings">Paramètres</string>
     <string name="cd_appearance">Paramètres d'apparence</string>
-    <string name="cd_dynamic_color">Paramètre de couleurs dynamiques Material You</string>
     <string name="cd_developer_tools">Outils de développement</string>
     <string name="cd_app_info">Informations sur l'application</string>
     <string name="cd_support_developer">Soutenir le développeur</string>
@@ -952,7 +950,6 @@
     <string name="settings_weight_text_size_standard">Standard</string>
     <string name="settings_weight_text_size_large">Grand</string>
     <string name="settings_weight_text_size_extra_large">Très grand</string>
-    <string name="cd_weight_text_size">Taille des commandes d'entraînement</string>
     <string name="media_photos_count">Photos · %1$d sur %2$d</string>
     <string name="media_add_photos">Ajouter des photos</string>
     <string name="media_photos_helper">Jusqu'à 6 photos · 10 Mo chacune</string>
@@ -978,7 +975,6 @@
     <string name="media_save_media_failed">Exercice enregistré ; les photos n'ont pas pu être enregistrées. Réajoutez des photos.</string>
     <string name="media_save_busy">Les photos sont toujours en cours d'ajout. Attendez la fin de la sélection, puis enregistrez.</string>
     <string name="media_cleanup_pending">Certaines copies locales n'ont pas pu être supprimées. Phoenix réessaiera.</string>
-    <string name="media_delete_cleanup_transient">Exercice supprimé. Nettoyage des photos locales…</string>
     <string name="media_save_failed">Impossible d'enregistrer l'exercice. Réessayez.</string>
     <string name="media_delete_failed">Impossible de supprimer l'exercice. Réessayez.</string>
     <string name="delete_exercise_media_message">Supprimer cet exercice et ses photos ? Vos originaux restent inchangés.</string>

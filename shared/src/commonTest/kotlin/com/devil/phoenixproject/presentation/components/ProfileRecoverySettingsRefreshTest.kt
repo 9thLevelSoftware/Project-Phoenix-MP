@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.presentation.components
 
+import com.devil.phoenixproject.testutil.extractFunctionBody
 import com.devil.phoenixproject.testutil.readProjectFile
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -53,13 +54,13 @@ class ProfileRecoverySettingsRefreshTest {
         val section = source(
             "src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileRecoverySettingsSection.kt",
         )
-        val idle = functionBody(section, "ProfileRecoverySettingsSection")
-        val visible = functionBody(section, "VisibleProfileRecoverySettings")
-        val refresh = functionBody(
+        val idle = extractFunctionBody(section, "fun ProfileRecoverySettingsSection(")
+        val visible = extractFunctionBody(section, "fun VisibleProfileRecoverySettings(")
+        val refresh = extractFunctionBody(
             source(
                 "src/commonMain/kotlin/com/devil/phoenixproject/presentation/components/ProfileRecoverySettingsRefresh.kt",
             ),
-            "refreshProfileRecoveryWhileShown",
+            "fun refreshProfileRecoveryWhileShown(",
         )
 
         assertTrue(idle.indexOf("if (pending.isEmpty() && cloudPending.isEmpty()) return") < idle.indexOf("VisibleProfileRecoverySettings("))
@@ -79,23 +80,4 @@ class ProfileRecoverySettingsRefreshTest {
     }
 
     private fun source(path: String): String = requireNotNull(readProjectFile(path)) { path }
-
-    private fun functionBody(source: String, name: String): String {
-        val marker = "fun $name("
-        val start = source.indexOf(marker)
-        assertTrue(start >= 0, "missing $name")
-        val open = source.indexOf('{', start)
-        assertTrue(open >= 0, "missing body for $name")
-        var depth = 0
-        for (index in open until source.length) {
-            when (source[index]) {
-                '{' -> depth += 1
-                '}' -> {
-                    depth -= 1
-                    if (depth == 0) return source.substring(open + 1, index)
-                }
-            }
-        }
-        error("missing closing brace for $name")
-    }
 }

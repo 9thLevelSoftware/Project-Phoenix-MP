@@ -66,7 +66,6 @@ class RepCounterFromMachine {
     private val phaseLock = reentrantLock()
     private var activePhase: RepPhase = RepPhase.IDLE
     private var phaseProgress: Float = 0f // 0.0 at phase start, 1.0 at phase end
-    private var lastTrackedPosition: Float = 0f // For direction detection
     private var phaseStartPosition: Float = 0f // Position when phase started
     private var phasePeakPosition: Float = 0f // Peak position during current rep (for eccentric progress)
     private var positionHistoryForDirection = mutableListOf<Float>() // Rolling window for smoothing
@@ -141,7 +140,6 @@ class RepCounterFromMachine {
         phaseLock.withLock {
             activePhase = RepPhase.IDLE
             phaseProgress = 0f
-            lastTrackedPosition = 0f
             phaseStartPosition = 0f
             phasePeakPosition = 0f
             positionHistoryForDirection.clear()
@@ -828,7 +826,6 @@ class RepCounterFromMachine {
 
             // Need at least 2 positions to detect direction
             if (positionHistoryForDirection.size < 2) {
-                lastTrackedPosition = currentPos
                 return
             }
 
@@ -898,8 +895,6 @@ class RepCounterFromMachine {
                     phaseProgress = 0f
                 }
             }
-
-            lastTrackedPosition = currentPos
         }
     }
 

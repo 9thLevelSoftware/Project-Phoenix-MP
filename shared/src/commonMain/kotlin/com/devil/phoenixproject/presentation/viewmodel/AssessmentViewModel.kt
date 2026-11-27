@@ -299,11 +299,7 @@ class AssessmentViewModel(
                     },
                 )
 
-                val totalReps = assessmentResult?.let {
-                    // Sum reps from recorded sets (accessible via the step history)
-                    // Each set is typically 3 reps
-                    current.loadVelocityPoints.size * 3
-                } ?: (current.loadVelocityPoints.size * 3)
+                val totalReps = current.loadVelocityPoints.size * 3
 
                 val durationMs = currentTimeMillis() - assessmentStartTimeMs
                 val avgWeight = current.loadVelocityPoints.map { it.loadKg }.average().toFloat()

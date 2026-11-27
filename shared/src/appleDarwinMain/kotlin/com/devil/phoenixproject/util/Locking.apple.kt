@@ -3,7 +3,7 @@ package com.devil.phoenixproject.util
 import platform.Foundation.NSRecursiveLock
 
 /**
- * iOS implementation uses a single global NSRecursiveLock instead of per-object locks.
+ * Apple Darwin implementation uses a single global NSRecursiveLock instead of per-object locks.
  *
  * Rationale: Per-object locking via WeakReference map causes memory leaks on K/N
  * because WeakReference<NSRecursiveLock> prevents garbage collection of the lock map entries.
@@ -15,8 +15,6 @@ import platform.Foundation.NSRecursiveLock
  * NSRecursiveLock (rather than NSLock) is chosen so that nested calls from the same
  * thread do not deadlock -- e.g., a BLE write callback that triggers a DB write
  * within the same call stack.
- *
- * TODO(v0.9.0): Investigate @Synchronized annotation or K/N 2.x weak reference improvements.
  */
 @PublishedApi
 internal val globalLock = NSRecursiveLock()

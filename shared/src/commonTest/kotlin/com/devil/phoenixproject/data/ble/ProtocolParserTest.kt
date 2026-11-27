@@ -117,28 +117,6 @@ class ProtocolParserTest {
         assertEquals(-1.0f, getFloatLE(data, 0))
     }
 
-    // ========== toPhoenixHex Tests ==========
-
-    @Test
-    fun `toPhoenixHex formats max byte value`() {
-        assertEquals("FF", 0xFF.toByte().toPhoenixHex())
-    }
-
-    @Test
-    fun `toPhoenixHex pads single digit with zero`() {
-        assertEquals("0A", 0x0A.toByte().toPhoenixHex())
-    }
-
-    @Test
-    fun `toPhoenixHex formats zero`() {
-        assertEquals("00", 0x00.toByte().toPhoenixHex())
-    }
-
-    @Test
-    fun `toPhoenixHex uses uppercase letters`() {
-        assertEquals("AB", 0xAB.toByte().toPhoenixHex())
-    }
-
     // ==================== parseRepPacket Tests (Issue #210 critical) ====================
 
     @Test

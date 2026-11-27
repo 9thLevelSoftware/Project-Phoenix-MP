@@ -1,5 +1,7 @@
 package com.devil.phoenixproject.resources
 
+import com.devil.phoenixproject.testutil.findProjectRoot
+import com.devil.phoenixproject.testutil.readProjectFile
 import java.io.File
 import javax.xml.parsers.DocumentBuilderFactory
 import kotlin.test.Test
@@ -121,11 +123,7 @@ class ComposeResourceStringsTest {
 
         val legacyUnusedKeys = setOf(
             "app_name",
-            "cd_dynamic_color",
             "cd_led_scheme",
-            "cd_weight_text_size",
-            "delete_exercise_message",
-            "media_delete_cleanup_transient",
             "profile_stall_detection",
             "profile_stop_at_top",
         )
@@ -189,16 +187,12 @@ class ComposeResourceStringsTest {
         assertFalse(analytics.contains("\"Unknown Exercise\""))
     }
 
-    private fun locateSharedDir(): File {
-        var dir: File? = File(System.getProperty("user.dir") ?: ".")
-        while (dir != null) {
-            if (File(dir, "src/commonMain/composeResources/values/strings.xml").isFile) return dir
-            val nested = File(dir, "shared")
-            if (File(nested, "src/commonMain/composeResources/values/strings.xml").isFile) return nested
-            dir = dir.parentFile
+    private fun locateSharedDir(): File =
+        File(findProjectRoot(), "shared").also {
+            require(File(it, "src/commonMain/composeResources/values/strings.xml").isFile) {
+                "Could not locate shared directory from ${System.getProperty("user.dir")}"
+            }
         }
-        error("Could not locate shared directory from ${System.getProperty("user.dir")}")
-    }
 
     private fun parseStringsXml(dirName: String, file: File): LinkedHashMap<String, String> {
         val builder = DocumentBuilderFactory.newInstance().newDocumentBuilder()
@@ -215,27 +209,14 @@ class ComposeResourceStringsTest {
         return map
     }
 
-    private fun readSource(relativeFromShared: String): String {
-        var dir: File? = File(System.getProperty("user.dir"))
-        while (dir != null) {
-            for (candidate in listOf(File(dir, relativeFromShared), File(dir, "shared/$relativeFromShared"))) {
-                if (candidate.isFile) return candidate.readText()
-            }
-            dir = dir.parentFile
+    private fun readSource(relativeFromShared: String): String =
+        requireNotNull(readProjectFile(relativeFromShared)) {
+            "Could not find $relativeFromShared from ${System.getProperty("user.dir")}"
         }
-        error("Could not find $relativeFromShared from ${System.getProperty("user.dir")}")
-    }
 
     private fun localeStringFiles(): List<File> {
-        var dir: File? = File(System.getProperty("user.dir"))
-        while (dir != null) {
-            for (root in listOf(File(dir, "src/commonMain/composeResources"), File(dir, "shared/src/commonMain/composeResources"))) {
-                val values = root.listFiles()?.filter { it.isDirectory && it.name.startsWith("values") }.orEmpty()
-                val files = values.map { File(it, "strings.xml") }.filter { it.isFile }
-                if (files.isNotEmpty()) return files
-            }
-            dir = dir.parentFile
-        }
-        return emptyList()
+        val root = File(locateSharedDir(), "src/commonMain/composeResources")
+        val values = root.listFiles()?.filter { it.isDirectory && it.name.startsWith("values") }.orEmpty()
+        return values.map { File(it, "strings.xml") }.filter { it.isFile }
     }
 }

@@ -220,6 +220,7 @@ kotlin {
             dependsOn(phoneMain)
             iosArm64Main.dependsOn(this)
             iosSimulatorArm64Main.dependsOn(this)
+            kotlin.srcDir("src/appleDarwinMain/kotlin")
 
             dependencies {
                 // SQLDelight Native Driver

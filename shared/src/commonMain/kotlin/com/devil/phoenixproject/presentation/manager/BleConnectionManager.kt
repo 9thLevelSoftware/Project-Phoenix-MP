@@ -192,6 +192,10 @@ class BleConnectionManager(
     }
 
     fun cancelScanOrConnection() {
+        scheduleCancelTeardown(onlyCancelWhenConnecting = true)
+    }
+
+    private fun scheduleCancelTeardown(onlyCancelWhenConnecting: Boolean) {
         val activeConnectionJob = connectionJob
         connectionJob = null
         activeConnectionJob?.cancel()
@@ -200,9 +204,7 @@ class BleConnectionManager(
             previousCancel?.join()
             activeConnectionJob?.join()
             bleRepository.stopScanning()
-            // Only cancel connection if we're actually connecting
-            val state = connectionState.value
-            if (state is ConnectionState.Connecting) {
+            if (!onlyCancelWhenConnecting || connectionState.value is ConnectionState.Connecting) {
                 bleRepository.cancelConnection()
             }
         }
@@ -366,16 +368,7 @@ class BleConnectionManager(
      */
     fun cancelConnection() {
         Logger.d { "cancelConnection: Cancelling connection attempt" }
-        val activeConnectionJob = connectionJob
-        connectionJob = null
-        activeConnectionJob?.cancel()
-        val previousCancel = pendingCancelJob
-        pendingCancelJob = scope.launch {
-            previousCancel?.join()
-            activeConnectionJob?.join()
-            bleRepository.stopScanning()
-            bleRepository.cancelConnection()
-        }
+        scheduleCancelTeardown(onlyCancelWhenConnecting = false)
     }
 
     /**

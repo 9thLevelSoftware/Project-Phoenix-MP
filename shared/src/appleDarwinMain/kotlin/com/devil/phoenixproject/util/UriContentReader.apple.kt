@@ -15,11 +15,17 @@ import platform.Foundation.stringWithContentsOfFile
 private val log = Logger.withTag("UriContentReader")
 
 /**
- * iOS implementation: reads content from a file path (temp file returned by UIDocumentPickerViewController).
+ * Apple Darwin implementation: reads content from a file path (temp file returned by UIDocumentPickerViewController).
  */
-actual suspend fun readUriContent(uriOrPath: String): String? = withContext(Dispatchers.Default) {
+actual suspend fun readUriContent(uriOrPath: String): String? =
+    readUriContentImpl(uriOrPath, ::readUtf8File)
+
+internal suspend fun readUriContentImpl(
+    uriOrPath: String,
+    readFile: (String) -> String?,
+): String? = withContext(Dispatchers.Default) {
     try {
-        readUtf8File(uriOrPath)
+        readFile(uriOrPath)
     } catch (e: Exception) {
         e.rethrowIfCancellation()
         log.e(e) { "Failed to read file content: $uriOrPath" }
@@ -28,14 +34,29 @@ actual suspend fun readUriContent(uriOrPath: String): String? = withContext(Disp
 }
 
 /** The picker hands over a local copy, so its size is known before reading it. */
-actual suspend fun readUriContentUpTo(uriOrPath: String, maxBytes: Int): BoundedUriContent = withContext(Dispatchers.Default) {
+actual suspend fun readUriContentUpTo(uriOrPath: String, maxBytes: Int): BoundedUriContent =
+    readUriContentUpToImpl(
+        uriOrPath = uriOrPath,
+        maxBytes = maxBytes,
+        fileSizeBytes = { path ->
+            val attributes = NSFileManager.defaultManager.attributesOfItemAtPath(path, error = null)
+            (attributes?.get(NSFileSize) as? NSNumber)?.longValue
+        },
+        readFile = ::readUtf8File,
+    )
+
+internal suspend fun readUriContentUpToImpl(
+    uriOrPath: String,
+    maxBytes: Int,
+    fileSizeBytes: (String) -> Long?,
+    readFile: (String) -> String?,
+): BoundedUriContent = withContext(Dispatchers.Default) {
     try {
-        val attributes = NSFileManager.defaultManager.attributesOfItemAtPath(uriOrPath, error = null)
-        val size = (attributes?.get(NSFileSize) as? NSNumber)?.longValue
+        val size = fileSizeBytes(uriOrPath)
         when {
             size == null -> BoundedUriContent.Unreadable
             size > maxBytes -> BoundedUriContent.TooLarge
-            else -> readUtf8File(uriOrPath)?.let { BoundedUriContent.Read(it) } ?: BoundedUriContent.Unreadable
+            else -> readFile(uriOrPath)?.let { BoundedUriContent.Read(it) } ?: BoundedUriContent.Unreadable
         }
     } catch (e: Exception) {
         e.rethrowIfCancellation()

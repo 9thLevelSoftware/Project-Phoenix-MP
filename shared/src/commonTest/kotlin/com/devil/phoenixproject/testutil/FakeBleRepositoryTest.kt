@@ -18,16 +18,6 @@ import kotlinx.coroutines.test.runTest
 class FakeBleRepositoryTest {
 
     @Test
-    fun `simulateDisconnect clears diagnostics`() {
-        val repository = FakeBleRepository()
-        repository.setDiagnostics(testDiagnostics())
-
-        repository.simulateDisconnect()
-
-        assertNull(repository.diagnostics.value)
-    }
-
-    @Test
     fun `disconnect APIs clear diagnostics`() = runTest {
         val repository = FakeBleRepository()
         repository.setDiagnostics(testDiagnostics())

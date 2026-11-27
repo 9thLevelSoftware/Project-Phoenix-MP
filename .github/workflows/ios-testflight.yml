@@ -104,18 +104,9 @@ jobs:
       - name: Auto-increment build number
         id: build_number
         run: |
-          # Generate build number from date and run number
-          BUILD_NUM=$(date +%Y%m%d)${{ github.run_number }}
-          echo "build_number=$BUILD_NUM" >> $GITHUB_OUTPUT
-          echo "Build number: $BUILD_NUM"
-
-          # Update Xcode project with new build number
-          # [0-9][0-9]* requires at least one digit to avoid matching empty strings
-          sed -i '' "s/CURRENT_PROJECT_VERSION = [0-9][0-9]*/CURRENT_PROJECT_VERSION = $BUILD_NUM/g" \
-            iosApp/PhoenixApp/PhoenixApp.xcodeproj/project.pbxproj
-
-          # Show what was set
-          grep "CURRENT_PROJECT_VERSION" iosApp/PhoenixApp/PhoenixApp.xcodeproj/project.pbxproj | head -2
+          python3 .github/scripts/ios-release.py bump-build-number \
+            --run-number "${{ github.run_number }}" \
+            --pbxproj "$PROJECT_PATH/project.pbxproj"
 
       # Compose Multiplatform 1.11 links UIKit symbols from the iOS 26 SDK.
       # Gradle/Kotlin Native and xcodebuild must use that same SDK.
@@ -153,22 +144,10 @@ jobs:
 
       - name: Install shared.framework for Xcode
         run: |
-          # Debug and Release both link shared/build/bin/iosArm64/xcodeFramework.
-          # Copy the release bundle there. The Xcode project does not link an
-          # XCFramework, and it does not read debugFramework at archive time.
-          #
-          # Release All (Existing) runs this workflow from main against an older
-          # tag's checkout. Tags before xcodeFramework (v1.0.3 and earlier) have no
-          # install script and link debugFramework, so give them a real copy there.
-          if grep -q 'iosArm64/xcodeFramework' iosApp/PhoenixApp/PhoenixApp.xcodeproj/project.pbxproj; then
+          if grep -q 'iosArm64/xcodeFramework' "$PROJECT_PATH/project.pbxproj"; then
             iosApp/install-xcode-framework.sh release
           else
-            echo "Checkout predates xcodeFramework; installing the release bundle at debugFramework"
-            LEGACY_DEST=shared/build/bin/iosArm64/debugFramework/shared.framework
-            rm -rf "$LEGACY_DEST"
-            mkdir -p "$LEGACY_DEST"
-            cp -R shared/build/bin/iosArm64/releaseFramework/shared.framework/. "$LEGACY_DEST"/
-            test -s "$LEGACY_DEST/shared"
+            python3 .github/scripts/ios-release.py install-legacy-framework
           fi
 
       - name: Install certificate and profile
@@ -177,23 +156,7 @@ jobs:
           P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
           PROVISION_PROFILE_BASE64: ${{ secrets.PROVISION_PROFILE_BASE64 }}
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
-        run: |
-          CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
-          PP_PATH=$RUNNER_TEMP/build_pp.mobileprovision
-          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
-
-          echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o $CERTIFICATE_PATH
-          echo -n "$PROVISION_PROFILE_BASE64" | base64 --decode -o $PP_PATH
-
-          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          security import $CERTIFICATE_PATH -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
-          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          security list-keychain -d user -s $KEYCHAIN_PATH
-
-          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
-          cp $PP_PATH ~/Library/MobileDevice/Provisioning\ Profiles
+        run: python3 .github/scripts/ios-release.py install-signing
 
       - name: Archive app
         run: |
@@ -290,34 +253,6 @@ jobs:
           echo "Build version: $BUILD_VERSION"
           echo "Marketing version: $MARKETING_VERSION"
 
-          # --- Write JWT generation script (used here and in the next step) ---
-          cat > "$RUNNER_TEMP/generate_jwt.py" << 'PYEOF'
-          import base64, json, time, os
-          from cryptography.hazmat.primitives import hashes
-          from cryptography.hazmat.primitives.asymmetric import ec
-          from cryptography.hazmat.primitives.serialization import load_pem_private_key
-          from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
-
-          def b64url(data):
-              if isinstance(data, str):
-                  data = data.encode()
-              return base64.urlsafe_b64encode(data).rstrip(b'=').decode()
-
-          kid = os.environ['APPSTORE_API_KEY_ID']
-          iss = os.environ['APPSTORE_ISSUER_ID']
-          with open(os.path.expanduser(f'~/.appstoreconnect/private_keys/AuthKey_{kid}.p8'), 'rb') as f:
-              key = load_pem_private_key(f.read(), password=None)
-          now = int(time.time())
-          hdr = b64url(json.dumps({"alg": "ES256", "kid": kid, "typ": "JWT"}, separators=(',', ':')))
-          pay = b64url(json.dumps({"iss": iss, "iat": now, "exp": now + 1200, "aud": "appstoreconnect-v1"}, separators=(',', ':')))
-          msg = f"{hdr}.{pay}"
-          r, s = decode_dss_signature(key.sign(msg.encode(), ec.ECDSA(hashes.SHA256())))
-          print(f"{msg}.{b64url(r.to_bytes(32, 'big') + s.to_bytes(32, 'big'))}")
-          PYEOF
-          sed -i '' 's/^          //' "$RUNNER_TEMP/generate_jwt.py"
-
-          generate_jwt() { python3 "$RUNNER_TEMP/generate_jwt.py"; }
-
           # --- Upload via xcrun altool ---
           echo "=== Uploading IPA to App Store Connect ==="
 
@@ -352,14 +287,8 @@ jobs:
           # Verify the upload actually reached Apple
           echo "=== Verifying upload reached App Store Connect ==="
           sleep 30
-          VERIFY_JWT=$(generate_jwt)
-          API_BASE="https://api.appstoreconnect.apple.com/v1"
-          VERIFY_RESPONSE=$(curl -s --globoff -H "Authorization: Bearer $VERIFY_JWT" \
-            "$API_BASE/builds?filter[version]=$BUILD_VERSION&limit=1")
-          VERIFY_STATUS=$(echo "$VERIFY_RESPONSE" | python3 -c "import sys,json; data=json.load(sys.stdin); print(data['data'][0]['attributes'].get('processingState','UNKNOWN') if data.get('data') else 'NOT_FOUND')" 2>/dev/null || echo "NOT_FOUND")
-
-          echo "Build status 30s after upload: $VERIFY_STATUS"
-          if [ "$VERIFY_STATUS" = "NOT_FOUND" ]; then
+          VERIFY_JWT=$(python3 .github/scripts/ios-release.py generate_jwt)
+          if ! python3 .github/scripts/ios-release.py verify-asc-upload --build-version "$BUILD_VERSION" --jwt "$VERIFY_JWT"; then
             echo ""
             echo "============================================"
             echo "WARNING: Build not found in App Store Connect 30s after upload."
@@ -376,307 +305,9 @@ jobs:
           APPSTORE_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
           APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
           TESTFLIGHT_GROUP_NAME: ${{ secrets.TESTFLIGHT_GROUP_NAME }}  # e.g., "Internal Testers"
-        run: |
-          set -e
-
-          # Function to generate JWT using Python script
-          generate_jwt() {
-            python3 $RUNNER_TEMP/generate_jwt.py
-          }
-
-          echo "=== Generating JWT for App Store Connect API ==="
-          JWT=$(generate_jwt)
-          if [ -z "$JWT" ]; then
-            echo "ERROR: Failed to generate JWT"
-            exit 1
-          fi
-          echo "JWT generated successfully (length: ${#JWT})"
-
-          API_BASE="https://api.appstoreconnect.apple.com/v1"
-
-          echo "=== Fetching App ID for bundle: $BUNDLE_ID ==="
-          APP_RESPONSE=$(curl -s --globoff -w "\nHTTP_CODE:%{http_code}" -H "Authorization: Bearer $JWT" \
-            "$API_BASE/apps?filter[bundleId]=$BUNDLE_ID")
-          HTTP_CODE=$(echo "$APP_RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
-          APP_RESPONSE=$(echo "$APP_RESPONSE" | grep -v "HTTP_CODE:")
-
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "ERROR: API call failed with HTTP $HTTP_CODE"
-            echo "Response: $APP_RESPONSE"
-            exit 1
-          fi
-
-          APP_ID=$(echo "$APP_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin)['data'][0]['id'])" 2>&1) || {
-            echo "ERROR: Failed to parse App ID from response"
-            echo "Response: $APP_RESPONSE"
-            exit 1
-          }
-          echo "App ID: $APP_ID"
-
-          # Get beta group ID
-          echo "=== Fetching beta groups ==="
-          GROUPS_RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -H "Authorization: Bearer $JWT" \
-            "$API_BASE/apps/$APP_ID/betaGroups")
-          HTTP_CODE=$(echo "$GROUPS_RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
-          GROUPS_RESPONSE=$(echo "$GROUPS_RESPONSE" | grep -v "HTTP_CODE:")
-
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "ERROR: Beta groups API call failed with HTTP $HTTP_CODE"
-            echo "Response: $GROUPS_RESPONSE"
-            exit 1
-          fi
-          GROUP_ID=$(echo "$GROUPS_RESPONSE" | python3 -c "
-          import sys,json
-          data = json.load(sys.stdin)
-          target = '$TESTFLIGHT_GROUP_NAME'
-          for g in data['data']:
-              if g['attributes']['name'] == target:
-                  print(g['id'])
-                  break
-          ")
-          echo "Beta Group ID: $GROUP_ID"
-
-          if [ -z "$GROUP_ID" ]; then
-            echo "ERROR: Could not find beta group '$TESTFLIGHT_GROUP_NAME'"
-            echo "Available groups:"
-            echo "$GROUPS_RESPONSE" | python3 -c "import sys,json; [print('  -', g['attributes']['name']) for g in json.load(sys.stdin)['data']]"
-            exit 1
-          fi
-
-          # Wait for build to finish processing (check every 30 seconds, max 20 minutes)
-          echo "=== Waiting for build to process (this may take several minutes) ==="
-          BUILD_ID=""
-          BUILD_VERSION="${{ needs.build.outputs.build_number }}"
-          echo "Looking for build version: $BUILD_VERSION"
-
-          for i in {1..40}; do
-            # Refresh JWT if needed (they expire after 20 min)
-            if [ $((i % 20)) -eq 0 ]; then
-              JWT=$(generate_jwt)
-            fi
-
-            BUILDS_RESPONSE=$(curl -s --globoff -H "Authorization: Bearer $JWT" \
-              "$API_BASE/builds?filter[app]=$APP_ID&filter[version]=$BUILD_VERSION&limit=1")
-
-            BUILD_STATUS=$(echo "$BUILDS_RESPONSE" | python3 -c "
-          import sys,json
-          data = json.load(sys.stdin)
-          if data.get('data'):
-              b = data['data'][0]
-              status = b['attributes'].get('processingState', 'UNKNOWN')
-              print(status)
-          else:
-              print('NOT_FOUND')
-          " 2>/dev/null || echo "NOT_FOUND")
-
-            echo "Build status: $BUILD_STATUS (attempt $i/40)"
-
-            if [ "$BUILD_STATUS" = "VALID" ]; then
-              BUILD_ID=$(echo "$BUILDS_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin)['data'][0]['id'])")
-              break
-            elif [ "$BUILD_STATUS" = "INVALID" ]; then
-              echo "ERROR: Build is invalid and cannot be distributed"
-              exit 1
-            fi
-
-            sleep 30
-          done
-
-          if [ -z "$BUILD_ID" ]; then
-            echo "ERROR: Build did not finish processing in time"
-            exit 1
-          fi
-
-          echo "Build ID: $BUILD_ID"
-
-          # Set "What to Test" notes (required for external TestFlight groups)
-          echo "=== Setting 'What to Test' notes for external review ==="
-
-          # First, check if a localization already exists for this build
-          LOCALIZATIONS_RESPONSE=$(curl -s -H "Authorization: Bearer $JWT" \
-            "$API_BASE/builds/$BUILD_ID/betaBuildLocalizations")
-
-          EXISTING_LOCALIZATION_ID=$(echo "$LOCALIZATIONS_RESPONSE" | python3 -c "
-          import sys,json
-          data = json.load(sys.stdin)
-          for loc in data.get('data', []):
-              if loc['attributes'].get('locale') == 'en-US':
-                  print(loc['id'])
-                  break
-          " 2>/dev/null || echo "")
-
-          # Generate what-to-test notes from commits since last TestFlight build
-          echo "Generating release notes from git history..."
-
-          # Find the most recent testflight tag
-          LAST_TF_TAG=$(git tag -l 'testflight/*' --sort=-version:refname | head -1)
-
-          if [ -n "$LAST_TF_TAG" ]; then
-            echo "Last TestFlight tag: $LAST_TF_TAG"
-            # Get commits since last TestFlight build
-            COMMIT_LOG=$(git log --pretty=format:"• %s" "$LAST_TF_TAG"..HEAD --no-merges | head -20)
-          else
-            echo "No previous TestFlight tag found, using last 15 commits"
-            # No prior tag - get last 15 commits
-            COMMIT_LOG=$(git log --pretty=format:"• %s" -15 --no-merges)
-          fi
-
-          # Build the what-to-test message
-          if [ -n "$COMMIT_LOG" ]; then
-            WHATS_NEW="Changes in this build:
-
-          $COMMIT_LOG
-
-          Please test these changes and report any issues via TestFlight feedback."
-          else
-            WHATS_NEW="Maintenance build. Please test general app stability and report any issues via TestFlight feedback."
-          fi
-
-          echo "Generated release notes:"
-          echo "$WHATS_NEW"
-
-          # Escape for JSON
-          WHATS_NEW_JSON=$(echo "$WHATS_NEW" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read().strip()))")
-
-          if [ -n "$EXISTING_LOCALIZATION_ID" ]; then
-            # Update existing localization
-            echo "Updating existing localization: $EXISTING_LOCALIZATION_ID"
-            LOCALIZATION_RESPONSE=$(curl -s -w "\n%{http_code}" -X PATCH \
-              -H "Authorization: Bearer $JWT" \
-              -H "Content-Type: application/json" \
-              -d '{
-                "data": {
-                  "type": "betaBuildLocalizations",
-                  "id": "'"$EXISTING_LOCALIZATION_ID"'",
-                  "attributes": {
-                    "whatsNew": '"$WHATS_NEW_JSON"'
-                  }
-                }
-              }' \
-              "$API_BASE/betaBuildLocalizations/$EXISTING_LOCALIZATION_ID")
-          else
-            # Create new localization
-            echo "Creating new localization for en-US"
-            LOCALIZATION_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
-              -H "Authorization: Bearer $JWT" \
-              -H "Content-Type: application/json" \
-              -d '{
-                "data": {
-                  "type": "betaBuildLocalizations",
-                  "attributes": {
-                    "locale": "en-US",
-                    "whatsNew": '"$WHATS_NEW_JSON"'
-                  },
-                  "relationships": {
-                    "build": {
-                      "data": {
-                        "type": "builds",
-                        "id": "'"$BUILD_ID"'"
-                      }
-                    }
-                  }
-                }
-              }' \
-              "$API_BASE/betaBuildLocalizations")
-          fi
-
-          LOC_HTTP_CODE=$(echo "$LOCALIZATION_RESPONSE" | tail -1)
-          LOC_BODY=$(echo "$LOCALIZATION_RESPONSE" | sed '$d')
-
-          if [ "$LOC_HTTP_CODE" = "200" ] || [ "$LOC_HTTP_CODE" = "201" ]; then
-            echo "SUCCESS: 'What to Test' notes set successfully"
-          else
-            echo "WARNING: Failed to set 'What to Test' notes (HTTP $LOC_HTTP_CODE)"
-            echo "$LOC_BODY"
-            # Continue anyway - this is non-blocking for internal groups
-          fi
-
-          # Set export compliance (required for external TestFlight)
-          echo "=== Setting export compliance information ==="
-          COMPLIANCE_RESPONSE=$(curl -s -w "\n%{http_code}" -X PATCH \
-            -H "Authorization: Bearer $JWT" \
-            -H "Content-Type: application/json" \
-            -d '{
-              "data": {
-                "type": "builds",
-                "id": "'"$BUILD_ID"'",
-                "attributes": {
-                  "usesNonExemptEncryption": false
-                }
-              }
-            }' \
-            "$API_BASE/builds/$BUILD_ID")
-
-          COMP_HTTP_CODE=$(echo "$COMPLIANCE_RESPONSE" | tail -1)
-          if [ "$COMP_HTTP_CODE" = "200" ]; then
-            echo "SUCCESS: Export compliance set (usesNonExemptEncryption: false)"
-          else
-            echo "WARNING: Failed to set export compliance (HTTP $COMP_HTTP_CODE)"
-            echo "$(echo "$COMPLIANCE_RESPONSE" | sed '$d')"
-          fi
-
-          # Add build to beta group
-          echo "=== Adding build to test group '$TESTFLIGHT_GROUP_NAME' ==="
-          ADD_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
-            -H "Authorization: Bearer $JWT" \
-            -H "Content-Type: application/json" \
-            -d '{"data":[{"type":"builds","id":"'"$BUILD_ID"'"}]}' \
-            "$API_BASE/betaGroups/$GROUP_ID/relationships/builds")
-
-          HTTP_CODE=$(echo "$ADD_RESPONSE" | tail -1)
-          RESPONSE_BODY=$(echo "$ADD_RESPONSE" | sed '$d')
-
-          if [ "$HTTP_CODE" = "204" ] || [ "$HTTP_CODE" = "200" ]; then
-            echo "SUCCESS: Build added to test group '$TESTFLIGHT_GROUP_NAME'"
-          else
-            echo "WARNING: Unexpected response code $HTTP_CODE"
-            echo "$RESPONSE_BODY"
-            # F073: build was uploaded, but it was NOT added to the tester group.
-            # For external-tester workflows this means testers get nothing, so
-            # allow the run to fail when the caller opts in.
-            if [ "${{ inputs.fail_on_distribution_error }}" = "true" ]; then
-              echo "ERROR: failing because fail_on_distribution_error=true and the build was not added to '$TESTFLIGHT_GROUP_NAME'"
-              exit 1
-            fi
-          fi
-
-          # Submit for Beta App Review (required for external TestFlight groups)
-          echo "=== Submitting build for Beta App Review ==="
-          REVIEW_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
-            -H "Authorization: Bearer $JWT" \
-            -H "Content-Type: application/json" \
-            -d '{
-              "data": {
-                "type": "betaAppReviewSubmissions",
-                "relationships": {
-                  "build": {
-                    "data": {
-                      "type": "builds",
-                      "id": "'"$BUILD_ID"'"
-                    }
-                  }
-                }
-              }
-            }' \
-            "$API_BASE/betaAppReviewSubmissions")
-
-          REVIEW_HTTP_CODE=$(echo "$REVIEW_RESPONSE" | tail -1)
-          REVIEW_BODY=$(echo "$REVIEW_RESPONSE" | sed '$d')
-
-          if [ "$REVIEW_HTTP_CODE" = "201" ] || [ "$REVIEW_HTTP_CODE" = "200" ]; then
-            echo "SUCCESS: Build submitted for Beta App Review"
-          elif [ "$REVIEW_HTTP_CODE" = "409" ]; then
-            echo "INFO: Build already submitted for review or review not required (internal group)"
-          else
-            echo "WARNING: Failed to submit for Beta App Review (HTTP $REVIEW_HTTP_CODE)"
-            echo "$REVIEW_BODY"
-            # F073: an internal-only group doesn't require review, so this is
-            # tolerated by default; external-tester workflows can opt in to fail.
-            if [ "${{ inputs.fail_on_distribution_error }}" = "true" ]; then
-              echo "ERROR: failing because fail_on_distribution_error=true and Beta App Review submission failed"
-              exit 1
-            fi
-          fi
+          BUILD_VERSION: ${{ needs.build.outputs.build_number }}
+          FAIL_ON_DISTRIBUTION_ERROR: ${{ inputs.fail_on_distribution_error }}
+        run: python3 .github/scripts/ios-release.py distribute-testflight
 
       - name: Tag build for release notes tracking
         run: |

@@ -280,37 +280,6 @@ class KableBleConnectionManager(
     @Volatile
     private var lastReportedState: ConnectionState = ConnectionState.Disconnected
 
-    internal enum class LifecycleJob { SCAN, STATE_OBSERVER }
-
-    internal fun isLifecycleJobActiveForTest(job: LifecycleJob): Boolean = when (job) {
-        LifecycleJob.SCAN -> scanJob?.isActive == true
-        LifecycleJob.STATE_OBSERVER -> stateObserverJob?.isActive == true
-    }
-
-    internal fun startFakeLifecycleJobsForTest() {
-        scanJob?.cancel()
-        scanJob = scope.launch {
-            delay(Long.MAX_VALUE)
-        }
-        stateObserverJob?.cancel()
-        stateObserverJob = scope.launch {
-            delay(Long.MAX_VALUE)
-        }
-        onScannedDevicesChanged(
-            listOf(
-                ScannedDevice(
-                    name = "Vee_Test",
-                    address = "AA:BB:CC:DD:EE:FF",
-                    rssi = -45,
-                ),
-            ),
-        )
-        advertisementLock.withLock {
-            discoveredAdvertisements.clear()
-        }
-        reportConnectionState(ConnectionState.Scanning)
-    }
-
     private fun trackNonCriticalObserveJob(job: Job) {
         observerJobsLock.withLock {
             nonCriticalObserveJobs.removeAll { !it.isActive }

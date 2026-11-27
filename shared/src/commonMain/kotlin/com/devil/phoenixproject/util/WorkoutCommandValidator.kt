@@ -96,7 +96,7 @@ object WorkoutCommandValidator {
     }
 
     fun validateColorScheme(brightness: Float, colors: List<RGBColor>): Result<Unit> {
-        if (!isFinite(brightness)) return failure("brightness must be finite")
+        if (!brightness.isFinite()) return failure("brightness must be finite")
         if (brightness !in 0f..1f) return failure("brightness must be 0.0..1.0, got $brightness")
         if (colors.size != 3) return failure("Color scheme must have exactly 3 colors")
         return Result.success(Unit)
@@ -140,25 +140,25 @@ object WorkoutCommandValidator {
             return failure("Invalid activation frame reps byte: $repsByte")
         }
         val forceMin = getFloatLE(command, BleConstants.ActivationPacket.OFFSET_FORCE_MIN)
-        if (!isFinite(forceMin) || forceMin < Constants.MIN_WEIGHT_KG ||
+        if (!forceMin.isFinite() || forceMin < Constants.MIN_WEIGHT_KG ||
             forceMin > maxWeightPerCableKg + CommandLimits.WEIGHT_TOLERANCE_KG
         ) {
             return failure("Invalid activation frame forceMin: $forceMin (max=${maxWeightPerCableKg}kg)")
         }
         val targetWeight = getFloatLE(command, BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT)
-        if (!isFinite(targetWeight) || targetWeight < Constants.MIN_WEIGHT_KG ||
+        if (!targetWeight.isFinite() || targetWeight < Constants.MIN_WEIGHT_KG ||
             targetWeight > maxWeightPerCableKg + CommandLimits.WEIGHT_TOLERANCE_KG
         ) {
             return failure("Invalid activation frame targetWeight: $targetWeight (max=${maxWeightPerCableKg}kg)")
         }
         val forceMax = getFloatLE(command, BleConstants.ActivationPacket.OFFSET_FORCE_MAX)
-        if (!isFinite(forceMax) || forceMax < Constants.MIN_WEIGHT_KG ||
+        if (!forceMax.isFinite() || forceMax < Constants.MIN_WEIGHT_KG ||
             forceMax > maxWeightPerCableKg + 10.0f + CommandLimits.WEIGHT_TOLERANCE_KG
         ) {
             return failure("Invalid activation frame forceMax: $forceMax (max=${maxWeightPerCableKg + 10.0f}kg)")
         }
         val progression = getFloatLE(command, BleConstants.ActivationPacket.OFFSET_PROGRESSION)
-        if (!isFinite(progression) || abs(progression) > CommandLimits.MAX_PROGRESSION_KG) {
+        if (!progression.isFinite() || abs(progression) > CommandLimits.MAX_PROGRESSION_KG) {
             return failure(
                 "Invalid activation frame progression: $progression (must be within ±${CommandLimits.MAX_PROGRESSION_KG}kg/rep)",
             )
@@ -185,7 +185,7 @@ object WorkoutCommandValidator {
         val floatOffsets = intArrayOf(0x0C, 0x10, 0x14, 0x18, 0x1C)
         for (offset in floatOffsets) {
             val value = getFloatLE(command, offset)
-            if (!isFinite(value)) {
+            if (!value.isFinite()) {
                 return failure("Echo frame float at offset 0x${offset.toString(16)} must be finite, got $value")
             }
         }
@@ -197,15 +197,13 @@ object WorkoutCommandValidator {
             return failure("Malformed color scheme frame: expected 34 bytes, got ${command.size}")
         }
         val brightness = getFloatLE(command, 12)
-        if (!isFinite(brightness) || brightness !in 0f..1f) {
+        if (!brightness.isFinite() || brightness !in 0f..1f) {
             return failure("Invalid color scheme brightness: $brightness (must be 0.0..1.0)")
         }
         return Result.success(Unit)
     }
 
-    private fun validateFiniteWeight(value: Float, field: String = "weightPerCableKg"): Result<Unit> = if (isFinite(value)) Result.success(Unit) else failure("$field must be finite")
-
-    private fun isFinite(value: Float): Boolean = !value.isNaN() && !value.isInfinite()
+    private fun validateFiniteWeight(value: Float, field: String = "weightPerCableKg"): Result<Unit> = if (value.isFinite()) Result.success(Unit) else failure("$field must be finite")
 
     private fun validateWeightRange(weightPerCableKg: Float, allowZero: Boolean, maxWeightPerCableKg: Float): Result<Unit> {
         if (!allowZero && weightPerCableKg <= Constants.MIN_WEIGHT_KG) {

@@ -678,6 +678,46 @@ class ReleaseWorkflowContracts(unittest.TestCase):
                 else:
                     os.environ.pop("SUPABASE_ANON_KEY", None)
 
+    def test_workflows_do_not_run_repo_scripts_before_checkout_and_ipa_uses_pinned_ios_release(self) -> None:
+        for path in sorted(WORKFLOWS.glob("*.yml")):
+            text = path.read_text(encoding="utf-8")
+            jobs = re.findall(
+                r"(?ms)^  ([a-z][a-z0-9-]*):\n(.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)",
+                text,
+            )
+            self.assertTrue(jobs, f"No jobs parsed in {path.name}")
+            for job_name, job_body in jobs:
+                if "steps:" not in job_body:
+                    continue
+                pre_checkout = (
+                    job_body.split("actions/checkout@", 1)[0]
+                    if "actions/checkout@" in job_body
+                    else job_body
+                )
+                with self.subTest(workflow=path.name, job=job_name):
+                    self.assertNotIn(".github/scripts/", pre_checkout)
+                    self.assertNotIn("./.github/", pre_checkout)
+
+        ipa = workflow("ios-release-ipa.yml")
+        checkout_idx = ipa.index("uses: actions/checkout@")
+        fetch_idx = ipa.index(
+            "/${{ github.workflow_sha }}/.github/scripts/ios-release.py"
+        )
+        bump_idx = ipa.index('python3 "$RUNNER_TEMP/ios-release.py" bump-build-number')
+        legacy_idx = ipa.index('python3 "$RUNNER_TEMP/ios-release.py" install-legacy-framework')
+        signing_idx = ipa.index('python3 "$RUNNER_TEMP/ios-release.py" install-signing')
+        self.assertLess(checkout_idx, fetch_idx)
+        self.assertLess(fetch_idx, bump_idx)
+        self.assertLess(bump_idx, legacy_idx)
+        self.assertLess(legacy_idx, signing_idx)
+        # Every other reference to ios-release.py in ios-release-ipa.yml must go through
+        # $RUNNER_TEMP/ios-release.py so historical source_ref checkouts cannot fail.
+        ipa_without_fetch_url = ipa.replace(
+            "https://raw.githubusercontent.com/${{ github.repository }}/${{ github.workflow_sha }}/.github/scripts/ios-release.py",
+            "",
+        )
+        self.assertNotIn(".github/scripts/ios-release.py", ipa_without_fetch_url)
+
 
 if __name__ == "__main__":
     unittest.main()

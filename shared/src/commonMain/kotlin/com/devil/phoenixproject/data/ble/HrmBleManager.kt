@@ -319,18 +319,16 @@ class HrmBleManager(
         recordedSessionId = sessionId
         _lastRecordedSessionId.value = sessionId
         currentPhase = phase
-        sessionLock.withLock {
-            bufferedBeatSamples.clear()
-            bufferedEcgSegments.clear()
-            sessionHrs.clear()
-            sessionRrs.clear()
-            recentRrs.clear()
-            maxTorsoPitch = null
-            maxTorsoRoll = null
-            frozenSessionSummary = null
-            rawEcgStartMs = null
-            rawEcgSampleCount = 0
-        }
+        bufferedBeatSamples.clear()
+        bufferedEcgSegments.clear()
+        sessionHrs.clear()
+        sessionRrs.clear()
+        recentRrs.clear()
+        maxTorsoPitch = null
+        maxTorsoRoll = null
+        frozenSessionSummary = null
+        rawEcgStartMs = null
+        rawEcgSampleCount = 0
         lastBeatMonotonicMs = null
         lastHeartRateMonotonicMs = null
         endHeartRate = null
@@ -448,15 +446,13 @@ class HrmBleManager(
     fun discardActiveRecording(): Unit = sessionLock.withLock {
         val targetSessionId = activeSessionId ?: return
         if (_isCooldownActive.value) return
-        sessionLock.withLock {
-            bufferedBeatSamples.clear()
-            bufferedEcgSegments.clear()
-            sessionHrs.clear()
-            sessionRrs.clear()
-            recentRrs.clear()
-            maxTorsoPitch = null
-            maxTorsoRoll = null
-        }
+        bufferedBeatSamples.clear()
+        bufferedEcgSegments.clear()
+        sessionHrs.clear()
+        sessionRrs.clear()
+        recentRrs.clear()
+        maxTorsoPitch = null
+        maxTorsoRoll = null
         if (_lastRecordedSessionId.value == targetSessionId) {
             _lastRecordedSessionId.value = null
         }
@@ -551,14 +547,12 @@ class HrmBleManager(
             if (_isCooldownActive.value) stopCooldown()
             completedCooldownSessionIds.remove(targetSessionId)
         }
-        sessionLock.withLock {
-            if (frozenSessionSummary == null) frozenSessionSummary = getSessionSummary(targetSessionId)
-        }
+        if (frozenSessionSummary == null) frozenSessionSummary = getSessionSummary(targetSessionId)
         recordedSessionId = targetSessionId
         activeSessionId = targetSessionId
         _lastRecordedSessionId.value = targetSessionId
         _activeCooldownSessionId.value = targetSessionId
-        val lastHr = sessionLock.withLock { sessionHrs.lastOrNull() }
+        val lastHr = sessionHrs.lastOrNull()
         endHeartRate = _hrMeasurement.value?.hr ?: lastHr
         _cooldownStartHeartRate.value = endHeartRate
         currentPhase = "POST_WORKOUT_COOLDOWN"
@@ -613,20 +607,16 @@ class HrmBleManager(
 
     fun getSessionSummary(sessionId: String): HrmSessionSummary? = sessionLock.withLock {
         detachedRecordings[sessionId]?.let { return it.summary }
-        sessionLock.withLock {
-            frozenSessionSummary?.takeIf { it.sessionId == sessionId }?.let {
-                return it.copy(hrr60Bpm = hrr60, hrr300Bpm = hrr300)
-            }
+        frozenSessionSummary?.takeIf { it.sessionId == sessionId }?.let {
+            return it.copy(hrr60Bpm = hrr60, hrr300Bpm = hrr300)
         }
         if (sessionId != recordedSessionId) return null
-        val snapshot = sessionLock.withLock {
-            SessionSampleSnapshot(
-                hrs = sessionHrs.toList(),
-                rrs = sessionRrs.toList(),
-                maxPitch = maxTorsoPitch,
-                rollMax = maxTorsoRoll,
-            )
-        }
+        val snapshot = SessionSampleSnapshot(
+            hrs = sessionHrs.toList(),
+            rrs = sessionRrs.toList(),
+            maxPitch = maxTorsoPitch,
+            rollMax = maxTorsoRoll,
+        )
         val avgHr = if (snapshot.hrs.isNotEmpty()) snapshot.hrs.average().roundToInt() else null
         val maxHr = snapshot.hrs.maxOrNull()
         val minHr = snapshot.hrs.minOrNull()
@@ -1434,27 +1424,6 @@ class HrmBleManager(
         } else {
             updateCapability(gen) { it.copy(contact = parseContactReport(data)) }
         }
-        if (!measurement.contactDetected || measurement.hr <= 0 || isBatteryCritical()) {
-            log.w { "HRM strap removed, zero HR, or critical battery (contact=${measurement.contactDetected}, hr=${measurement.hr}, batt=${_batteryLevel.value}). Dropping telemetry." }
-            handleNoContact(measurement)
-            return
-        }
-
-        if (previousContactDetected != true) {
-            previousContactDetected = true
-            logRepo.debug(
-                eventType = LogEventType.DIAGNOSTIC,
-                message = "[HRM] Contact detected (contact: false -> true, hr=${measurement.hr})",
-                tag = "HRM",
-            )
-        }
-
-        _isContactDetected.value = true
-        contactLossJob?.cancel()
-        contactLossJob = null
-        lastValidPacketTimestampMs = monotonicClock()
-        _hrMeasurement.value = measurement
-
         processRrIntervals(measurement)
     }
 
@@ -1516,6 +1485,7 @@ class HrmBleManager(
             return
         }
         if (!measurement.contactDetected || measurement.hr <= 0 || isBatteryCritical()) {
+            log.w { "HRM strap removed, zero HR, or critical battery (contact=${measurement.contactDetected}, hr=${measurement.hr}, batt=${_batteryLevel.value}). Dropping telemetry." }
             handleNoContact(measurement)
             return
         }
@@ -1572,28 +1542,24 @@ class HrmBleManager(
 
             val currentSid = activeSessionId
             if (currentSid != null) {
-                val currentRmssd = sessionLock.withLock {
-                    if (frozenSessionSummary == null) {
-                        sessionRrs.add(beat.rrIntervalMs)
-                    }
-                    recentRrs.addLast(beat.rrIntervalMs)
-                    if (recentRrs.size > 30) recentRrs.removeFirst()
-                    HrmTelemetryUtils.calculateRmssdMs(recentRrs.toList())
+                if (frozenSessionSummary == null) {
+                    sessionRrs.add(beat.rrIntervalMs)
                 }
-                sessionLock.withLock {
-                    bufferedBeatSamples.add(
-                        BufferedBeatSample(
-                            timestampMs = beat.timestampMs,
-                            phase = currentPhase,
-                            hrBpm = beat.hr.toLong(),
-                            rrMs = beat.rrIntervalMs,
-                            rmssdMs = currentRmssd,
-                            torsoPitchDeg = _torsoPitchDeg.value,
-                            torsoRollDeg = _torsoRollDeg.value,
-                            dynamicAccMg = _dynamicAccMg.value?.toLong(),
-                        )
+                recentRrs.addLast(beat.rrIntervalMs)
+                if (recentRrs.size > 30) recentRrs.removeFirst()
+                val currentRmssd = HrmTelemetryUtils.calculateRmssdMs(recentRrs.toList())
+                bufferedBeatSamples.add(
+                    BufferedBeatSample(
+                        timestampMs = beat.timestampMs,
+                        phase = currentPhase,
+                        hrBpm = beat.hr.toLong(),
+                        rrMs = beat.rrIntervalMs,
+                        rmssdMs = currentRmssd,
+                        torsoPitchDeg = _torsoPitchDeg.value,
+                        torsoRollDeg = _torsoRollDeg.value,
+                        dynamicAccMg = _dynamicAccMg.value?.toLong(),
                     )
-                }
+                )
             }
         }
 
@@ -1728,21 +1694,19 @@ class HrmBleManager(
                 val currentSid = activeSessionId
                 if (currentSid != null && _isRawEcgStorageEnabled.value) {
                     val nowMs = wallClock()
-                    sessionLock.withLock {
-                        val startMs = rawEcgStartMs ?: monotonicClock().also { rawEcgStartMs = it }
-                        if (monotonicClock() - startMs >= MAX_RAW_ECG_DURATION_MS) return@withLock
-                        val retained = measurement.samplesMicrovolts.take(MAX_RAW_ECG_SAMPLES - rawEcgSampleCount)
-                        if (retained.isEmpty()) return@withLock
-                        rawEcgSampleCount += retained.size
-                        bufferedEcgSegments.add(
-                            BufferedEcgSegment(
-                                sensorTimestampNs = measurement.sensorTimestampNs,
-                                wallClockTimestampMs = nowMs,
-                                phase = currentPhase,
-                                samplesUvCsv = retained.joinToString(","),
-                            )
+                    val startMs = rawEcgStartMs ?: monotonicClock().also { rawEcgStartMs = it }
+                    if (monotonicClock() - startMs >= MAX_RAW_ECG_DURATION_MS) return@withLock
+                    val retained = measurement.samplesMicrovolts.take(MAX_RAW_ECG_SAMPLES - rawEcgSampleCount)
+                    if (retained.isEmpty()) return@withLock
+                    rawEcgSampleCount += retained.size
+                    bufferedEcgSegments.add(
+                        BufferedEcgSegment(
+                            sensorTimestampNs = measurement.sensorTimestampNs,
+                            wallClockTimestampMs = nowMs,
+                            phase = currentPhase,
+                            samplesUvCsv = retained.joinToString(","),
                         )
-                    }
+                    )
                 }
             }
             is PolarPmdMeasurement.Acc -> {
@@ -1764,20 +1728,18 @@ class HrmBleManager(
                     _torsoRollDeg.value = bio.rollDeg
                     _dynamicAccMg.value = bio.dynamicAccMg
                     if (activeSessionId != null && frozenSessionSummary == null) {
-                        sessionLock.withLock {
-                            if (maxTorsoPitch == null) {
+                        if (maxTorsoPitch == null) {
+                            maxTorsoPitch = bio.pitchDeg
+                        } else {
+                            val currentMax = maxTorsoPitch!!
+                            if (bio.pitchDeg > currentMax) {
                                 maxTorsoPitch = bio.pitchDeg
-                            } else {
-                                val currentMax = maxTorsoPitch!!
-                                if (bio.pitchDeg > currentMax) {
-                                    maxTorsoPitch = bio.pitchDeg
-                                } else if (currentMax <= 0.0 && abs(bio.pitchDeg) > abs(currentMax)) {
-                                    maxTorsoPitch = bio.pitchDeg
-                                }
+                            } else if (currentMax <= 0.0 && abs(bio.pitchDeg) > abs(currentMax)) {
+                                maxTorsoPitch = bio.pitchDeg
                             }
-                            if (maxTorsoRoll == null || abs(bio.rollDeg) > abs(maxTorsoRoll!!)) {
-                                maxTorsoRoll = bio.rollDeg
-                            }
+                        }
+                        if (maxTorsoRoll == null || abs(bio.rollDeg) > abs(maxTorsoRoll!!)) {
+                            maxTorsoRoll = bio.rollDeg
                         }
                     }
                 }

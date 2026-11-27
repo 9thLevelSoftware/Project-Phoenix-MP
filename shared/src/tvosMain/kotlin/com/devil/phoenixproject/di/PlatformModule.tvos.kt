@@ -1,19 +1,13 @@
 package com.devil.phoenixproject.di
 
 import co.touchlab.kermit.Logger
-import app.cash.sqldelight.db.SqlDriver
-import co.touchlab.sqliter.DatabaseFileContext
 import com.devil.phoenixproject.data.auth.OAuthLauncher
 import com.devil.phoenixproject.data.integration.HealthIntegration
 import com.devil.phoenixproject.data.integration.HealthWorkoutWriter
-import com.devil.phoenixproject.data.local.DatabaseFileNames
 import com.devil.phoenixproject.data.local.DriverFactory
-import com.devil.phoenixproject.data.local.legacyLibraryRootPath
 import com.devil.phoenixproject.data.repository.BleRepository
-
 import com.devil.phoenixproject.data.sync.SupabaseConfig
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
-import com.devil.phoenixproject.data.sync.resetSecureStorageOnFreshInstall
 import com.devil.phoenixproject.presentation.manager.NoOpWorkoutServiceController
 import com.devil.phoenixproject.presentation.manager.WorkoutServiceController
 import com.devil.phoenixproject.presentation.tv.offlineSyncTriggerManager
@@ -28,23 +22,7 @@ import com.russhwolf.settings.Settings
 import org.koin.core.module.Module
 import org.koin.dsl.module
 import platform.Foundation.NSBundle
-import platform.Foundation.NSFileManager
 import platform.Foundation.NSUserDefaults
-
-private const val KEYCHAIN_SERVICE_NAME = "com.devil.phoenixproject.auth"
-private const val INSTALL_MARKER_KEY = "phoenix_install_marker"
-
-private val portalKeys = listOf(
-    "portal_auth_token",
-    "portal_refresh_token",
-    "portal_token_expires_at",
-    "portal_user_id",
-    "portal_user_email",
-    "portal_user_display_name",
-    "portal_user_is_premium",
-    "portal_device_id",
-    "portal_last_sync_timestamp",
-)
 
 actual val platformModule: Module = module {
     clearKeychainOnFreshInstall()
@@ -66,7 +44,6 @@ actual val platformModule: Module = module {
     single<Settings>(SecureSettingsQualifier) {
         val secure = KeychainSettings(service = KEYCHAIN_SERVICE_NAME)
         migrateTokensToKeychain(get(), secure)
-        purgeRetiredDirectExportSecrets(secure)
         secure
     }
     single { OAuthLauncher() }
@@ -117,58 +94,5 @@ actual val platformModule: Module = module {
             profileRecoveryActivityTracker = get(),
             recentJustLiftExerciseStore = get(),
         )
-    }
-}
-
-@OptIn(ExperimentalSettingsImplementation::class)
-private fun clearKeychainOnFreshInstall() {
-    val defaults = NSUserDefaults.standardUserDefaults
-    try {
-        val cleared = resetSecureStorageOnFreshInstall(
-            hasInstallMarker = { defaults.boolForKey(INSTALL_MARKER_KEY) },
-            localDatabaseExists = ::anyLocalDatabaseExists,
-            clearSecureStorage = { KeychainSettings(service = KEYCHAIN_SERVICE_NAME).clear() },
-            setInstallMarker = { defaults.setBool(true, forKey = INSTALL_MARKER_KEY) },
-        )
-        if (cleared) Logger.i { "Fresh install: cleared auth Keychain left by a previous install" }
-    } catch (failure: Exception) {
-        // A Keychain capability can be absent in unsigned simulator builds. Never let that
-        // prevent startup; signed distribution builds still exercise the secure reset path.
-        Logger.e(failure) { "Fresh-install Keychain check failed" }
-    }
-}
-
-private fun anyLocalDatabaseExists(): Boolean {
-    val fileManager = NSFileManager.defaultManager
-    val databasePaths = listOf(
-        DatabaseFileNames.TARGET,
-        DatabaseFileNames.LEGACY,
-        DatabaseFileNames.STAGING,
-        DatabaseFileNames.RECOVERY,
-    ).map { DatabaseFileContext.databasePath(it, null) }
-    return (databasePaths + legacyLibraryRootPath()).any(fileManager::fileExistsAtPath)
-}
-
-@OptIn(ExperimentalSettingsImplementation::class)
-private fun migrateTokensToKeychain(legacy: Settings, secure: Settings) {
-    if (portalKeys.none { key ->
-            legacy.getStringOrNull(key) != null ||
-                legacy.getLongOrNull(key) != null ||
-                legacy.getBooleanOrNull(key) != null
-        }
-    ) return
-
-    try {
-        for (key in portalKeys) {
-            if (secure.getStringOrNull(key) != null || secure.getLongOrNull(key) != null ||
-                secure.getBooleanOrNull(key) != null
-            ) continue
-            legacy.getStringOrNull(key)?.let { secure.putString(key, it) }
-            legacy.getLongOrNull(key)?.let { secure.putLong(key, it) }
-            legacy.getBooleanOrNull(key)?.let { secure.putBoolean(key, it) }
-        }
-        portalKeys.forEach(legacy::remove)
-    } catch (failure: Exception) {
-        Logger.e(failure) { "Failed to migrate portal keys to Keychain" }
     }
 }

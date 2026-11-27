@@ -24,6 +24,7 @@ import com.devil.phoenixproject.domain.model.toWorkoutMode
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineScalingBaselineUseCase
 import com.devil.phoenixproject.domain.usecase.RoutineScalingBaseline
 import com.devil.phoenixproject.util.rethrowIfCancellation
+import com.devil.phoenixproject.util.roundToHalfKg
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -797,8 +798,6 @@ class ExerciseConfigViewModel constructor(
             WarmupSet(reps = 4, percentOfWorking = 85),
         )
     }
-
-    private fun Float.roundToHalfKg(): Float = (this * 2).roundToInt() / 2f
 
     private fun normalizeSetWeightPercentages(source: List<Int>, setCount: Int, fallbackPercent: Int): List<Int> {
         if (setCount <= 0) return emptyList()

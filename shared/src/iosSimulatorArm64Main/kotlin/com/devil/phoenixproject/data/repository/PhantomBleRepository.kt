@@ -6,7 +6,6 @@ import com.devil.phoenixproject.data.ble.parseDiagnosticPacket
 import com.devil.phoenixproject.data.ble.parseHeuristicPacket
 import com.devil.phoenixproject.data.ble.parseMonitorPacket
 import com.devil.phoenixproject.data.ble.parseRepPacket
-import com.devil.phoenixproject.data.ble.toPhoenixHex
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.HeuristicPhaseStatistics
 import com.devil.phoenixproject.domain.model.HeuristicStatistics
@@ -854,7 +853,7 @@ class PhantomBleRepository(
                         "Phantom raw ${kind.name.lowercase()} packet rejected",
                         PHANTOM_DEVICE_NAME,
                         PHANTOM_DEVICE_ADDRESS,
-                        "${error.message}; hex=${data.joinToString(" ") { it.toPhoenixHex() }}",
+                        "${error.message}; hex=${data.joinToString(" ") { it.toHexString(HexFormat.UpperCase) }}",
                     )
                 }
             }
@@ -901,7 +900,7 @@ class PhantomBleRepository(
                 "Phantom injected raw monitor packet",
                 PHANTOM_DEVICE_NAME,
                 PHANTOM_DEVICE_ADDRESS,
-                "ticks=${metric.ticks}; load=${metric.totalLoad}; posA=${metric.positionA}; hex=${data.joinToString(" ") { it.toPhoenixHex() }}",
+                "ticks=${metric.ticks}; load=${metric.totalLoad}; posA=${metric.positionA}; hex=${data.joinToString(" ") { it.toHexString(HexFormat.UpperCase) }}",
             )
         }
     }
@@ -942,7 +941,7 @@ class PhantomBleRepository(
                 "Phantom injected raw rep packet",
                 PHANTOM_DEVICE_NAME,
                 PHANTOM_DEVICE_ADDRESS,
-                "top=${rep.topCounter}; complete=${rep.completeCounter}; legacy=${rep.isLegacyFormat}; hex=${data.joinToString(" ") { it.toPhoenixHex() }}",
+                "top=${rep.topCounter}; complete=${rep.completeCounter}; legacy=${rep.isLegacyFormat}; hex=${data.joinToString(" ") { it.toHexString(HexFormat.UpperCase) }}",
             )
         }
     }
@@ -979,7 +978,7 @@ class PhantomBleRepository(
                 "Phantom injected raw diagnostic packet",
                 PHANTOM_DEVICE_NAME,
                 PHANTOM_DEVICE_ADDRESS,
-                "faults=${diagnostic.faultWords}; temps=${diagnostic.temperatures}; hex=${data.joinToString(" ") { it.toPhoenixHex() }}",
+                "faults=${diagnostic.faultWords}; temps=${diagnostic.temperatures}; hex=${data.joinToString(" ") { it.toHexString(HexFormat.UpperCase) }}",
             )
         }
     }
@@ -1016,7 +1015,7 @@ class PhantomBleRepository(
                 "Phantom injected raw heuristic packet",
                 PHANTOM_DEVICE_NAME,
                 PHANTOM_DEVICE_ADDRESS,
-                "conKgAvg=${heuristic.concentric.kgAvg}; eccKgAvg=${heuristic.eccentric.kgAvg}; hex=${data.joinToString(" ") { it.toPhoenixHex() }}",
+                "conKgAvg=${heuristic.concentric.kgAvg}; eccKgAvg=${heuristic.eccentric.kgAvg}; hex=${data.joinToString(" ") { it.toHexString(HexFormat.UpperCase) }}",
             )
         }
     }

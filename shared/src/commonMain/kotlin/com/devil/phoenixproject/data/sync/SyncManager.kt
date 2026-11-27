@@ -2408,9 +2408,7 @@ class SyncManager(
         val sessionNotesByPortalId = workoutSnapshot.sessionNotesByPortalId
         val portalSessions = buildResult.sessions.map { session ->
             val notes = sessionNotesByPortalId[session.id] ?: return@map session
-            val sessionUpdatedAt = session.updatedAt
-                ?.let { runCatching { kotlin.time.Instant.parse(it).toEpochMilliseconds() }.getOrNull() }
-                ?: 0L
+            val sessionUpdatedAt = parseIso8601EpochMillis(session.updatedAt) ?: 0L
             session.copy(
                 notes = notes.notes,
                 updatedAt = kotlin.time.Instant.fromEpochMilliseconds(
@@ -3255,9 +3253,7 @@ class SyncManager(
         rejections.forEach { (cycleId, rejection) ->
             if (cycleId !in sentCycleIds) return@forEach
             val rejectedComponent = sentComponentsById[cycleId] ?: return@forEach
-            val rejectedAt = rejection.serverUpdatedAt
-                ?.let { runCatching { kotlin.time.Instant.parse(it).toEpochMilliseconds() }.getOrNull() }
-                ?: currentTimeMillis()
+            val rejectedAt = parseIso8601EpochMillis(rejection.serverUpdatedAt) ?: currentTimeMillis()
             trainingCycleRepository?.saveRejectedCycleDraft(rejectedComponent, rejectedAt)
         }
     }
@@ -3313,9 +3309,7 @@ class SyncManager(
             // M2: grouped sessions only. See the KDoc above for why a standalone
             // re-push erases its web note.
             if (dto.routineSessionId.isNullOrBlank()) return@mapNotNull null
-            val serverMillis = rejection.serverUpdatedAt
-                ?.let { iso -> runCatching { kotlin.time.Instant.parse(iso).toEpochMilliseconds() }.getOrNull() }
-                ?: return@mapNotNull null
+            val serverMillis = parseIso8601EpochMillis(rejection.serverUpdatedAt) ?: return@mapNotNull null
             dto to serverMillis
         }
         if (unchangedContent.isNotEmpty()) {
@@ -4477,10 +4471,7 @@ class SyncManager(
         // Each portal session's updatedAt applies to all child mobile rows.
         val sessionUpdatedAtById: Map<String, Long> = pullResponse.sessions
             .flatMap { ps ->
-                val ts = ps.updatedAt?.let { iso ->
-                    runCatching { kotlin.time.Instant.parse(iso).toEpochMilliseconds() }
-                        .getOrNull()
-                } ?: 0L
+                val ts = parseIso8601EpochMillis(ps.updatedAt) ?: 0L
                 ps.exercises.map { ex -> ex.id to ts }
             }
             .toMap()

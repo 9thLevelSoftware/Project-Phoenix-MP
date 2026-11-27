@@ -137,6 +137,8 @@ fun HistoryTab(
     // M8: Hoist koinInject calls to parent composable scope (outside LazyColumn items).
     // Calling koinInject inside lazy item lambdas can cause stale scope issues during recomposition.
     val repMetricRepository: RepMetricRepository = koinInject()
+    val completedSetRepository: CompletedSetRepository = koinInject()
+    val biomechanicsRepository: BiomechanicsRepository = koinInject()
 
     var selectedPeriod by remember { mutableStateOf(HistoryTimePeriod.ALL) }
 
@@ -237,6 +239,8 @@ fun HistoryTab(
                                 kgToDisplay = kgToDisplay,
                                 exerciseRepository = exerciseRepository,
                                 repMetricRepository = repMetricRepository,
+                                completedSetRepository = completedSetRepository,
+                                biomechanicsRepository = biomechanicsRepository,
                                 onTagJustLiftSessionExercise = onTagJustLiftSessionExercise,
                                 onClearJustLiftSessionExercise = onClearJustLiftSessionExercise,
                                 recentJustLiftExerciseIds = recentJustLiftExerciseIds,
@@ -255,6 +259,8 @@ fun HistoryTab(
                                 kgToDisplay = kgToDisplay,
                                 exerciseRepository = exerciseRepository,
                                 repMetricRepository = repMetricRepository,
+                                completedSetRepository = completedSetRepository,
+                                biomechanicsRepository = biomechanicsRepository,
                                 onTagJustLiftSessionExercise = onTagJustLiftSessionExercise,
                                 onClearJustLiftSessionExercise = onClearJustLiftSessionExercise,
                                 recentJustLiftExerciseIds = recentJustLiftExerciseIds,
@@ -286,6 +292,8 @@ internal fun WorkoutHistoryCard(
     kgToDisplay: (Float, WeightUnit) -> Float,
     exerciseRepository: com.devil.phoenixproject.data.repository.ExerciseRepository,
     repMetricRepository: RepMetricRepository,
+    completedSetRepository: CompletedSetRepository? = null,
+    biomechanicsRepository: BiomechanicsRepository? = null,
     onTagJustLiftSessionExercise: suspend (String, Exercise, Boolean) -> Unit = { _, _, _ -> },
     onClearJustLiftSessionExercise: suspend (String) -> Unit = {},
     recentJustLiftExerciseIds: List<String> = emptyList(),
@@ -573,6 +581,7 @@ internal fun WorkoutHistoryCard(
                     CompletedSetsSection(
                         session = session,
                         weightUnit = weightUnit,
+                        completedSetRepository = completedSetRepository,
                     )
 
                     // Rep Details Section
@@ -584,7 +593,10 @@ internal fun WorkoutHistoryCard(
                     )
 
                     // Biomechanics Section (v0.5.0+, tier-gated)
-                    BiomechanicsSection(session = session)
+                    BiomechanicsSection(
+                        session = session,
+                        biomechanicsRepository = biomechanicsRepository,
+                    )
 
                     // HRM Cardiac & Biomechanics Telemetry Section
                     SessionHeartRateCard(
@@ -696,8 +708,9 @@ internal fun WorkoutHistoryCard(
 private fun CompletedSetsSection(
     session: WorkoutSession,
     weightUnit: WeightUnit,
+    completedSetRepository: CompletedSetRepository?,
 ) {
-    val completedSetRepository: CompletedSetRepository = koinInject()
+    if (completedSetRepository == null) return
     var completedSets by remember { mutableStateOf<List<CompletedSet>>(emptyList()) }
 
     LaunchedEffect(session.id) {
@@ -856,6 +869,8 @@ internal fun GroupedRoutineCard(
     kgToDisplay: (Float, WeightUnit) -> Float,
     exerciseRepository: com.devil.phoenixproject.data.repository.ExerciseRepository,
     repMetricRepository: RepMetricRepository,
+    completedSetRepository: CompletedSetRepository? = null,
+    biomechanicsRepository: BiomechanicsRepository? = null,
     onTagJustLiftSessionExercise: suspend (String, Exercise, Boolean) -> Unit = { _, _, _ -> },
     onClearJustLiftSessionExercise: suspend (String) -> Unit = {},
     recentJustLiftExerciseIds: List<String> = emptyList(),
@@ -1205,6 +1220,7 @@ internal fun GroupedRoutineCard(
                         CompletedSetsSection(
                             session = session,
                             weightUnit = weightUnit,
+                            completedSetRepository = completedSetRepository,
                         )
 
                         // Rep Details Section per session
@@ -1216,7 +1232,10 @@ internal fun GroupedRoutineCard(
                         )
 
                         // Biomechanics Section per session (v0.5.0+, tier-gated)
-                        BiomechanicsSection(session = session)
+                        BiomechanicsSection(
+                            session = session,
+                            biomechanicsRepository = biomechanicsRepository,
+                        )
 
                         if (index < groupedItem.sessions.size - 1) {
                             Spacer(modifier = Modifier.height(Spacing.medium))
@@ -1423,7 +1442,10 @@ private fun WorkoutSession.decodeRackSnapshotItems(): List<RackItem> {
  * to avoid deserializing 101-point force curves for every session in the list.
  */
 @Composable
-private fun BiomechanicsSection(session: WorkoutSession) {
+private fun BiomechanicsSection(
+    session: WorkoutSession,
+    biomechanicsRepository: BiomechanicsRepository?,
+) {
     // Only show for sessions that have biomechanics data (v0.5.0+)
     if (!session.hasBiomechanicsData) return
 
@@ -1448,14 +1470,13 @@ private fun BiomechanicsSection(session: WorkoutSession) {
         enter = if (reduceMotion) EnterTransition.None else expandVertically(animationSpec = ExpressiveMotion.SpringDefaultIntSize),
         exit = if (reduceMotion) ExitTransition.None else shrinkVertically(animationSpec = ExpressiveMotion.SpringDefaultIntSize),
     ) {
-        val biomechanicsRepository: BiomechanicsRepository = koinInject()
         var repBiomechanics by remember { mutableStateOf<List<BiomechanicsRepResult>>(emptyList()) }
         var isLoadingBiomechanics by remember { mutableStateOf(true) }
 
-        LaunchedEffect(session.id) {
+        LaunchedEffect(session.id, biomechanicsRepository) {
             isLoadingBiomechanics = true
             try {
-                repBiomechanics = biomechanicsRepository.getRepBiomechanics(session.id)
+                repBiomechanics = biomechanicsRepository?.getRepBiomechanics(session.id).orEmpty()
             } catch (e: Exception) {
                 e.rethrowIfCancellation()
                 co.touchlab.kermit.Logger.e("HistoryTab") { "Failed to load biomechanics for session ${session.id}: ${e.message}" }

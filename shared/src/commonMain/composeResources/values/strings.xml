@@ -273,7 +273,6 @@
     <string name="label_bodyweight">Bodyweight</string>
     <string name="label_equipment">Equipment</string>
     <string name="delete_exercise_title">Delete Exercise?</string>
-    <string name="delete_exercise_message">Are you sure you want to delete \"%1$s\"? This action cannot be undone.</string>
 
     <!-- ==================== Exercise Detail ==================== -->
 
@@ -564,7 +563,6 @@
     <!-- Settings / Preferences -->
     <string name="cd_settings">Settings</string>
     <string name="cd_appearance">Appearance settings</string>
-    <string name="cd_dynamic_color">Material You dynamic color setting</string>
     <string name="cd_developer_tools">Developer Tools</string>
     <string name="cd_app_info">App information</string>
     <string name="cd_support_developer">Support the developer</string>
@@ -959,7 +957,6 @@
     <string name="settings_weight_text_size_standard">Standard</string>
     <string name="settings_weight_text_size_large">Large</string>
     <string name="settings_weight_text_size_extra_large">Extra large</string>
-    <string name="cd_weight_text_size">Workout control size</string>
     <!-- Issue #1358: custom-exercise photos (Phase 1) -->
     <string name="media_photos_count">Photos · %1$d of %2$d</string>
     <string name="media_add_photos">Add photos</string>
@@ -986,7 +983,6 @@
     <string name="media_save_media_failed">Exercise saved; photos could not be saved. Retry adding photos.</string>
     <string name="media_save_busy">Photos are still being added. Wait for the selection to finish, then save.</string>
     <string name="media_cleanup_pending">Some local copies couldn't be removed. Phoenix will retry cleanup.</string>
-    <string name="media_delete_cleanup_transient">Exercise deleted. Cleaning up local photos…</string>
     <string name="media_save_failed">Could not save the exercise. Try again.</string>
     <string name="media_delete_failed">Could not delete the exercise. Try again.</string>
     <string name="delete_exercise_media_message">Delete this exercise and its attached photos? Your originals stay unchanged.</string>

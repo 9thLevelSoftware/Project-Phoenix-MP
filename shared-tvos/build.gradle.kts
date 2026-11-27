@@ -112,6 +112,7 @@ kotlin {
             dependsOn(commonMain)
             tvosArm64Main.dependsOn(this)
             tvosSimulatorArm64Main.dependsOn(this)
+            kotlin.srcDir("../shared/src/appleDarwinMain/kotlin")
             kotlin.srcDir("../shared/src/tvosMain/kotlin")
             dependencies {
                 implementation(libs.sqldelight.native.driver)

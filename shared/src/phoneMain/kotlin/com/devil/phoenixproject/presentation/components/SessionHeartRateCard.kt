@@ -141,8 +141,6 @@ fun SessionHeartRateCard(
     val resolvedSessionId = sessionId ?: session?.id ?: if (showCooldown) {
         activeCooldownSessionId
             ?: lastRecordedSessionId
-            ?: sessionId
-            ?: session?.id
             ?: hrmBleManager?.currentRecordingSessionId
             ?: latestSummary?.sessionId
     } else null

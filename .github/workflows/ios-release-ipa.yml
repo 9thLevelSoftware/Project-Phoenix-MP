@@ -67,6 +67,18 @@ jobs:
         with:
           ref: ${{ inputs.source_ref || github.ref }}
 
+      # This workflow may build a historical tag, whose checkout predates the helper.
+      # Fetch it from the immutable workflow revision rather than the build checkout.
+      - name: Fetch pinned iOS release helper
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            "https://raw.githubusercontent.com/${{ github.repository }}/${{ github.workflow_sha }}/.github/scripts/ios-release.py" \
+            --output "$RUNNER_TEMP/ios-release.py"
+          python3 -m py_compile "$RUNNER_TEMP/ios-release.py"
+
       - name: Write Supabase.xcconfig from secrets
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -106,16 +118,9 @@ jobs:
       - name: Generate build number
         id: build_number
         run: |
-          BUILD_NUM=$(date +%Y%m%d)${{ github.run_number }}
-          echo "build_number=$BUILD_NUM" >> $GITHUB_OUTPUT
-          echo "Build number: $BUILD_NUM"
-
-          # Update Xcode project with new build number
-          sed -i '' "s/CURRENT_PROJECT_VERSION = [0-9][0-9]*/CURRENT_PROJECT_VERSION = $BUILD_NUM/g" \
-            iosApp/PhoenixApp/PhoenixApp.xcodeproj/project.pbxproj
-
-          # Show what was set
-          grep "CURRENT_PROJECT_VERSION" iosApp/PhoenixApp/PhoenixApp.xcodeproj/project.pbxproj | head -2
+          python3 "$RUNNER_TEMP/ios-release.py" bump-build-number \
+            --run-number "${{ github.run_number }}" \
+            --pbxproj "$PROJECT_PATH/project.pbxproj"
 
       # Compose Multiplatform 1.11 links UIKit symbols from the iOS 26 SDK.
       # Gradle/Kotlin Native and xcodebuild must use that same SDK.
@@ -153,22 +158,10 @@ jobs:
 
       - name: Install shared.framework for Xcode
         run: |
-          # Debug and Release both link shared/build/bin/iosArm64/xcodeFramework.
-          # Copy the release bundle there. The Xcode project does not link an
-          # XCFramework, and it does not read debugFramework at archive time.
-          #
-          # Release All (Existing) runs this workflow from main against an older
-          # tag's checkout. Tags before xcodeFramework (v1.0.3 and earlier) have no
-          # install script and link debugFramework, so give them a real copy there.
-          if grep -q 'iosArm64/xcodeFramework' iosApp/PhoenixApp/PhoenixApp.xcodeproj/project.pbxproj; then
+          if grep -q 'iosArm64/xcodeFramework' "$PROJECT_PATH/project.pbxproj"; then
             iosApp/install-xcode-framework.sh release
           else
-            echo "Checkout predates xcodeFramework; installing the release bundle at debugFramework"
-            LEGACY_DEST=shared/build/bin/iosArm64/debugFramework/shared.framework
-            rm -rf "$LEGACY_DEST"
-            mkdir -p "$LEGACY_DEST"
-            cp -R shared/build/bin/iosArm64/releaseFramework/shared.framework/. "$LEGACY_DEST"/
-            test -s "$LEGACY_DEST/shared"
+            python3 "$RUNNER_TEMP/ios-release.py" install-legacy-framework
           fi
 
       - name: Install certificate and profile
@@ -177,23 +170,7 @@ jobs:
           P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
           PROVISION_PROFILE_BASE64: ${{ secrets.PROVISION_PROFILE_BASE64 }}
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
-        run: |
-          CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
-          PP_PATH=$RUNNER_TEMP/build_pp.mobileprovision
-          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
-
-          echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o $CERTIFICATE_PATH
-          echo -n "$PROVISION_PROFILE_BASE64" | base64 --decode -o $PP_PATH
-
-          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          security import $CERTIFICATE_PATH -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
-          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          security list-keychain -d user -s $KEYCHAIN_PATH
-
-          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
-          cp $PP_PATH ~/Library/MobileDevice/Provisioning\ Profiles
+        run: python3 "$RUNNER_TEMP/ios-release.py" install-signing
 
       - name: Archive app
         run: |

@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.platform
 
+import com.devil.phoenixproject.testutil.findProjectRoot
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertNotNull
@@ -15,7 +16,7 @@ class TvosPhoneSourceSetIsolationTest {
             "presentation/screen/RoutineEditorScreen.kt",
         )
 
-        val project = projectRoot()
+        val project = findProjectRoot()
         for (relative in phoneOnlySources) {
             val commonPath = "shared/src/commonMain/kotlin/com/devil/phoenixproject/$relative"
             val phonePath = "shared/src/phoneMain/kotlin/com/devil/phoenixproject/$relative"
@@ -26,7 +27,7 @@ class TvosPhoneSourceSetIsolationTest {
 
     @Test
     fun `phone-only animation and reorderable libraries are scoped to phoneMain`() {
-        val gradle = projectRoot().resolve("shared/build.gradle.kts").readText()
+        val gradle = findProjectRoot().resolve("shared/build.gradle.kts").readText()
         val commonMain = blockFrom(gradle, "val commonMain by getting")
         val phoneMain = blockFrom(gradle, "val phoneMain by creating")
 
@@ -38,7 +39,7 @@ class TvosPhoneSourceSetIsolationTest {
 
     @Test
     fun `phone compose resources stay in the resource source set`() {
-        val resources = projectRoot().resolve("shared/src/commonMain/composeResources")
+        val resources = findProjectRoot().resolve("shared/src/commonMain/composeResources")
         for (relative in listOf(
             "values/strings.xml",
             "files/exercises.json",
@@ -61,16 +62,5 @@ class TvosPhoneSourceSetIsolationTest {
             }
         }
         error("Unterminated block $marker")
-    }
-
-    private fun projectRoot(): File {
-        var directory: File? = File(".").absoluteFile
-        repeat(8) {
-            directory?.let { current ->
-                if (File(current, "settings.gradle.kts").isFile) return current
-                directory = current.parentFile
-            }
-        }
-        error("Could not locate the project root from ${File(".").absolutePath}")
     }
 }

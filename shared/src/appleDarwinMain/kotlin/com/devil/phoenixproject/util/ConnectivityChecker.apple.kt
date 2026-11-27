@@ -20,7 +20,7 @@ import platform.darwin.dispatch_time
 private const val INITIAL_PATH_TIMEOUT_NS = 200_000_000L // 200 ms
 
 /**
- * tvOS connectivity checker backed by Network.framework's NWPathMonitor.
+ * Apple Darwin connectivity checker backed by Network.framework's NWPathMonitor.
  *
  * The monitor observes system network path changes on a background dispatch queue
  * and updates [isConnected] atomically. On the very first [isOnline] call before

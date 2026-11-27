@@ -11,3 +11,21 @@ package com.devil.phoenixproject.testutil
  * a useful assertion message with the candidate paths it tried.
  */
 expect fun readProjectFile(relativePath: String): String?
+
+internal fun extractFunctionBody(source: String, signature: String): String {
+    val start = source.indexOf(signature)
+    check(start >= 0) { "Missing `$signature`" }
+    val openBrace = source.indexOf('{', start)
+    check(openBrace >= 0) { "Missing body for `$signature`" }
+    var depth = 0
+    for (index in openBrace until source.length) {
+        when (source[index]) {
+            '{' -> depth += 1
+            '}' -> {
+                depth -= 1
+                if (depth == 0) return source.substring(openBrace, index + 1)
+            }
+        }
+    }
+    error("Unclosed body for `$signature`")
+}

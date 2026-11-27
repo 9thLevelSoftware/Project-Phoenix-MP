@@ -525,25 +525,32 @@ class SqlDelightSyncRepository(
         if (stats == null) return
 
         withContext(Dispatchers.IO) {
-            val now = currentTimeMillis()
-            val existing = queries.selectGamificationStats(profileId = profileId).executeAsOneOrNull()
-
-            queries.upsertGamificationStats(
-                totalWorkouts = stats.totalWorkouts.toLong(),
-                totalReps = stats.totalReps.toLong(),
-                // Round (not truncate) to minimise systematic bias; column is INTEGER in schema.
-                totalVolumeKg = stats.totalVolumeKg.toDouble().roundToLong(),
-                longestStreak = stats.longestStreak.toLong(),
-                currentStreak = stats.currentStreak.toLong(),
-                uniqueExercisesUsed = existing?.uniqueExercisesUsed ?: 0L,
-                prsAchieved = existing?.prsAchieved ?: 0L,
-                lastWorkoutDate = existing?.lastWorkoutDate,
-                streakStartDate = existing?.streakStartDate,
-                lastUpdated = now,
-                profileId = profileId,
-            )
+            upsertGamificationStatsInTransaction(stats, profileId)
             Logger.d { "Merged gamification stats from server (profile=$profileId)" }
         }
+    }
+
+    private fun upsertGamificationStatsInTransaction(
+        stats: GamificationStatsSyncDto,
+        profileId: String,
+    ) {
+        val now = currentTimeMillis()
+        val existing = queries.selectGamificationStats(profileId = profileId).executeAsOneOrNull()
+
+        queries.upsertGamificationStats(
+            totalWorkouts = stats.totalWorkouts.toLong(),
+            totalReps = stats.totalReps.toLong(),
+            // Round (not truncate) to minimise systematic bias; column is INTEGER in schema.
+            totalVolumeKg = stats.totalVolumeKg.toDouble().roundToLong(),
+            longestStreak = stats.longestStreak.toLong(),
+            currentStreak = stats.currentStreak.toLong(),
+            uniqueExercisesUsed = existing?.uniqueExercisesUsed ?: 0L,
+            prsAchieved = existing?.prsAchieved ?: 0L,
+            lastWorkoutDate = existing?.lastWorkoutDate,
+            streakStartDate = existing?.streakStartDate,
+            lastUpdated = now,
+            profileId = profileId,
+        )
     }
 
     // === Portal Pull Operations (merge portal data) ===
@@ -601,130 +608,13 @@ class SqlDelightSyncRepository(
                 var invalidCycleVersions = 0
 
                 for (portalCycle in cycles) {
-                    // Snapshot existing days before replacement so a lossy null pull can preserve
-                    // a valid local-only template association by day number.
-                    val existing = queries.selectTrainingCycleById(portalCycle.id).executeAsOneOrNull()
-                    val incomingUpdatedAt = portalCycle.updatedAt?.let { raw ->
-                        PortalSyncAdapter.validCycleServerVersion(raw)
-                            ?.let { kotlin.time.Instant.parse(it).toEpochMilliseconds() }
-                    }
-                    if (existing != null && (
-                        incomingUpdatedAt == null ||
-                            incomingUpdatedAt < existing.updatedAt ||
-                            (existing.deletedAt != null && incomingUpdatedAt <= existing.updatedAt)
-                        )
-                    ) {
-                        continue
-                    }
-                    if (portalCycle.status == "active") {
-                        portalActiveCycleId = portalCycle.id
-                    }
-                    val existingDays = existing?.let {
-                        queries.selectCycleDaysByCycle(portalCycle.id).executeAsList()
-                    } ?: emptyList()
-
-                    captureCycleConflictDraftIfNeeded(
-                        existing = existing,
-                        existingDays = existingDays,
-                        incomingUpdatedAt = incomingUpdatedAt,
-                    )
-
-                    // Upsert cycle (INSERT OR IGNORE — keeps local if exists)
-                    queries.insertTrainingCycleIgnore(
-                        id = portalCycle.id,
-                        name = portalCycle.name,
-                        description = portalCycle.description,
-                        created_at = currentTimeMillis(),
-                        is_active = 0L, // Don't set active yet - enforce single-active at end
-                        profile_id = profileId,
-                        template_id = portalCycle.templateId,
-                        week_number = portalCycle.currentWeek?.toLong() ?: 1L,
-                        updatedAt = incomingUpdatedAt ?: 0L,
-                    )
-                    queries.insertCycleSyncStateIfAbsent(
-                        cycleId = portalCycle.id,
+                    mergePortalCycleInTransaction(
+                        portalCycle = portalCycle,
                         profileId = profileId,
                         accountId = null,
-                        dirtyGeneration = 0L,
-                        acknowledgedGeneration = 0L,
-                        pendingDeleteUpdatedAt = null,
-                        pendingDeleteGeneration = null,
+                        onActiveCycle = { portalActiveCycleId = portalCycle.id },
+                        onInvalidVersion = { invalidCycleVersions++ },
                     )
-
-                    // For pre-existing cycles only: update metadata (but NOT is_active - enforce single-active at end).
-                    // Newly-inserted rows already have the correct values from insertTrainingCycleIgnore above.
-                    if (existing != null) {
-                        val mergedTemplateId = portalCycle.templateId ?: existing.template_id
-                        val mergedWeekNumber = portalCycle.currentWeek?.toLong() ?: existing.week_number
-                        val serverUpdatedAtMs = requireNotNull(incomingUpdatedAt)
-                        if (existing.deletedAt != null && serverUpdatedAtMs > existing.updatedAt) {
-                            queries.updateTrainingCycleClearingDelete(
-                                name = portalCycle.name,
-                                description = portalCycle.description,
-                                is_active = existing.is_active, // Preserve; single-active enforcement runs at end
-                                template_id = mergedTemplateId,
-                                week_number = mergedWeekNumber,
-                                updatedAt = serverUpdatedAtMs,
-                                id = portalCycle.id,
-                            )
-                            queries.clearCyclePendingDeletion(cycleId = portalCycle.id)
-                        } else {
-                            queries.updateTrainingCycle(
-                                name = portalCycle.name,
-                                description = portalCycle.description,
-                                is_active = existing.is_active, // Preserve; single-active enforcement runs at end
-                                template_id = mergedTemplateId,
-                                week_number = mergedWeekNumber,
-                                updatedAt = serverUpdatedAtMs,
-                                id = portalCycle.id,
-                            )
-                        }
-                    }
-                    // Remember the portal's version verbatim (sent back as baseUpdatedAt).
-                    // Keep the stored base when an older portal omits updatedAt or sends
-                    // a malformed one.
-                    portalCycle.updatedAt?.let { raw ->
-                        val version = PortalSyncAdapter.validCycleServerVersion(raw)
-                        if (version != null) {
-                            queries.updateTrainingCycleServerUpdatedAt(server_updated_at = version, id = portalCycle.id)
-                        } else {
-                            invalidCycleVersions++
-                        }
-                    }
-
-                    // Bulk delete existing days, reinsert from portal (same pattern as edge function)
-                    queries.deleteCycleDaysByCycle(portalCycle.id)
-
-                    for (day in portalCycle.days) {
-                        val existingDay = existingDays.firstOrNull { it.id == day.id }
-                            ?: existingDays.firstOrNull { it.day_number == day.dayNumber.toLong() }
-                        queries.insertCycleDayIgnore(
-                            id = day.id,
-                            cycle_id = day.cycleId.ifEmpty { portalCycle.id },
-                            day_number = day.dayNumber.toLong(),
-                            name = day.notes,
-                            routine_id = preservedTemplateCycleRoutineId(
-                                existingCycleProfileId = existing?.profile_id,
-                                existingCycleDeletedAt = existing?.deletedAt,
-                                existingDays = existingDays,
-                                portalDay = day,
-                                profileId = profileId,
-                            ),
-                            is_rest_day = if (day.dayType == "rest") 1L else 0L,
-                            echo_level = if (day.echoLevelPresent == true) day.echoLevel else existingDay?.echo_level,
-                            eccentric_load_percent = if (day.eccentricLoadPercentPresent == true) {
-                                day.eccentricLoadPercent?.toLong()
-                            } else {
-                                existingDay?.eccentric_load_percent
-                            },
-                            weight_progression_percent = day.weightAdjustment.toDouble(),
-                            rep_modifier = day.repModifier.toLong(),
-                            rest_time_override_seconds = day.restOverride?.toLong(),
-                        )
-                    }
-
-                    mergePulledCycleProgression(portalCycle)
-                    mergePulledCycleProgress(portalCycle)
                 }
 
                 if (invalidCycleVersions > 0) {
@@ -1809,6 +1699,139 @@ class SqlDelightSyncRepository(
         }
     }
 
+    private fun mergePortalCycleInTransaction(
+        portalCycle: PullTrainingCycleDto,
+        profileId: String,
+        accountId: String?,
+        onActiveCycle: () -> Unit,
+        onInvalidVersion: () -> Unit,
+    ) {
+        // Snapshot existing days before replacement so a lossy null pull can preserve
+        // a valid local-only template association by day number.
+        val existing = queries.selectTrainingCycleById(portalCycle.id).executeAsOneOrNull()
+        val incomingUpdatedAt = portalCycle.updatedAt?.let { raw ->
+            PortalSyncAdapter.validCycleServerVersion(raw)
+                ?.let { kotlin.time.Instant.parse(it).toEpochMilliseconds() }
+        }
+        if (existing != null && (
+            incomingUpdatedAt == null ||
+                incomingUpdatedAt < existing.updatedAt ||
+                (existing.deletedAt != null && incomingUpdatedAt <= existing.updatedAt)
+            )
+        ) {
+            return
+        }
+        if (portalCycle.status == "active") {
+            onActiveCycle()
+        }
+        val existingDays = existing?.let {
+            queries.selectCycleDaysByCycle(portalCycle.id).executeAsList()
+        } ?: emptyList()
+
+        captureCycleConflictDraftIfNeeded(
+            existing = existing,
+            existingDays = existingDays,
+            incomingUpdatedAt = incomingUpdatedAt,
+        )
+
+        // Upsert cycle (INSERT OR IGNORE — keeps local if exists)
+        queries.insertTrainingCycleIgnore(
+            id = portalCycle.id,
+            name = portalCycle.name,
+            description = portalCycle.description,
+            created_at = currentTimeMillis(),
+            is_active = 0L, // Don't set active yet - enforce single-active at end
+            profile_id = profileId,
+            template_id = portalCycle.templateId,
+            week_number = portalCycle.currentWeek?.toLong() ?: 1L,
+            updatedAt = incomingUpdatedAt ?: 0L,
+        )
+        queries.insertCycleSyncStateIfAbsent(
+            cycleId = portalCycle.id,
+            profileId = profileId,
+            accountId = accountId,
+            dirtyGeneration = 0L,
+            acknowledgedGeneration = 0L,
+            pendingDeleteUpdatedAt = null,
+            pendingDeleteGeneration = null,
+        )
+
+        // For pre-existing cycles only: update metadata (but NOT is_active - enforce single-active at end).
+        // Newly-inserted rows already have the correct values from insertTrainingCycleIgnore above.
+        if (existing != null) {
+            val mergedTemplateId = portalCycle.templateId ?: existing.template_id
+            val mergedWeekNumber = portalCycle.currentWeek?.toLong() ?: existing.week_number
+            val serverUpdatedAtMs = requireNotNull(incomingUpdatedAt)
+            if (existing.deletedAt != null && serverUpdatedAtMs > existing.updatedAt) {
+                queries.updateTrainingCycleClearingDelete(
+                    name = portalCycle.name,
+                    description = portalCycle.description,
+                    is_active = existing.is_active, // Preserve; single-active enforcement runs at end
+                    template_id = mergedTemplateId,
+                    week_number = mergedWeekNumber,
+                    updatedAt = serverUpdatedAtMs,
+                    id = portalCycle.id,
+                )
+                queries.clearCyclePendingDeletion(cycleId = portalCycle.id)
+            } else {
+                queries.updateTrainingCycle(
+                    name = portalCycle.name,
+                    description = portalCycle.description,
+                    is_active = existing.is_active, // Preserve; single-active enforcement runs at end
+                    template_id = mergedTemplateId,
+                    week_number = mergedWeekNumber,
+                    updatedAt = serverUpdatedAtMs,
+                    id = portalCycle.id,
+                )
+            }
+        }
+        // Remember the portal's version verbatim (sent back as baseUpdatedAt).
+        // Keep the stored base when an older portal omits updatedAt or sends
+        // a malformed one.
+        portalCycle.updatedAt?.let { raw ->
+            val version = PortalSyncAdapter.validCycleServerVersion(raw)
+            if (version != null) {
+                queries.updateTrainingCycleServerUpdatedAt(server_updated_at = version, id = portalCycle.id)
+            } else {
+                onInvalidVersion()
+            }
+        }
+
+        // Bulk delete existing days, reinsert from portal (same pattern as edge function)
+        queries.deleteCycleDaysByCycle(portalCycle.id)
+
+        for (day in portalCycle.days) {
+            val existingDay = existingDays.firstOrNull { it.id == day.id }
+                ?: existingDays.firstOrNull { it.day_number == day.dayNumber.toLong() }
+            queries.insertCycleDayIgnore(
+                id = day.id,
+                cycle_id = day.cycleId.ifEmpty { portalCycle.id },
+                day_number = day.dayNumber.toLong(),
+                name = day.notes,
+                routine_id = preservedTemplateCycleRoutineId(
+                    existingCycleProfileId = existing?.profile_id,
+                    existingCycleDeletedAt = existing?.deletedAt,
+                    existingDays = existingDays,
+                    portalDay = day,
+                    profileId = profileId,
+                ),
+                is_rest_day = if (day.dayType == "rest") 1L else 0L,
+                echo_level = if (day.echoLevelPresent == true) day.echoLevel else existingDay?.echo_level,
+                eccentric_load_percent = if (day.eccentricLoadPercentPresent == true) {
+                    day.eccentricLoadPercent?.toLong()
+                } else {
+                    existingDay?.eccentric_load_percent
+                },
+                weight_progression_percent = day.weightAdjustment.toDouble(),
+                rep_modifier = day.repModifier.toLong(),
+                rest_time_override_seconds = day.restOverride?.toLong(),
+            )
+        }
+
+        mergePulledCycleProgression(portalCycle)
+        mergePulledCycleProgress(portalCycle)
+    }
+
     /** Must run inside the same transaction that accepts the incoming cycle projection. */
     private fun captureCycleConflictDraftIfNeeded(
         existing: com.devil.phoenixproject.database.TrainingCycle?,
@@ -2200,126 +2223,13 @@ class SqlDelightSyncRepository(
                             cycleId = portalCycle.id,
                         )
                     }
-                    // Snapshot existing days before replacement so a lossy null pull can preserve
-                    // a valid local-only template association by day number.
-                    val existingCycle = queries.selectTrainingCycleById(portalCycle.id).executeAsOneOrNull()
-                    val incomingUpdatedAt = portalCycle.updatedAt?.let { raw ->
-                        PortalSyncAdapter.validCycleServerVersion(raw)
-                            ?.let { kotlin.time.Instant.parse(it).toEpochMilliseconds() }
-                    }
-                    if (existingCycle != null && (
-                        incomingUpdatedAt == null ||
-                            incomingUpdatedAt < existingCycle.updatedAt ||
-                            (existingCycle.deletedAt != null && incomingUpdatedAt <= existingCycle.updatedAt)
-                        )
-                    ) {
-                        continue
-                    }
-                    if (portalCycle.status == "active") {
-                        portalActiveCycleIdsByProfile[targetProfileId] = portalCycle.id
-                    }
-                    val existingCycleDays = existingCycle?.let {
-                        queries.selectCycleDaysByCycle(portalCycle.id).executeAsList()
-                    } ?: emptyList()
-
-                    captureCycleConflictDraftIfNeeded(
-                        existing = existingCycle,
-                        existingDays = existingCycleDays,
-                        incomingUpdatedAt = incomingUpdatedAt,
-                    )
-
-                    queries.insertTrainingCycleIgnore(
-                        id = portalCycle.id,
-                        name = portalCycle.name,
-                        description = portalCycle.description,
-                        created_at = currentTimeMillis(),
-                        is_active = 0L,
-                        profile_id = targetProfileId,
-                        template_id = portalCycle.templateId,
-                        week_number = portalCycle.currentWeek?.toLong() ?: 1L,
-                        updatedAt = incomingUpdatedAt ?: 0L,
-                    )
-                    queries.insertCycleSyncStateIfAbsent(
-                        cycleId = portalCycle.id,
+                    mergePortalCycleInTransaction(
+                        portalCycle = portalCycle,
                         profileId = targetProfileId,
                         accountId = ownerUserId,
-                        dirtyGeneration = 0L,
-                        acknowledgedGeneration = 0L,
-                        pendingDeleteUpdatedAt = null,
-                        pendingDeleteGeneration = null,
+                        onActiveCycle = { portalActiveCycleIdsByProfile[targetProfileId] = portalCycle.id },
+                        onInvalidVersion = { invalidCycleVersions++ },
                     )
-
-                    // Only update pre-existing cycles; newly-inserted rows already have correct values.
-                    if (existingCycle != null) {
-                        val mergedTemplateId = portalCycle.templateId ?: existingCycle.template_id
-                        val mergedWeekNumber = portalCycle.currentWeek?.toLong() ?: existingCycle.week_number
-                        val serverUpdatedAtMs = requireNotNull(incomingUpdatedAt)
-                        if (existingCycle.deletedAt != null && serverUpdatedAtMs > existingCycle.updatedAt) {
-                            queries.updateTrainingCycleClearingDelete(
-                                name = portalCycle.name,
-                                description = portalCycle.description,
-                                is_active = existingCycle.is_active, // Preserve; single-active enforcement runs at end
-                                template_id = mergedTemplateId,
-                                week_number = mergedWeekNumber,
-                                updatedAt = serverUpdatedAtMs,
-                                id = portalCycle.id,
-                            )
-                            queries.clearCyclePendingDeletion(cycleId = portalCycle.id)
-                        } else {
-                            queries.updateTrainingCycle(
-                                name = portalCycle.name,
-                                description = portalCycle.description,
-                                is_active = existingCycle.is_active, // Preserve; single-active enforcement runs at end
-                                template_id = mergedTemplateId,
-                                week_number = mergedWeekNumber,
-                                updatedAt = serverUpdatedAtMs,
-                                id = portalCycle.id,
-                            )
-                        }
-                    }
-                    // Remember the portal's version verbatim (sent back as baseUpdatedAt).
-                    // Keep the stored base when an older portal omits updatedAt or sends
-                    // a malformed one.
-                    portalCycle.updatedAt?.let { raw ->
-                        val version = PortalSyncAdapter.validCycleServerVersion(raw)
-                        if (version != null) {
-                            queries.updateTrainingCycleServerUpdatedAt(server_updated_at = version, id = portalCycle.id)
-                        } else {
-                            invalidCycleVersions++
-                        }
-                    }
-
-                    queries.deleteCycleDaysByCycle(portalCycle.id)
-                    for (day in portalCycle.days) {
-                        val existingDay = existingCycleDays.firstOrNull { it.id == day.id }
-                            ?: existingCycleDays.firstOrNull { it.day_number == day.dayNumber.toLong() }
-                        queries.insertCycleDayIgnore(
-                            id = day.id,
-                            cycle_id = day.cycleId.ifEmpty { portalCycle.id },
-                            day_number = day.dayNumber.toLong(),
-                            name = day.notes,
-                            routine_id = preservedTemplateCycleRoutineId(
-                                existingCycleProfileId = existingCycle?.profile_id,
-                                existingCycleDeletedAt = existingCycle?.deletedAt,
-                                existingDays = existingCycleDays,
-                                portalDay = day,
-                                profileId = targetProfileId,
-                            ),
-                            is_rest_day = if (day.dayType == "rest") 1L else 0L,
-                            echo_level = if (day.echoLevelPresent == true) day.echoLevel else existingDay?.echo_level,
-                            eccentric_load_percent = if (day.eccentricLoadPercentPresent == true) {
-                                day.eccentricLoadPercent?.toLong()
-                            } else {
-                                existingDay?.eccentric_load_percent
-                            },
-                            weight_progression_percent = day.weightAdjustment.toDouble(),
-                            rep_modifier = day.repModifier.toLong(),
-                            rest_time_override_seconds = day.restOverride?.toLong(),
-                        )
-                    }
-
-                    mergePulledCycleProgression(portalCycle)
-                    mergePulledCycleProgress(portalCycle)
                 }
 
                 if (invalidCycleVersions > 0) {
@@ -2371,22 +2281,7 @@ class SqlDelightSyncRepository(
 
                 // 5. Gamification stats — SERVER WINS with local field preservation
                 if (gamificationStats != null) {
-                    val now = currentTimeMillis()
-                    val existingStats = queries.selectGamificationStats(profileId = profileId).executeAsOneOrNull()
-                    queries.upsertGamificationStats(
-                        totalWorkouts = gamificationStats.totalWorkouts.toLong(),
-                        totalReps = gamificationStats.totalReps.toLong(),
-                        // Round (not truncate) to minimise systematic bias; column is INTEGER in schema.
-                        totalVolumeKg = gamificationStats.totalVolumeKg.toDouble().roundToLong(),
-                        longestStreak = gamificationStats.longestStreak.toLong(),
-                        currentStreak = gamificationStats.currentStreak.toLong(),
-                        uniqueExercisesUsed = existingStats?.uniqueExercisesUsed ?: 0L,
-                        prsAchieved = existingStats?.prsAchieved ?: 0L,
-                        lastWorkoutDate = existingStats?.lastWorkoutDate,
-                        streakStartDate = existingStats?.streakStartDate,
-                        lastUpdated = now,
-                        profileId = profileId,
-                    )
+                    upsertGamificationStatsInTransaction(gamificationStats, profileId)
                 }
 
                 // 6. Personal records — INSERT OR IGNORE (local wins)

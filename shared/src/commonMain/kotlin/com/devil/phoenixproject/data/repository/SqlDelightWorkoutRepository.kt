@@ -354,68 +354,21 @@ class SqlDelightWorkoutRepository(
                     emptyList()
                 }
 
-                val setRestSeconds: List<Int> = try {
-                    json.decodeFromString<List<Int>>(row.setRestSeconds)
-                } catch (e: Exception) {
-                    Logger.w(e) {
-                        "Failed to parse setRestSeconds '${row.setRestSeconds}' for exercise ${row.exerciseName}, using empty list"
-                    }
-                    emptyList()
-                }
-
-                val setEchoLevels: List<EchoLevel?> = try {
-                    if (row.setEchoLevels.isBlank()) {
-                        emptyList()
-                    } else {
-                        json.decodeFromString<List<Int?>>(row.setEchoLevels).map { ordinal ->
-                            ordinal?.let { EchoLevel.entries.getOrNull(it) }
-                        }
-                    }
-                } catch (e: Exception) {
-                    Logger.w(e) {
-                        "Failed to parse setEchoLevels '${row.setEchoLevels}' for exercise ${row.exerciseName}, using empty list"
-                    }
-                    emptyList()
-                }
-
-                val warmupSets: List<com.devil.phoenixproject.domain.model.WarmupSet> = try {
-                    if (row.warmupSets.isBlank()) {
-                        emptyList()
-                    } else {
-                        json.decodeFromString<List<com.devil.phoenixproject.domain.model.WarmupSet>>(row.warmupSets)
-                    }
-                } catch (e: Exception) {
-                    Logger.w(e) { "Failed to parse warmupSets '${row.warmupSets}' for exercise ${row.exerciseName}, using empty list" }
-                    emptyList()
-                }
-
-                val defaultRackItemIds: List<String> = try {
-                    if (row.defaultRackItemIds.isBlank()) {
-                        emptyList()
-                    } else {
-                        json.decodeFromString<List<String>>(row.defaultRackItemIds)
-                            .filter { it.isNotBlank() }
-                            .distinct()
-                    }
-                } catch (e: Exception) {
-                    Logger.w(e) {
-                        "Failed to parse defaultRackItemIds '${row.defaultRackItemIds}' for exercise ${row.exerciseName}, using empty list"
-                    }
-                    emptyList()
-                }
-
-                val rackBehaviorOverrides: Map<String, RackItemBehavior> = try {
-                    if (row.rackBehaviorOverrides.isBlank() || row.rackBehaviorOverrides == "{}") {
-                        emptyMap()
-                    } else {
-                        json.decodeFromString<Map<String, RackItemBehavior>>(row.rackBehaviorOverrides)
-                    }
-                } catch (e: Exception) {
-                    Logger.w(e) {
-                        "Failed to parse rackBehaviorOverrides '${row.rackBehaviorOverrides}' for exercise ${row.exerciseName}, using empty map"
-                    }
-                    emptyMap()
-                }
+                val setRestSeconds: List<Int> = decodeJsonOrDefault(
+                    row.setRestSeconds, "setRestSeconds", row.exerciseName, emptyList(), skipBlank = false,
+                )
+                val setEchoLevels: List<EchoLevel?> = decodeJsonOrDefault<List<Int?>>(
+                    row.setEchoLevels, "setEchoLevels", row.exerciseName, emptyList(),
+                ).map { ordinal -> ordinal?.let { EchoLevel.entries.getOrNull(it) } }
+                val warmupSets: List<com.devil.phoenixproject.domain.model.WarmupSet> = decodeJsonOrDefault(
+                    row.warmupSets, "warmupSets", row.exerciseName, emptyList(),
+                )
+                val defaultRackItemIds: List<String> = decodeJsonOrDefault<List<String>>(
+                    row.defaultRackItemIds, "defaultRackItemIds", row.exerciseName, emptyList(),
+                ).filter { it.isNotBlank() }.distinct()
+                val rackBehaviorOverrides: Map<String, RackItemBehavior> = decodeJsonOrDefault(
+                    row.rackBehaviorOverrides, "rackBehaviorOverrides", row.exerciseName, emptyMap(), emptyLiteral = "{}",
+                )
 
                 val eccentricLoad = mapEccentricLoadFromDb(
                     dbValue = row.eccentricLoad,
@@ -438,18 +391,9 @@ class SqlDelightWorkoutRepository(
                     PRType.MAX_WEIGHT
                 }
 
-                val setWeightsPercentOfPR: List<Int> = try {
-                    if (row.setWeightsPercentOfPR.isNullOrBlank()) {
-                        emptyList()
-                    } else {
-                        json.decodeFromString<List<Int>>(row.setWeightsPercentOfPR)
-                    }
-                } catch (e: Exception) {
-                    Logger.w(e) {
-                        "Failed to parse setWeightsPercentOfPR '${row.setWeightsPercentOfPR}' for exercise ${row.exerciseName}, using empty list"
-                    }
-                    emptyList()
-                }
+                val setWeightsPercentOfPR: List<Int> = decodeJsonOrDefault(
+                    row.setWeightsPercentOfPR, "setWeightsPercentOfPR", row.exerciseName, emptyList(),
+                )
 
                 RoutineExercise(
                     id = row.id,
@@ -511,6 +455,26 @@ class SqlDelightWorkoutRepository(
             groupId = groupId,
             updatedAt = updatedAt,
         )
+    }
+
+    private inline fun <reified T> decodeJsonOrDefault(
+        raw: String?,
+        fieldName: String,
+        exerciseName: String,
+        default: T,
+        skipBlank: Boolean = true,
+        emptyLiteral: String? = null,
+    ): T {
+        if (raw == null || (skipBlank && raw.isBlank()) || (emptyLiteral != null && raw == emptyLiteral)) {
+            return default
+        }
+        return try {
+            json.decodeFromString<T>(raw)
+        } catch (e: Exception) {
+            e.rethrowIfCancellation()
+            Logger.w(e) { "Failed to parse $fieldName '$raw' for exercise $exerciseName, using default" }
+            default
+        }
     }
 
     private fun serializeProgramMode(programMode: ProgramMode): String = when (programMode) {

@@ -395,22 +395,8 @@ object BlePacketFactory {
             }
 
             // Echo mode uses a different BLE command (0x4E), so this profile is never used.
-            // But we need to handle it for exhaustive when expression.
-            is ProgramMode.Echo -> {
-                // Use OldSchool profile as fallback (Echo uses createEchoControl() instead)
-                putShortLE(buffer, 0x00, 0)
-                putShortLE(buffer, 0x02, 20)
-                putFloatLE(buffer, 0x04, 3.0f)
-                putShortLE(buffer, 0x08, 75)
-                putShortLE(buffer, 0x0a, 600)
-                putFloatLE(buffer, 0x0c, 50.0f)
-                putShortLE(buffer, 0x10, -1300)
-                putShortLE(buffer, 0x12, -1200)
-                putFloatLE(buffer, 0x14, 100.0f)
-                putShortLE(buffer, 0x18, -260)
-                putShortLE(buffer, 0x1a, -110)
-                putFloatLE(buffer, 0x1c, 0.0f)
-            }
+            // Delegate to OldSchool to keep the when exhaustive.
+            is ProgramMode.Echo -> return getActivationPhases(ProgramMode.OldSchool)
         }
 
         return buffer
