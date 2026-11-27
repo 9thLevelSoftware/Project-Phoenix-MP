@@ -108,6 +108,12 @@ exec timeout --signal=TERM --kill-after=10s 480s \
             printf "[%s] progress device=%s captured_bytes=%s\n" "$(date -u +%T)" "$2" "$(wc -c < "$log_dir/tests.log")"
             ss -tnp "( sport = :1234 or dport = :1234 )"
             xwininfo -root -tree
+            # Passive observation only: do not dismiss or interact with a dialog.
+            if [[ "$device" == fenix7 && -n "${RUNNER_TEMP:-}" ]] && command -v xwd >/dev/null && command -v convert >/dev/null; then
+                if xwininfo -name Error >/dev/null 2>&1; then
+                    timeout 5s xwd -silent -name Error | convert xwd:- "$RUNNER_TEMP/phoenix-simulator-error.png"
+                fi
+            fi
             tree=$(pstree -Tp "$$")
             printf "%s\n" "$tree"
             for pid in $(printf "%s\n" "$tree" | grep -oE "java\([0-9]+\)" | tr -cd "0-9\n"); do

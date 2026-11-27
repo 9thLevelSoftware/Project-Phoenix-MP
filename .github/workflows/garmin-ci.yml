@@ -126,7 +126,7 @@ jobs:
           sha256sum build/phoenix-tests-fenix7.prg > "$RUNNER_TEMP/phoenix-prg.sha256"
           sha256sum --check "$RUNNER_TEMP/phoenix-prg.sha256"
           sha256sum build/phoenix-tests-fenix7.prg
-          sudo apt-get update && sudo apt-get install -y x11-utils
+          sudo apt-get update && sudo apt-get install -y x11-utils x11-apps imagemagick
 
       - name: Run simulator protocol/input checks (monkeydo -t)
         id: phoenix
@@ -134,6 +134,14 @@ jobs:
           bash garmin/tests/run-simulator-tests.sh \
             "$GITHUB_WORKSPACE/build/phoenix-tests-${{ matrix.device }}.prg" \
             "${{ matrix.device }}"
+
+      - name: Retain the simulator error dialog if observed (diagnosis only)
+        if: failure() && matrix.device == 'fenix7' && steps.phoenix.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: fenix7-simulator-error
+          path: ${{ runner.temp }}/phoenix-simulator-error.png
+          if-no-files-found: warn
 
       # Compare on the same runner after a failed real suite. The wrapper
       # creates a fresh simulator, D-Bus session and display per invocation.
