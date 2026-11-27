@@ -120,6 +120,14 @@ jobs:
             -y "$RUNNER_TEMP/developer_key.der" \
             -t
 
+      - name: Record fenix7 test binary identity and enable window diagnostics
+        if: matrix.device == 'fenix7'
+        run: |
+          sha256sum build/phoenix-tests-fenix7.prg > "$RUNNER_TEMP/phoenix-prg.sha256"
+          sha256sum --check "$RUNNER_TEMP/phoenix-prg.sha256"
+          sha256sum build/phoenix-tests-fenix7.prg
+          sudo apt-get update && sudo apt-get install -y x11-utils
+
       - name: Run simulator protocol/input checks (monkeydo -t)
         id: phoenix
         run: |
@@ -145,6 +153,25 @@ jobs:
           bash garmin/tests/run-simulator-tests.sh "$RUNNER_TEMP/smoke.prg" fenix7 | tee "$RUNNER_TEMP/smoke.log"
           grep -Fq SETUP_CONNECTIQ_SIMULATOR_SMOKE_EXECUTED "$RUNNER_TEMP/smoke.log"
         shell: bash
+
+      - name: Diagnose one real test in a fresh fenix7 session after smoke
+        if: failure() && matrix.device == 'fenix7' && steps.phoenix.outcome == 'failure'
+        shell: bash
+        run: |
+          sha256sum --check "$RUNNER_TEMP/phoenix-prg.sha256"
+          # Copy the full envelope, changing only the SDK selector in this copy.
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          src = Path('garmin/tests/run-simulator-tests.sh').read_text()
+          cmd = '"$CONNECT_IQ_HOME/bin/monkeydo" "$1" "$2" -t'
+          if src.count(cmd) != 1:
+              raise SystemExit('unexpected monkeydo invocation; cannot isolate selector')
+          (Path(os.environ['RUNNER_TEMP']) / 'selected.sh').write_text(src.replace(cmd, cmd + ' testHelloContract'))
+          PY
+          bash "$RUNNER_TEMP/selected.sh" "$GITHUB_WORKSPACE/build/phoenix-tests-fenix7.prg" fenix7 | tee "$RUNNER_TEMP/selected.log"
+          grep -Eq '^Executing test testHelloContract([.( ]|$)' "$RUNNER_TEMP/selected.log"
+          grep -Eq '^PASSED \(passed=1, failed=0, errors=0\)[[:space:]]*$' "$RUNNER_TEMP/selected.log"
 
       - name: Upload CI artifact
         uses: actions/upload-artifact@v4
