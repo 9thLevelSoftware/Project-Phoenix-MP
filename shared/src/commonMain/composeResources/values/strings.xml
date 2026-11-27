@@ -952,6 +952,67 @@
     <string name="home_recent_activity_date_pattern">MMM d</string>
     <string name="home_recent_activity_time_pattern">h:mm a</string>
     <string name="home_recent_activity_date_time_separator"> • </string>
+    <!-- Garmin watch controls — settings card (issue #1391). Separate from the Heart-rate sensor. -->
+    <string name="garmin_controls_title">Garmin controls</string>
+    <string name="garmin_controls_status_off">Off</string>
+    <string name="garmin_controls_status_unavailable">Unavailable</string>
+    <string name="garmin_controls_status_setup">Setup</string>
+    <string name="garmin_controls_status_connected">Connected · not armed</string>
+    <string name="garmin_controls_status_armed">Armed · this workout</string>
+    <string name="garmin_controls_status_error">Error</string>
+    <string name="garmin_controls_status_recovery">Recovery required</string>
+    <string name="garmin_controls_intro">Control your workout from a paired Garmin watch using the watch buttons. Garmin controls use the Connect IQ companion app on your watch and are separate from the Heart-rate sensor (Bluetooth heart rate).</string>
+    <string name="garmin_controls_foreground">While a workout is armed, keep Phoenix open and the screen on. Remote stop is not an emergency stop: a lost connection cannot guarantee delivery. Use the phone or trainer safe stop.</string>
+    <string name="garmin_controls_default_off">Off by default. Turning this on never arms a workout by itself.</string>
+    <string name="garmin_controls_local_opt_in">Local opt-in</string>
+    <string name="garmin_controls_local_opt_in_desc">Stored on this device only. Turning this off revokes all watch control immediately.</string>
+    <string name="garmin_controls_unavailable_body">No supported, matched watch app detected. Garmin controls stay unavailable until a supported watch running the matched Phoenix watch app is detected.</string>
+    <string name="garmin_controls_setup_body">Finish setup: install the Phoenix companion app from the Connect IQ Store on your watch, then choose your device.</string>
+    <string name="garmin_controls_install_hint">Get the Phoenix companion app from the Connect IQ Store for your watch.</string>
+    <string name="garmin_controls_install_action">Get watch app</string>
+    <string name="garmin_controls_choose_device">Choose device</string>
+    <string name="garmin_controls_forget">Forget</string>
+    <string name="garmin_controls_forget_desc">Forgetting this watch clears the pairing and revokes all control authority.</string>
+    <string name="garmin_controls_connected_body">Connected — not armed. Arm a workout to let watch buttons control it.</string>
+    <string name="garmin_controls_armed_body">Armed for this workout only.</string>
+    <string name="garmin_controls_arm_action">Arm this workout</string>
+    <string name="garmin_controls_disarm_action">Disarm</string>
+    <string name="garmin_controls_error_body">Error. Garmin controls are paused until this is fixed.</string>
+    <string name="garmin_controls_error_code">Error code: %1$s</string>
+    <string name="garmin_controls_recovery_body">Recovery required: revalidate your account or profile, then reopen Phoenix. Watch control stays disarmed until recovery finishes.</string>
+    <string name="garmin_controls_device_label">Watch: %1$s</string>
+    <string name="garmin_controls_last_command">Last watch command: %1$s</string>
+    <string name="garmin_event_pending">Sending %1$s…</string>
+    <string name="garmin_event_applied">%1$s applied</string>
+    <string name="garmin_event_stale">%1$s arrived late and was ignored</string>
+    <string name="garmin_event_rejected">%1$s rejected (%2$s)</string>
+    <string name="garmin_event_unknown">%1$s result unknown — check the phone before repeating it</string>
+
+    <!-- Garmin watch controls — per-workout Arm strip (issue #1391) -->
+    <string name="garmin_strip_device_not_armed">%1$s · NOT armed</string>
+    <string name="garmin_controls_generic_device">Garmin watch</string>
+    <string name="garmin_strip_not_armed_hint">Arm to let watch buttons control this workout</string>
+    <string name="garmin_strip_arm">Arm</string>
+    <string name="garmin_strip_armed_title">Garmin armed · this workout</string>
+    <string name="garmin_strip_armed_hint">Watch Start = this START · Watch Stop = Stop set</string>
+    <string name="garmin_strip_disarm">Disarm</string>
+    <string name="garmin_strip_phone_input">Finish this step on the phone.</string>
+    <string name="garmin_strip_error_title">Garmin controls · Error</string>
+    <string name="garmin_strip_error_hint">Watch controls paused. Fix in Settings › Garmin controls. Code: %1$s</string>
+    <string name="garmin_strip_error_hint_plain">Watch controls paused. Fix in Settings › Garmin controls.</string>
+    <string name="garmin_strip_recovery_title">Garmin controls · Recovery required</string>
+    <string name="garmin_strip_recovery_hint">Watch controls stay disarmed until recovery finishes in Settings.</string>
+    <string name="garmin_strip_cancel_exercise">Cancel exercise</string>
+    <string name="garmin_cd_status">Garmin watch controls status</string>
+    <string name="garmin_cd_arm">Arm Garmin watch controls for this workout</string>
+    <string name="garmin_cd_disarm">Disarm Garmin watch controls</string>
+
+    <!-- Garmin watch controls — cancel confirmation (issue #1391) -->
+    <string name="garmin_cancel_title">Cancel %1$s?</string>
+    <string name="garmin_cancel_body">Skip only %1$s, not the whole routine. Previously saved sets stay saved.</string>
+    <string name="garmin_cancel_safety">Ergonomic remote, NOT an emergency stop. Lost link cannot guarantee Stop delivery. Use phone / trainer safe stop.</string>
+    <string name="garmin_cancel_confirm">Confirm cancel %1$s</string>
+
     <!-- Issue #1367: Workout control size preference. -->
     <string name="settings_weight_text_size">Workout control size</string>
     <string name="settings_weight_text_size_standard">Standard</string>

@@ -93,6 +93,7 @@ import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.domain.model.BleCompatibilitySetting
 import com.devil.phoenixproject.domain.model.WeightTextScale
 import com.devil.phoenixproject.presentation.components.DestructiveConfirmDialog
+import com.devil.phoenixproject.presentation.components.GarminControlsSettingsCard
 import com.devil.phoenixproject.presentation.components.HrmSensorSettingsCard
 import com.devil.phoenixproject.presentation.components.PhoenixModalDialogFrame
 import com.devil.phoenixproject.presentation.components.PhoenixSectionCard
@@ -1109,6 +1110,9 @@ fun SettingsTab(
 
             // HRM Heart Rate & Telemetry Sensor
             HrmSensorSettingsCard()
+
+            // Garmin controls are separate from the HRM sensor.
+            GarminControlsSettingsCard()
 
             // Developer Tools Section
             GlobalSettingsSectionCard(

@@ -83,6 +83,7 @@ import com.devil.phoenixproject.presentation.components.EchoLevelPillSelector
 import com.devil.phoenixproject.presentation.components.EquipmentRackSelectionCard
 import com.devil.phoenixproject.presentation.components.ExerciseDemoImage
 import com.devil.phoenixproject.presentation.components.ExerciseQuickHistoryCard
+import com.devil.phoenixproject.presentation.components.GarminControlsArmStrip
 import com.devil.phoenixproject.presentation.components.SliderWithButtons
 import com.devil.phoenixproject.presentation.components.StartGateLabel
 import com.devil.phoenixproject.presentation.components.WeightChangePerRepControl
@@ -271,6 +272,13 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                         onRetry = { viewModel.retryWorkoutTeardown() },
                         onReconnect = { viewModel.reconnectWorkoutTeardown() },
                     )
+
+                    // Garmin watch-controls Arm strip (issue #1391).
+                    GarminControlsArmStrip(
+                        modifier = Modifier.fillMaxWidth(),
+                        onConfirmSkipExercise = { viewModel.setReadySkip() },
+                    )
+
                     // D-2: Dedicated full-width primary CTA so START / teardown status never crushes
                     Button(
                         onClick = {

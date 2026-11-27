@@ -8,10 +8,15 @@ import kotlin.test.assertTrue
 import kotlin.test.fail
 
 /**
- * Swift calls only [com.devil.phoenixproject.di.doInitKoin] and [MainViewController].
- * Every other top-level iosMain / appleDarwinMain declaration is either an expect/actual
- * (visibility is fixed by the shared contract) or must be internal/private so it stays out
- * of the Kotlin/Native framework header. The sources are not compiled on the host.
+
+ * Swift calls [com.devil.phoenixproject.di.doInitKoin], [MainViewController] and — since
+ * issue #1391 — the Garmin companion-bridge seam ([GarminNativeBridge],
+ * [GarminNativeBridgeEvents], [GarminBridgeDeviceInfo], [GarminCompanionBridgeRegistry];
+ * see SWIFT_ENTRY_POINTS). Every other top-level iosMain / appleDarwinMain declaration is either an
+ * expect/actual (visibility is fixed by the shared contract) or must be internal/private
+ * so it stays out of the Kotlin/Native framework header. The sources are not compiled on
+ * the host.
+
  */
 class IosKnExportVisibilityContractTest {
     @Test
@@ -139,7 +144,19 @@ class IosKnExportVisibilityContractTest {
     )
 
     private companion object {
-        val SWIFT_ENTRY_POINTS = setOf("doInitKoin", "MainViewController")
+        // Issue #1391 (packet B5) adds the Garmin companion-bridge seam to the Swift
+        // surface: GarminCompanionBridge.swift implements GarminNativeBridge, installs
+        // itself via GarminCompanionBridgeRegistry, and reports SDK callbacks through
+        // GarminNativeBridgeEvents (carrying GarminBridgeDeviceInfo). Those four are
+        // deliberately exported; everything else must stay hidden as before.
+        val SWIFT_ENTRY_POINTS = setOf(
+            "doInitKoin",
+            "MainViewController",
+            "GarminBridgeDeviceInfo",
+            "GarminNativeBridge",
+            "GarminNativeBridgeEvents",
+            "GarminCompanionBridgeRegistry",
+        )
         val DECLARATION = Regex("""\b(class|interface|object|fun|typealias|val|var)\s+`?([A-Za-z_][A-Za-z0-9_]*)""")
         val ANNOTATION = Regex("""@[\w.]+(?:\([^()]*\))?""")
         val MODIFIER = Regex("""\b(internal|private|actual)\b""")

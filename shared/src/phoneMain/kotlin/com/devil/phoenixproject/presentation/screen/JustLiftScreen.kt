@@ -103,6 +103,7 @@ import com.devil.phoenixproject.domain.model.eccentricLoadLabel
 import com.devil.phoenixproject.domain.model.echoLevelLabel
 import com.devil.phoenixproject.domain.model.toWorkoutMode
 import com.devil.phoenixproject.presentation.components.CompactNumberPicker
+import com.devil.phoenixproject.presentation.components.GarminControlsArmStrip
 import com.devil.phoenixproject.presentation.components.ProgressionSlider
 import com.devil.phoenixproject.presentation.components.RestTimePickerDialog
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
@@ -317,6 +318,9 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel) {
                 .verticalScroll(contentScrollState),
             verticalArrangement = Arrangement.spacedBy(Spacing.small),
         ) {
+            // Garmin watch-controls Arm strip (issue #1391).
+            GarminControlsArmStrip(modifier = Modifier.fillMaxWidth())
+
             // D-5: Pin active workout status above the fold so controls/state stay visible immediately
             if (workoutState !is WorkoutState.Idle) {
                 ActiveStatusCard(

@@ -127,6 +127,8 @@ class ExerciseMediaWiringTest {
             maxSeen = maxOf(maxSeen, n)
             if (src.contains("ExerciseImage")) mentions.add("$n.sqm")
         }
+        // Unrelated schema migrations advance the baseline; media's own schema remains
+        // separately pinned to 43.sqm below.
         assertTrue(
             maxSeen <= 70,
             "Phase 1 adds no schema migration — found $maxSeen.sqm beyond the base 70.sqm (T6/AC13).",

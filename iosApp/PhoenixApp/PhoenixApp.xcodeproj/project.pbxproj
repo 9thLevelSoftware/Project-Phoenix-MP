@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		DFE6BDA22F31000300886589 /* ConnectIQ in Frameworks */ = {isa = PBXBuildFile; productRef = DFE6BDA12F31000200886589 /* ConnectIQ */; };
 		DFE6BD572EEDF53700886589 /* shared.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DFE6BD562EEDF53700886589 /* shared.framework */; };
 		DFE6BD6E2EEDFF6E00886589 /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = DFE6BD6D2EEDFF5500886589 /* libsqlite3.tbd */; };
 /* End PBXBuildFile section */
@@ -44,6 +45,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				DFE6BDA22F31000300886589 /* ConnectIQ in Frameworks */,
 				DFE6BD6E2EEDFF6E00886589 /* libsqlite3.tbd in Frameworks */,
 				DFE6BD572EEDF53700886589 /* shared.framework in Frameworks */,
 			);
@@ -101,6 +103,7 @@
 			);
 			name = PhoenixApp;
 			packageProductDependencies = (
+				DFE6BDA12F31000200886589 /* ConnectIQ */,
 			);
 			productName = PhoenixApp;
 			productReference = DFE6BD472EEDF42200886589 /* PhoenixApp.app */;
@@ -136,6 +139,9 @@
 			);
 			mainGroup = DFE6BD3E2EEDF42200886589;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				DFE6BDA02F31000100886589 /* XCRemoteSwiftPackageReference "connectiq-companion-app-sdk-ios" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = DFE6BD482EEDF42200886589 /* Products */;
 			projectDirPath = "";
@@ -346,8 +352,10 @@
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
+					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.1.1;
+				OTHER_LDFLAGS = "-ObjC";
 				PRODUCT_BUNDLE_IDENTIFIER = com.devil.phoenixproject.projectphoenix;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -382,8 +390,10 @@
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
+					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.1.1;
+				OTHER_LDFLAGS = "-ObjC";
 				PRODUCT_BUNDLE_IDENTIFIER = com.devil.phoenixproject.projectphoenix;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -397,6 +407,25 @@
 			name = Release;
 		};
 /* End XCBuildConfiguration section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		DFE6BDA02F31000100886589 /* XCRemoteSwiftPackageReference "connectiq-companion-app-sdk-ios" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/garmin/connectiq-companion-app-sdk-ios";
+			requirement = {
+				kind = exactVersion;
+				version = 1.8.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		DFE6BDA12F31000200886589 /* ConnectIQ */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = DFE6BDA02F31000100886589 /* XCRemoteSwiftPackageReference "connectiq-companion-app-sdk-ios" */;
+			productName = ConnectIQ;
+		};
+/* End XCSwiftPackageProductDependency section */
 
 /* Begin XCConfigurationList section */
 		DFE6BD422EEDF42200886589 /* Build configuration list for PBXProject "PhoenixApp" */ = {

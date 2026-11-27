@@ -1,10 +1,12 @@
 package com.devil.phoenixproject.di
 
+
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
+import com.devil.phoenixproject.data.garmin.GarminCompanionTransport
 import com.devil.phoenixproject.data.integration.HealthIntegration
 import com.devil.phoenixproject.data.integration.HealthWorkoutWriter
 import com.devil.phoenixproject.data.local.DriverFactory
@@ -16,6 +18,7 @@ import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.sync.SupabaseConfig
 import com.devil.phoenixproject.data.sync.SyncManager
 import com.devil.phoenixproject.domain.voice.SafeWordListenerFactory
+import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManager
 import com.devil.phoenixproject.presentation.manager.WorkoutServiceController
 import com.devil.phoenixproject.presentation.viewmodel.CycleEditorViewModel
 import com.devil.phoenixproject.presentation.viewmodel.GamificationViewModel
@@ -77,10 +80,18 @@ class KoinModuleVerifyTest {
                 SupabaseConfig::class,
                 // Platform-provided factories
                 SafeWordListenerFactory::class,
+                // Garmin companion transport (issue #1391): lives in platformModule
+                // (Android/iOS/tvOS actuals), never in appModule.
+                GarminCompanionTransport::class,
                 // Platform-provided health integration (Android: HealthIntegration(context), iOS: HealthIntegration())
                 HealthIntegration::class,
                 HealthWorkoutWriter::class,
                 WorkoutServiceController::class,
+                // Composed inside MainViewModel (the single session manager, integration
+                // model §5) and never a bean; GarminSessionController's constructor type is
+                // reflected by verify() even though the instance is pulled pre-composed
+                // from GarminSessionControllerHolder.
+                DefaultWorkoutSessionManager::class,
                 CoroutineScope::class,
                 // Issue #1358: platform-provided exercise media store (phoneMain)
                 com.devil.phoenixproject.data.media.ExerciseMediaStore::class,

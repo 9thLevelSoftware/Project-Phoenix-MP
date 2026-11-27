@@ -71,6 +71,7 @@ import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.presentation.components.exercisepicker.CompletedExerciseIdsState
 import com.devil.phoenixproject.presentation.components.exercisepicker.completedExerciseIdsFromHistory
 import com.devil.phoenixproject.presentation.components.exercisepicker.recentJustLiftExerciseIdsFromHistory
+import com.devil.phoenixproject.presentation.garmin.GarminSessionController
 import com.devil.phoenixproject.presentation.manager.WorkoutSaveFailureOffer
 import com.devil.phoenixproject.presentation.manager.BleConnectionManager
 import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManager
@@ -757,6 +758,24 @@ class MainViewModel(
         workoutSessionManager.coordinator.bleErrorEvents,
         viewModelScope,
     )
+
+    // === Issue #1391 packet B2: Garmin watch-controls controller ===
+    // Composed here because the single session manager lives in this ViewModel
+    // (integration-model.md §5: existing V owns composition). The phone UI resolves the
+    // controller from Koin via GarminSessionControllerHolder (PresentationModule), so
+    // exactly one controller is bound to exactly one session manager. Composition is
+    // best-effort: environments without Koin (tests) simply leave the holder empty.
+    val garminSessionController: GarminSessionController? = runCatching {
+        val koin = org.koin.mp.KoinPlatform.getKoin()
+        val controller = GarminSessionController(
+            transport = koin.get<com.devil.phoenixproject.data.garmin.GarminCompanionTransport>(),
+            preferences = koin.get<com.devil.phoenixproject.data.garmin.GarminControlPreferences>(),
+            session = workoutSessionManager,
+            scope = viewModelScope,
+        )
+        koin.get<com.devil.phoenixproject.presentation.garmin.GarminSessionControllerHolder>().controller = controller
+        controller
+    }.getOrNull()
 
     // ===== Workout State Delegation =====
 

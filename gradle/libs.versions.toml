@@ -47,6 +47,10 @@ multiplatform-settings = "1.3.0"
 # BLE - Kable (Kotlin Multiplatform)
 kable = "0.43.1"
 
+# Garmin Connect IQ companion app SDK (issue #1391: watch button controls)
+# Verified on Maven Central: com.garmin.connectiq:ciq-companion-app-sdk (POM + AAR).
+garmin-ciq-companion = "2.4.0"
+
 # Ktor
 ktor = "3.6.1"
 
@@ -149,6 +153,9 @@ multiplatform-settings-coroutines = { module = "com.russhwolf:multiplatform-sett
 
 # BLE - Kable (Multiplatform)
 kable-core = { module = "com.juul.kable:kable-core", version.ref = "kable" }
+
+# Garmin Connect IQ companion app SDK (Android, GCM service relay — issue #1391)
+garmin-ciq-companion-app-sdk = { module = "com.garmin.connectiq:ciq-companion-app-sdk", version.ref = "garmin-ciq-companion" }
 
 # Logging (Multiplatform)
 kermit = { module = "co.touchlab:kermit", version.ref = "kermit" }

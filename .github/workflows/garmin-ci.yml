@@ -1,0 +1,219 @@
+# Garmin Connect IQ watch app CI - issue #1391 B7 (watch button controls).
+#
+# Builds the Phoenix Remote watch app with monkeyc and runs the simulator
+# protocol/input checks from garmin/tests/ per allowlisted product.
+#
+# - The Connect IQ SDK version is PINNED below (never "latest"), and device
+#   definitions come from the setup action's bundled archive for that exact
+#   SDK version, so builds are reproducible.
+# - CI artifacts are unsigned/ephemeral-signed builds only. Release signing
+#   keys live in GitHub secrets (CONNECTIQ_DEVELOPER_KEY_BASE64) and are
+#   NEVER committed to the repository.
+# - This workflow is intentionally standalone: the watch app is NOT wired
+#   into the Android/iOS Gradle build at all (no Gradle task here).
+
+name: garmin-ci
+
+on:
+  push:
+    paths:
+      - "garmin/**"
+      - ".github/workflows/garmin-ci.yml"
+  pull_request:
+    paths:
+      - "garmin/**"
+      - ".github/workflows/garmin-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # Pinned Connect IQ SDK + device definitions (see garmin/README.md).
+  CIQ_SDK_VERSION: "9.2.0"
+
+jobs:
+  static-checks:
+    name: Static checks (XML, contract strings, allowlist)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install xmllint
+        run: sudo apt-get update && sudo apt-get install -y libxml2-utils
+
+      - name: Run static checks
+        run: bash garmin/tests/run-static-checks.sh
+
+  build-and-test:
+    name: Build + simulator checks (${{ matrix.device }})
+    needs: static-checks
+    runs-on: ubuntu-22.04   # required by the Linux simulator dependencies
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        # Product allowlist (five-button products, signoff correction 3).
+        # Keep in sync with garmin/manifest.xml (enforced by static checks).
+        device:
+          - fr255
+          - fr265
+          - fr965
+          - fenix7
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # NOTE: DuckSoft/setup-connectiq-actions@v1 predates the
+      # install-simulator-dependencies input and silently ignores it, which left
+      # the simulator/monkeydo native deps (libsecret, libusb, libjpeg-turbo8,
+      # fonts, xauth ...) unresolved — monkeydo then hung until the outer
+      # timeout. Pin to the upstream main SHA that ships and validates the
+      # simulator dependency installer (ldd-checked for bin/simulator AND
+      # bin/shell); it requires runs-on: ubuntu-22.04 above.
+      - name: Set up ConnectIQ SDK + device definitions + simulator dependencies
+        uses: DuckSoft/setup-connectiq-actions@64f7145dcd1087c262d89f5f714fa03af27b3cba
+        with:
+          sdk-version: ${{ env.CIQ_SDK_VERSION }}
+          install-devices: "true"
+          install-simulator-dependencies: "true"
+
+      # Signing keys stay in GitHub secrets and are NEVER committed. If no
+      # secret is configured, an ephemeral key is generated: fine for CI-only
+      # unsigned test artifacts, useless for store submission.
+      - name: Restore developer key (or create ephemeral CI key)
+        shell: bash
+        env:
+          DEVELOPER_KEY_BASE64: ${{ secrets.CONNECTIQ_DEVELOPER_KEY_BASE64 }}
+        run: |
+          if [ -n "$DEVELOPER_KEY_BASE64" ]; then
+            printf '%s' "$DEVELOPER_KEY_BASE64" | base64 --decode > "$RUNNER_TEMP/developer_key.der"
+            echo "Using repository-secret developer key (not printed)."
+          else
+            openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 -out "$RUNNER_TEMP/test-key.pem"
+            openssl pkcs8 -topk8 -inform PEM -outform DER -in "$RUNNER_TEMP/test-key.pem" \
+              -out "$RUNNER_TEMP/developer_key.der" -nocrypt
+            rm -f "$RUNNER_TEMP/test-key.pem"
+            echo "Using ephemeral CI-only developer key."
+          fi
+
+      - name: Build watch app (monkeyc)
+        run: |
+          mkdir -p build
+          monkeyc \
+            -f garmin/monkey.jungle \
+            -d "${{ matrix.device }}" \
+            -o "build/phoenix-app-${{ matrix.device }}.prg" \
+            -y "$RUNNER_TEMP/developer_key.der"
+
+      - name: Build Run No Evil tests (monkeyc -t)
+        run: |
+          monkeyc \
+            -f garmin/monkey.jungle \
+            -d "${{ matrix.device }}" \
+            -o "build/phoenix-tests-${{ matrix.device }}.prg" \
+            -y "$RUNNER_TEMP/developer_key.der" \
+            -t
+
+      - name: Record fenix7 test binary identity and enable window diagnostics
+        if: matrix.device == 'fenix7'
+        run: |
+          sha256sum build/phoenix-tests-fenix7.prg > "$RUNNER_TEMP/phoenix-prg.sha256"
+          sha256sum --check "$RUNNER_TEMP/phoenix-prg.sha256"
+          sha256sum build/phoenix-tests-fenix7.prg
+          sudo apt-get update && sudo apt-get install -y x11-utils x11-apps imagemagick python3-pyatspi at-spi2-core
+
+      - name: Run simulator protocol/input checks (monkeydo -t)
+        id: phoenix
+        run: |
+          bash garmin/tests/run-simulator-tests.sh \
+            "$GITHUB_WORKSPACE/build/phoenix-tests-${{ matrix.device }}.prg" \
+            "${{ matrix.device }}"
+
+      - name: Retain the simulator error dialog if observed (diagnosis only)
+        if: failure() && matrix.device == 'fenix7' && steps.phoenix.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: fenix7-simulator-error
+          path: ${{ runner.temp }}/phoenix-simulator-error.png
+          if-no-files-found: warn
+
+      # Compare on the same runner after a failed real suite. The wrapper
+      # creates a fresh simulator, D-Bus session and display per invocation.
+      - name: Check out pinned upstream smoke fixture
+        if: failure() && matrix.device == 'fenix7' && steps.phoenix.outcome == 'failure'
+        uses: actions/checkout@v4
+        with:
+          repository: DuckSoft/setup-connectiq-actions
+          ref: 64f7145dcd1087c262d89f5f714fa03af27b3cba
+          path: upstream-smoke
+          persist-credentials: false
+
+      - name: Compare upstream fenix7 smoke in a fresh simulator session
+        if: failure() && matrix.device == 'fenix7' && steps.phoenix.outcome == 'failure'
+        run: |
+          monkeyc -f upstream-smoke/tests/simulator/monkey.jungle -d fenix7 -o "$RUNNER_TEMP/smoke.prg" -y "$RUNNER_TEMP/developer_key.der" -t
+          bash garmin/tests/run-simulator-tests.sh "$RUNNER_TEMP/smoke.prg" fenix7 | tee "$RUNNER_TEMP/smoke.log"
+          grep -Fq SETUP_CONNECTIQ_SIMULATOR_SMOKE_EXECUTED "$RUNNER_TEMP/smoke.log"
+        shell: bash
+
+      - name: Diagnose one real test in a fresh fenix7 session after smoke
+        if: failure() && matrix.device == 'fenix7' && steps.phoenix.outcome == 'failure'
+        shell: bash
+        run: |
+          sha256sum --check "$RUNNER_TEMP/phoenix-prg.sha256"
+          # Copy the full envelope, changing only the SDK selector in this copy.
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          src = Path('garmin/tests/run-simulator-tests.sh').read_text()
+          cmd = '"$CONNECT_IQ_HOME/bin/monkeydo" "$1" "$2" -t'
+          if src.count(cmd) != 1:
+              raise SystemExit('unexpected monkeydo invocation; cannot isolate selector')
+          (Path(os.environ['RUNNER_TEMP']) / 'selected.sh').write_text(src.replace(cmd, cmd + ' testHelloContract'))
+          PY
+          bash "$RUNNER_TEMP/selected.sh" "$GITHUB_WORKSPACE/build/phoenix-tests-fenix7.prg" fenix7 | tee "$RUNNER_TEMP/selected.log"
+          grep -Eq '^Executing test testHelloContract([.( ]|$)' "$RUNNER_TEMP/selected.log"
+          grep -Eq '^PASSED \(passed=1, failed=0, errors=0\)[[:space:]]*$' "$RUNNER_TEMP/selected.log"
+
+      # Never use this instrumented copy for the real matrix or upload it as an app.
+      # Compare marker location on PR vs push; same target and SDK on both events.
+      - name: Isolate Phoenix test discovery in a disposable build
+        if: failure() && matrix.device == 'fenix7' && steps.phoenix.outcome == 'failure'
+        shell: bash
+        env:
+          MARKER_DIR: ${{ github.event_name == 'pull_request' && 'tests' || 'source' }}
+        run: |
+          diag="$RUNNER_TEMP/discovery"
+          cp -R garmin "$diag"
+          cp upstream-smoke/tests/simulator/source/Smoke.mc "$diag/$MARKER_DIR/Discovery.mc"
+          python3 - "$diag/$MARKER_DIR/Discovery.mc" <<'PY'
+          from pathlib import Path
+          import sys
+          p = Path(sys.argv[1]); code = p.read_text()
+          p.write_text('import Toybox.Lang;\nimport Toybox.Test;\n' + code[code.index('(:test)'):])
+          PY
+          monkeyc -f "$diag/monkey.jungle" -d fenix7 -o "$diag/discovery.prg" -y "$RUNNER_TEMP/developer_key.der" -t
+          for symbols in build/phoenix-tests-fenix7.prg.debug.xml "$diag/discovery.prg.debug.xml"; do
+            if test -f "$symbols"; then
+              grep -E 'name="(testHelloContract|simulatorSmoke|PhoenixApp)"' "$symbols" || true
+            fi
+          done
+          # Keep the selector copy's envelope, without changing the original wrapper.
+          sed 's/-t testHelloContract 2>/-t simulatorSmoke 2>/' "$RUNNER_TEMP/selected.sh" > "$diag/probe.sh"
+          bash "$diag/probe.sh" "$diag/discovery.prg" fenix7 | tee "$diag/discovery.log"
+          grep -Fq SETUP_CONNECTIQ_SIMULATOR_SMOKE_EXECUTED "$diag/discovery.log"
+          grep -Eq '^Executing test simulatorSmoke([.( ]|$)' "$diag/discovery.log"
+          grep -Eq '^PASSED \(passed=1, failed=0, errors=0\)[[:space:]]*$' "$diag/discovery.log"
+
+      - name: Upload CI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: phoenix-garmin-${{ matrix.device }}
+          path: build/*.prg
+          if-no-files-found: error

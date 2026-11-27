@@ -65,8 +65,10 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 // ===== Data classes that move with DefaultWorkoutSessionManager =====
 
@@ -304,10 +306,13 @@ class DefaultWorkoutSessionManager(
         isIos: Boolean = isIosPlatformOverrideForTest ?: isIosPlatform,
     ): Boolean {
         val params = coordinator._workoutParameters.value
+        // Issue #1391: no summary auto-advance while a remote set-control operation
+        // owns the no-autostart authority window.
         return isIos &&
             summaryCountdownSeconds > 0 &&
             !params.isJustLift &&
             !params.isAMRAP &&
+            !activeSessionEngine.isRemoteSetControlHoldActive() &&
             !activeSessionEngine.isTerminalRoutineStep()
     }
     private var summaryAutoAdvanceJob: Job? = null
@@ -1002,7 +1007,7 @@ class DefaultWorkoutSessionManager(
     // ===== SetReady Navigation — delegated to RoutineFlowManager =====
 
     fun selectExerciseInOverview(index: Int) = routineFlowManager.selectExerciseInOverview(index)
-    fun enterSetReady(exerciseIndex: Int, setIndex: Int) = routineFlowManager.enterSetReady(exerciseIndex, setIndex)
+    fun enterSetReady(exerciseIndex: Int, setIndex: Int, reinitializeWarmups: Boolean = false) = routineFlowManager.enterSetReady(exerciseIndex, setIndex, reinitializeWarmups)
     fun enterSetReadyWithAdjustments(exerciseIndex: Int, setIndex: Int, adjustedWeight: Float, adjustedReps: Int) = routineFlowManager.enterSetReadyWithAdjustments(exerciseIndex, setIndex, adjustedWeight, adjustedReps)
     fun updateSetReadyWeight(weight: Float) = routineFlowManager.updateSetReadyWeight(weight)
     fun updateSetReadyReps(reps: Int) = routineFlowManager.updateSetReadyReps(reps)
@@ -1300,8 +1305,10 @@ class DefaultWorkoutSessionManager(
         // Issue #1018: this overload is the engine's summary auto-advance entry
         // (ActiveSessionEngine's Issue #320 path via WorkoutFlowDelegate). While the Add
         // Exercise flow holds the summary, no auto-advance may proceed from it.
-        if (summaryAutoAdvanceHeld) {
-            Logger.d { "proceedFromSummary: engine summary auto-advance held (Add Exercise flow)" }
+        // Issue #1391: likewise while a remote set-control operation owns its window —
+        // that operation performs its own prepare-only successor planning.
+        if (summaryAutoAdvanceHeld || activeSessionEngine.isRemoteSetControlHoldActive()) {
+            Logger.d { "proceedFromSummary: engine summary auto-advance held" }
             return
         }
         proceedFromSummaryFor(completion.lease, completion)
@@ -1503,6 +1510,257 @@ class DefaultWorkoutSessionManager(
                 coordinator.proceedFromSummaryInProgress.value = false
             }
         }
+    }
+
+    // ===== Issue #1391 Phase 1 (packet B1): bounded remote set-control seam =====
+
+    /**
+     * Issue #1391 (packets B1/B2): canonical `executionId:sessionId` identity of the
+     * live set execution, for remote-control command anchoring. Manager-level accessor;
+     * watch-side controllers never touch the engine directly.
+     */
+    fun currentRemoteExecutionIdentityOrNull(): String? =
+        activeSessionEngine.currentExecutionLeaseOrNull()?.let(::executionIdentityOf)
+
+    /**
+     * Watch-driven set control: ends the CURRENT set exactly once through the
+     * EXISTING manual-completion machinery and prepares the successor WITHOUT
+     * starting it, returning an honest typed receipt observed from the commit
+     * path — never from UI-state polling.
+     *
+     * Sequence: reserve the current execution + no-autostart authority ->
+     * invoke the existing manual-completion path -> immutable completion/profile
+     * facts are captured and finalized exactly once by that path -> teardown is
+     * initiated independently of the save -> the exact successful commit (or an
+     * explicit no-save decision) is observed -> teardown Ready is awaited ->
+     * context/authority is revalidated -> normal next-target planning prepares
+     * the successor without starting it. Handle auto-start, summary auto-advance
+     * and any queued successor start are suppressed for the whole window.
+     *
+     * Semantics:
+     * - `expectedExecutionIdentity` must match the live execution's
+     *   `executionId:sessionId` exactly; on any mismatch the operation returns
+     *   terminal [RemoteSetControlTerminal.SUPERSEDED] without mutating.
+     * - persistence is [RemotePersistenceOutcome.SUCCEEDED] only when the exact
+     *   commit was observed, [RemotePersistenceOutcome.NOT_REQUIRED] only for an
+     *   explicit no-save decision, and a save still stuck at the end of the
+     *   result window stays [RemotePersistenceOutcome.PENDING] with a FAILED
+     *   terminal that blocks the next start (as does a FAILED commit).
+     * - `SetSummary` publication is never treated as a receipt.
+     * - [RemoteCompletionDecision] is the phone-equivalent save/discard
+     *   attribution: real routines with working reps save and advance
+     *   (SAVED_AND_ADVANCED); temp_single_*, zero-working-reps and warmup sets
+     *   follow the phone's discard-and-retry behavior (DISCARDED_AND_RETRIED).
+     */
+    override suspend fun endCurrentSetAndPrepareNext(expectedExecutionIdentity: String): RemoteSetControlReceipt {
+        val operationId = KmpUtils.randomUUID()
+        val observedAtEntry = activeSessionEngine.currentExecutionLeaseOrNull()?.let(::executionIdentityOf)
+        val reservation = when (
+            val reserve = activeSessionEngine.reserveRemoteSetControl(expectedExecutionIdentity, operationId)
+        ) {
+            ActiveSessionEngine.RemoteSetControlReserveResult.Superseded -> {
+                return RemoteSetControlReceipt(
+                    operationId = operationId,
+                    expectedExecutionIdentity = expectedExecutionIdentity,
+                    observedExecutionIdentity = observedAtEntry,
+                    completionDecision = RemoteCompletionDecision.NO_COMPLETION,
+                    persistence = RemotePersistenceOutcome.NOT_REQUIRED,
+                    teardownState = RemoteTeardownState.READY,
+                    terminal = RemoteSetControlTerminal.SUPERSEDED,
+                )
+            }
+            ActiveSessionEngine.RemoteSetControlReserveResult.PhoneInputPending -> {
+                return RemoteSetControlReceipt(
+                    operationId = operationId,
+                    expectedExecutionIdentity = expectedExecutionIdentity,
+                    observedExecutionIdentity = observedAtEntry,
+                    completionDecision = RemoteCompletionDecision.NO_COMPLETION,
+                    persistence = RemotePersistenceOutcome.NOT_REQUIRED,
+                    teardownState = RemoteTeardownState.READY,
+                    terminal = RemoteSetControlTerminal.PHONE_INPUT_REQUIRED,
+                )
+            }
+            is ActiveSessionEngine.RemoteSetControlReserveResult.Reserved -> reserve.reservation
+        }
+        return try {
+            runRemoteSetControlOperation(reservation)
+        } finally {
+            activeSessionEngine.releaseRemoteSetControl(reservation)
+            activeSessionEngine.clearRemoteObservationSignals(reservation.lease.sessionId)
+        }
+    }
+
+    private suspend fun runRemoteSetControlOperation(
+        reservation: RemoteSetControlReservation,
+    ): RemoteSetControlReceipt {
+        val sessionId = reservation.lease.sessionId
+
+        // The EXISTING manual-completion path: claim-bound, exactly one transition.
+        activeSessionEngine.invokeRemoteManualCompletion(reservation)
+
+        // Observe the exact commit outcome (or an explicit no-save decision) from
+        // the commit path's own ledger, inside the bounded result window.
+        val commitOutcome = if (reservation.route == RemoteCompletionRoute.SAVE_AND_ADVANCE) {
+            activeSessionEngine.awaitRemoteSetCommitOutcome(sessionId)
+        } else {
+            null
+        }
+
+        // Await the machine teardown reaching Ready (or an explicit recovery
+        // requirement) — teardown is initiated independently of the save.
+        val teardownSettled = withTimeoutOrNull(REMOTE_SET_CONTROL_RESULT_WINDOW_MS) {
+            machineTeardownState.first { state ->
+                state is MachineTeardownState.Ready || state is MachineTeardownState.RecoveryRequired
+            }
+        }
+        val teardownReady = teardownSettled is MachineTeardownState.Ready
+
+        // Let the existing completion pipeline finish its own presentation so it
+        // cannot race the prepare-only planning below.
+        withTimeoutOrNull(REMOTE_SET_CONTROL_RESULT_WINDOW_MS) {
+            activeSessionEngine.remotePresentationSettled(sessionId).await()
+        }
+
+        val bodyweightPromptPending = activeSessionEngine.isRemoteBodyweightPromptPending(reservation.lease)
+        val persistenceStatus = activeSessionEngine.remotePersistenceOutcome(sessionId)
+        val persistence = when {
+            commitOutcome != null -> commitOutcome
+            reservation.route != RemoteCompletionRoute.SAVE_AND_ADVANCE -> RemotePersistenceOutcome.NOT_REQUIRED
+            bodyweightPromptPending -> RemotePersistenceOutcome.PENDING
+            persistenceStatus != RemotePersistenceOutcome.NOT_REQUIRED -> persistenceStatus
+            // The save route claimed a completion but the commit path decided
+            // nothing yet: unresolved at result-window end.
+            else -> RemotePersistenceOutcome.PENDING
+        }
+
+        // Revalidate context/authority before mutating anything further.
+        val currentLease = activeSessionEngine.currentExecutionLeaseOrNull()
+        val noForeignExecution = currentLease == null ||
+            executionIdentityOf(currentLease) == reservation.expectedExecutionIdentity
+        val contextStillCurrent = activeSessionEngine.isRemoteSetControlReservationCurrent(reservation) &&
+            noForeignExecution &&
+            coordinator.currentRoutineSessionId == reservation.routineSessionIdAtReserve &&
+            coordinator.currentRoutineId == reservation.routineIdAtReserve
+
+        val isJustLiftCompletion = reservation.completion.isJustLift
+        val saveClaimed = reservation.route == RemoteCompletionRoute.SAVE_AND_ADVANCE &&
+            persistence != RemotePersistenceOutcome.NOT_REQUIRED
+
+        val terminal = when {
+            !contextStillCurrent -> RemoteSetControlTerminal.SUPERSEDED
+            !teardownReady -> RemoteSetControlTerminal.FAILED
+            persistence == RemotePersistenceOutcome.FAILED -> RemoteSetControlTerminal.FAILED
+            persistence == RemotePersistenceOutcome.PENDING && !bodyweightPromptPending ->
+                RemoteSetControlTerminal.FAILED
+            bodyweightPromptPending -> RemoteSetControlTerminal.PHONE_INPUT_REQUIRED
+            isJustLiftCompletion && reservation.route == RemoteCompletionRoute.SAVE_AND_ADVANCE ->
+                // The completion path clears the Just Lift selection: the phone must
+                // re-select before a successor exists. Never fabricate a target.
+                RemoteSetControlTerminal.PHONE_INPUT_REQUIRED
+            reservation.route == RemoteCompletionRoute.DISCARD_AND_RETRY ->
+                // The discard path already prepared the retry in SetReady (or left
+                // Just Lift Idle with its selection intact).
+                RemoteSetControlTerminal.PREPARED
+            else -> prepareSuccessorForRemoteControl(reservation)
+        }
+
+        val completionDecision = when {
+            // A deferred bodyweight save owns no completion decision yet: the rep-entry
+            // dialog completes (and saves) the set later, so SAVED_AND_ADVANCED would
+            // misreport a save that has not happened (frozen receipt semantics:
+            // NO_COMPLETION = "no completion decision was reached").
+            saveClaimed && !bodyweightPromptPending && terminal != RemoteSetControlTerminal.SUPERSEDED ->
+                RemoteCompletionDecision.SAVED_AND_ADVANCED
+            reservation.route == RemoteCompletionRoute.DISCARD_AND_RETRY ->
+                RemoteCompletionDecision.DISCARDED_AND_RETRIED
+            else -> RemoteCompletionDecision.NO_COMPLETION
+        }
+
+        return RemoteSetControlReceipt(
+            operationId = reservation.operationId,
+            expectedExecutionIdentity = reservation.expectedExecutionIdentity,
+            observedExecutionIdentity = reservation.expectedExecutionIdentity,
+            completionDecision = completionDecision,
+            persistence = persistence,
+            teardownState = if (teardownReady) RemoteTeardownState.READY else RemoteTeardownState.PENDING,
+            terminal = terminal,
+        )
+    }
+
+    /**
+     * Normal next-target planning, prepare-only: resolves the routine's next step
+     * exactly as the phone's continue path does and prepares it in SetReady
+     * WITHOUT starting it (auto-start stays suppressed by the operation's hold).
+     * No target is ever fabricated: a Just Lift / no-routine flow and a rest-owned
+     * transition return their honest terminals instead.
+     */
+    private fun prepareSuccessorForRemoteControl(
+        reservation: RemoteSetControlReservation,
+    ): RemoteSetControlTerminal {
+        val state = coordinator._workoutState.value
+        val plan = coordinator._restTransitionPlan.value
+        if (state is WorkoutState.Resting ||
+            plan is RestTransitionPlan.UnresolvedDropOffer ||
+            plan is RestTransitionPlan.AcceptedRetry
+        ) {
+            // A rest/offer owns the transition: no successor is prepared here.
+            return RemoteSetControlTerminal.COMPLETE
+        }
+        val routine = coordinator._loadedRoutine.value
+            ?: return RemoteSetControlTerminal.PHONE_INPUT_REQUIRED
+        val currentExercise = routine.exercises.getOrNull(coordinator._currentExerciseIndex.value)
+        val completedWorkingReps = reservation.completion.actualReps
+        val isLastSetOfExercise = coordinator._currentSetIndex.value >= (currentExercise?.setReps?.size ?: 1) - 1
+        if (isLastSetOfExercise && completedWorkingReps > 0) {
+            val currentExerciseIndex = coordinator._currentExerciseIndex.value
+            coordinator._completedExercises.value = coordinator._completedExercises.value + currentExerciseIndex
+            coordinator._skippedExercises.value = coordinator._skippedExercises.value - currentExerciseIndex
+        }
+        coordinator._currentSetRpe.value = null
+
+        restTransitionNavigationLookupsForTest++
+        val nextStep = routineFlowManager.getNextStep(
+            routine,
+            coordinator._currentExerciseIndex.value,
+            coordinator._currentSetIndex.value,
+        )
+        if (nextStep == null) {
+            activeSessionEngine.completeRoutineRun(backupTag = "remote-set-complete")
+            return RemoteSetControlTerminal.COMPLETE
+        }
+
+        // Prepare-only successor: exactly the phone's manual-control SetReady
+        // preparation, without any start.
+        val (nextExIdx, nextSetIdx) = nextStep
+        val nextExercise = routine.exercises[nextExIdx]
+        val nextSetWeight = activeSessionEngine.resolveOccurrenceSetWeight(nextExercise, nextSetIdx)
+        val nextSetReps = nextExercise.setReps.getOrNull(nextSetIdx)
+        val isNextSetLastSet = nextSetIdx >= nextExercise.setReps.size - 1
+        val nextIsAMRAP = nextSetReps == null || (nextExercise.isAMRAP && isNextSetLastSet)
+
+        activeSessionEngine.mutateConfigurationInputs {
+            coordinator._currentExerciseIndex.value = nextExIdx
+            coordinator._currentSetIndex.value = nextSetIdx
+            coordinator._currentSetRpe.value = null
+            coordinator._workoutParameters.value = coordinator._workoutParameters.value.copy(
+                weightPerCableKg = nextSetWeight,
+                reps = nextSetReps ?: 0,
+                programMode = nextExercise.programMode,
+                echoLevel = nextExercise.echoLevel,
+                eccentricLoad = nextExercise.eccentricLoad,
+                progressionRegressionKg = nextExercise.progressionKg,
+                selectedExerciseId = nextExercise.exercise.id,
+                isAMRAP = nextIsAMRAP,
+                stallDetectionEnabled = nextExercise.stallDetectionEnabled,
+                stopAtTop = nextExercise.stopAtTop,
+                repCountTiming = nextExercise.repCountTiming,
+            )
+        }
+        repCounter.resetCountsOnly()
+        activeSessionEngine.resetAutoStopState()
+        coordinator._workoutState.value = WorkoutState.Idle
+        enterSetReady(nextExIdx, nextSetIdx)
+        return RemoteSetControlTerminal.PREPARED
     }
 
     // ===== Cleanup =====

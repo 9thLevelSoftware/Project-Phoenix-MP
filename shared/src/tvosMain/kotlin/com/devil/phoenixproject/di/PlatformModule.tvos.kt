@@ -2,6 +2,8 @@ package com.devil.phoenixproject.di
 
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.auth.OAuthLauncher
+import com.devil.phoenixproject.data.garmin.GarminCompanionTransport
+import com.devil.phoenixproject.data.garmin.NoOpGarminCompanionTransport
 import com.devil.phoenixproject.data.integration.HealthIntegration
 import com.devil.phoenixproject.data.integration.HealthWorkoutWriter
 import com.devil.phoenixproject.data.local.DriverFactory
@@ -53,6 +55,9 @@ actual val platformModule: Module = module {
     single<HealthWorkoutWriter> { get<HealthIntegration>() }
     single<DataBackupManager> { TvosUnavailableDataBackupManager() }
     single<WorkoutServiceController> { NoOpWorkoutServiceController }
+    // Garmin watch-button companion transport (issue #1391): tvOS is a clean no-op;
+    // Garmin controls are phone-only and tvOS product functionality stays out.
+    single<GarminCompanionTransport> { NoOpGarminCompanionTransport() }
     single {
         val cloud = get<SupabaseConfig>()
         val cloudConfigured = cloud.url.isNotBlank() && cloud.anonKey.isNotBlank()

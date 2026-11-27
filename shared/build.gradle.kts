@@ -206,6 +206,9 @@ kotlin {
 
                 // Health Connect (Google Health)
                 implementation(libs.androidx.health.connect)
+
+                // Garmin Connect IQ companion app SDK (issue #1391, GCM service relay)
+                implementation(libs.garmin.ciq.companion.app.sdk)
             }
         }
 

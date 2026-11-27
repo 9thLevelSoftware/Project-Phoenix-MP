@@ -38,6 +38,25 @@ interface WorkoutStateProvider {
      */
     val isWorkoutMidSet: Boolean
 
+    /**
+     * Issue #1391 Phase 1 (packet B1): the bounded remote set-control seam —
+     * ends the current set and prepares the successor without starting it,
+     * returning a commit-path receipt. Declared here so watch-side controllers
+     * consume it through the manager's interface. Providers that do not own
+     * workout control inherit an honest no-op receipt whose FAILED terminal
+     * blocks any remote start; DefaultWorkoutSessionManager overrides this with
+     * the real operation.
+     */
+    suspend fun endCurrentSetAndPrepareNext(expectedExecutionIdentity: String): RemoteSetControlReceipt =
+        RemoteSetControlReceipt(
+            operationId = "unsupported",
+            expectedExecutionIdentity = expectedExecutionIdentity,
+            observedExecutionIdentity = null,
+            completionDecision = RemoteCompletionDecision.NO_COMPLETION,
+            persistence = RemotePersistenceOutcome.NOT_REQUIRED,
+            teardownState = RemoteTeardownState.READY,
+            terminal = RemoteSetControlTerminal.FAILED,
+        )
 }
 
 /**
