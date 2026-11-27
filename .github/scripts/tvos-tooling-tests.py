@@ -791,7 +791,10 @@ class ToolingTests(unittest.TestCase):
             destination.write_bytes((ROOT / relative).read_bytes())
         release.source_guard(self.root)
         factory = self.root / paths[3]
-        factory.write_text(factory.read_text().replace("= KableBleRepository()", "= PhantomBleRepository()"))
+        original = factory.read_text()
+        mutated = original.replace("KableBleRepository(scannerCoordinator)", "PhantomBleRepository()")
+        self.assertNotEqual(mutated, original)
+        factory.write_text(mutated)
         with self.assertRaises(ValueError):
             release.source_guard(self.root)
 

@@ -61,7 +61,7 @@ private fun runOnMainQueue(block: () -> Unit) {
 private fun createPlatformWebAuthSession(
     url: NSURL,
     callbackScheme: String,
-    provider: PresentationContextProvider,
+    provider: ASWebAuthenticationPresentationContextProvidingProtocol,
     completionHandler: (NSURL?, NSError?) -> Unit,
 ): WebAuthSessionHandle {
     val webSession = ASWebAuthenticationSession(

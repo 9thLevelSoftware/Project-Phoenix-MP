@@ -222,8 +222,13 @@ def cloud_config(env, *, required):
 def source_guard(root):
     """Fail closed on production/fixture composition drift; not a BLE behavior proof."""
     device = (root / "shared-tvos/src/tvosArm64Main/kotlin/com/devil/phoenixproject/di/TvosBleRepositoryFactory.tvosArm64.kt").read_text()
-    require("createTvosBleRepository(): BleRepository = KableBleRepository()" in device,
-            "Device BLE factory must use the real Kable repository")
+    require(
+        re.search(
+            r"\bcreateTvosBleRepository\s*\(\s*scannerCoordinator:\s*BleScannerCoordinator\s*\)\s*:\s*BleRepository\s*=\s*KableBleRepository\(\s*scannerCoordinator\s*\)",
+            device,
+        ) is not None,
+        "Device BLE factory must use the real Kable repository",
+    )
     require("isTvosSimulatorFixtureEnabled(): Boolean = false" in device and "Phantom" not in device,
             "Device BLE factory must disable simulator fixtures")
     simulator = (root / "shared-tvos/src/tvosSimulatorArm64Main/kotlin/com/devil/phoenixproject/di/TvosBleRepositoryFactory.tvosSimulatorArm64.kt").read_text()

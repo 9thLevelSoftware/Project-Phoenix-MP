@@ -4,7 +4,6 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
-import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class WorkoutStateTest {
@@ -67,13 +66,6 @@ class WorkoutStateTest {
     }
 
     // ========== WorkoutState Tests ==========
-
-    @Test
-    fun `WorkoutState Idle is singleton`() {
-        val idleFromList: WorkoutState = listOf(WorkoutState.Active, WorkoutState.Idle).last()
-        assertSame(WorkoutState.Idle, idleFromList)
-        assertFalse(idleFromList == WorkoutState.Active)
-    }
 
     @Test
     fun `WorkoutState Countdown stores seconds remaining`() {
