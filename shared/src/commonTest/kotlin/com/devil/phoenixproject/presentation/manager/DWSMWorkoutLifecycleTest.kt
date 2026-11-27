@@ -71,9 +71,14 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
@@ -81,6 +86,8 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.yield
 
 /**
  * Characterization tests for DefaultWorkoutSessionManager workout lifecycle.
@@ -4288,6 +4295,8 @@ class DWSMWorkoutLifecycleTest {
     @Test
     fun `stopWorkout with exitingWorkout false transitions to SetSummary`() = runTest {
         val harness = activeDWSM()
+        harness.setActiveSummaryCountdownSeconds(0)
+        runCurrent()
 
         harness.dwsm.stopWorkout(exitingWorkout = false)
         advanceUntilIdle()
@@ -4302,6 +4311,8 @@ class DWSMWorkoutLifecycleTest {
     @Test
     fun `stopWorkout guard flag prevents double stop`() = runTest {
         val harness = activeDWSM()
+        harness.setActiveSummaryCountdownSeconds(0)
+        runCurrent()
 
         // First stop should work
         harness.dwsm.stopWorkout(exitingWorkout = false)
@@ -4371,6 +4382,8 @@ class DWSMWorkoutLifecycleTest {
     @Test
     fun `resetForNewWorkout clears rep count and resets to Idle`() = runTest {
         val harness = activeDWSM()
+        harness.setActiveSummaryCountdownSeconds(0)
+        runCurrent()
 
         // Stop workout first to get to SetSummary
         harness.dwsm.stopWorkout(exitingWorkout = false)
@@ -4509,7 +4522,7 @@ class DWSMWorkoutLifecycleTest {
             currentSet = 1,
             totalSets = 2,
         )
-        harness.dwsm.startNextSet()
+        harness.dwsm.skipRest()
         advanceUntilIdle()
 
         val params = harness.dwsm.coordinator.workoutParameters.value
@@ -4550,7 +4563,7 @@ class DWSMWorkoutLifecycleTest {
             ),
         )
 
-        harness.dwsm.startNextSet()
+        harness.dwsm.skipRest()
         advanceUntilIdle()
 
         val params = harness.dwsm.coordinator.workoutParameters.value
@@ -4582,7 +4595,7 @@ class DWSMWorkoutLifecycleTest {
         harness.dwsm.loadRoutine(routine)
         advanceUntilIdle()
 
-        // Disable autoplay so startNextSet() enters SetReady instead of launching
+        // Disable autoplay so skipRest() enters SetReady instead of launching
         // startWorkout() which creates infinite delay loops (rest timer, metrics, etc.)
         harness.setActiveSummaryCountdownSeconds(0)
         advanceUntilIdle()
@@ -4594,7 +4607,7 @@ class DWSMWorkoutLifecycleTest {
             currentSet = 1,
             totalSets = 1,
         )
-        harness.dwsm.startNextSet()
+        harness.dwsm.skipRest()
         advanceUntilIdle()
 
         val params = harness.dwsm.coordinator.workoutParameters.value
@@ -5480,6 +5493,7 @@ class DWSMWorkoutLifecycleTest {
     @Test
     fun `standard set auto-stops after stalled deload timer expires`() = runTest {
         val harness = DWSMTestHarness(this)
+        harness.setActiveSummaryCountdownSeconds(0)
         harness.fakeBleRepo.simulateConnect("Vee_Test")
 
         harness.dwsm.updateWorkoutParameters(
@@ -5584,6 +5598,7 @@ class DWSMWorkoutLifecycleTest {
     @Test
     fun `Issue 256 - velocity stall auto-stops with pending rep after timer expires`() = runTest {
         val harness = DWSMTestHarness(this)
+        harness.setActiveSummaryCountdownSeconds(0)
         harness.fakeBleRepo.simulateConnect("Vee_Test")
 
         harness.dwsm.updateWorkoutParameters(
@@ -5975,6 +5990,7 @@ class DWSMWorkoutLifecycleTest {
     fun `Issue 652 recurrence - progressive Hard to Hardest Echo sets count current reps and stop only at the configured target or a new stall`() = runTest {
         val harness = DWSMTestHarness(this)
         try {
+            harness.setActiveSummaryCountdownSeconds(0)
             harness.fakeBleRepo.simulateConnect("Vee_Test")
 
             suspend fun startEchoSet(level: EchoLevel) {
@@ -6247,6 +6263,7 @@ class DWSMWorkoutLifecycleTest {
     @Test
     fun `F4 - deload-armed stall survives racked handles and auto-stops`() = runTest {
         val harness = DWSMTestHarness(this)
+        harness.setActiveSummaryCountdownSeconds(0)
         harness.fakeBleRepo.simulateConnect("Vee_Test")
         harness.dwsm.updateWorkoutParameters(
             WorkoutParameters(
@@ -8064,52 +8081,34 @@ class DWSMWorkoutLifecycleTest {
     }
 
     @Test
-    fun `legacy start next set at zero fails closed for declined rest`() = runTest {
+    fun `declineDropSetFollowedByNoArgSkipRestAdvancesWorkout`() = runTest {
         val harness = enabledDropSetHarness(this)
         try {
             val unresolved = prepareEligibleStallRest(harness)
             harness.dwsm.applyRestTransitionAwait(RestTransitionCommand.Decline(unresolved.actionIdentity()))
-            val declined = assertIs<RestTransitionPlan.Declined>(harness.restTransitionPlan.value)
+            assertIs<RestTransitionPlan.Declined>(harness.restTransitionPlan.value)
+            assertIs<WorkoutState.Resting>(harness.coordinator.workoutState.value)
             val lastCommittedKey = harness.fakeActiveWorkoutRuntimeRepository.replacements.last()
-            val persistedBeforeCallback = requireNotNull(
-                harness.fakeActiveWorkoutRuntimeRepository.committedDocument(
-                    lastCommittedKey.profileId,
-                    lastCommittedKey.routineSessionId,
-                ),
-            )
-            val replacementCountBeforeCallback = harness.fakeActiveWorkoutRuntimeRepository.replacements.size
-            val lookupCountBeforeCallback = harness.dwsm.restTransitionNavigationLookupsForTest
-            val sourceCoordinates = harness.coordinator.currentExerciseIndex.value to harness.coordinator.currentSetIndex.value
-            harness.coordinator._workoutState.value = WorkoutState.Resting(
-                restSecondsRemaining = 0,
-                nextExerciseName = "",
-                isLastExercise = false,
-                currentSet = 1,
-                totalSets = 2,
-            )
 
-            harness.dwsm.startNextSet()
+            harness.dwsm.skipRest()
             runCurrent()
 
-            assertEquals(declined, harness.restTransitionPlan.value)
+            assertEquals(null, harness.restTransitionPlan.value)
             assertEquals(
-                persistedBeforeCallback,
-                harness.fakeActiveWorkoutRuntimeRepository.committedDocument(
-                    lastCommittedKey.profileId,
-                    lastCommittedKey.routineSessionId,
-                ),
+                null,
+                harness.fakeActiveWorkoutRuntimeRepository
+                    .committedDocument(lastCommittedKey.profileId, lastCommittedKey.routineSessionId)
+                    ?.restTransitionPlan,
             )
-            assertEquals(replacementCountBeforeCallback, harness.fakeActiveWorkoutRuntimeRepository.replacements.size)
-            assertEquals(lookupCountBeforeCallback, harness.dwsm.restTransitionNavigationLookupsForTest)
-            assertEquals(sourceCoordinates.first, harness.coordinator.currentExerciseIndex.value)
-            assertEquals(sourceCoordinates.second, harness.coordinator.currentSetIndex.value)
+            assertFalse(harness.coordinator.workoutState.value is WorkoutState.Resting)
+            assertEquals(1, harness.coordinator.currentSetIndex.value)
         } finally {
             harness.cleanup()
         }
     }
 
     @Test
-    fun `legacy start next set at zero consumes a plain normal rest once`() = runTest {
+    fun `noArg skipRest consumes a plain normal rest once`() = runTest {
         val harness = DWSMTestHarness(this)
         try {
             prepareNormalRest(harness)
@@ -8122,9 +8121,9 @@ class DWSMWorkoutLifecycleTest {
                 totalSets = 2,
             )
 
-            harness.dwsm.startNextSet()
+            harness.dwsm.skipRest()
             runCurrent()
-            harness.dwsm.startNextSet()
+            harness.dwsm.skipRest()
             runCurrent()
 
             assertEquals(null, harness.restTransitionPlan.value)
@@ -10433,6 +10432,486 @@ class DWSMWorkoutLifecycleTest {
             assertFalse(harness.coordinator.routineFlowState.value is RoutineFlowState.Complete)
         } finally {
             harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `finalRepBiomechanicsAreAwaitedBeforeSessionSummaryAndSavedOnDelayedDispatcher`() = runTest {
+        val harness = DWSMTestHarness(
+            this,
+            biomechanicsDispatcher = StandardTestDispatcher(testScheduler),
+        )
+        try {
+            harness.fakeBleRepo.simulateConnect("Vee_Test", "AA:BB:CC:DD:EE:FF")
+            harness.dwsm.updateWorkoutParameters(
+                WorkoutParameters(
+                    programMode = ProgramMode.OldSchool,
+                    reps = 3,
+                    warmupReps = 0,
+                    weightPerCableKg = 25f,
+                ),
+            )
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+            harness.repCounter.configure(
+                warmupTarget = 0,
+                workingTarget = 3,
+                isJustLift = false,
+                stopAtTop = false,
+            )
+
+            suspend fun emitRepWithVelocity(repIndex: Int, velocityMmS: Double) {
+                val previousBoundary = harness.coordinator.repBoundaryTimestamps.value.lastOrNull() ?: 0L
+                while (currentTimeMillis() <= previousBoundary) {
+                    // Advance past previous rep boundary on the wall clock used by handleRepNotification
+                }
+                val startMs = currentTimeMillis()
+                listOf(
+                    WorkoutMetric(timestamp = startMs, loadA = 25f, loadB = 25f, positionA = 120f, positionB = 120f, velocityA = velocityMmS, velocityB = velocityMmS),
+                    WorkoutMetric(timestamp = startMs, loadA = 25f, loadB = 25f, positionA = 220f, positionB = 220f, velocityA = velocityMmS, velocityB = velocityMmS),
+                    WorkoutMetric(timestamp = startMs, loadA = 25f, loadB = 25f, positionA = 320f, positionB = 320f, velocityA = velocityMmS, velocityB = velocityMmS),
+                    WorkoutMetric(timestamp = startMs, loadA = 25f, loadB = 25f, positionA = 180f, positionB = 180f, velocityA = -200.0, velocityB = -200.0),
+                ).forEach { harness.fakeBleRepo.emitMetric(it) }
+                advanceUntilIdle()
+
+                harness.fakeBleRepo.emitRepNotification(
+                    harness.modernRepPacket(
+                        repsSetCount = repIndex,
+                        repsSetTotal = 3,
+                        timestamp = harness.nowMs + repIndex * 10L,
+                        topCounter = repIndex,
+                        completeCounter = repIndex,
+                        repsRomCount = 0,
+                        repsRomTotal = 0,
+                    ),
+                )
+            }
+
+            emitRepWithVelocity(1, velocityMmS = 600.0)
+            advanceUntilIdle()
+            emitRepWithVelocity(2, velocityMmS = 500.0)
+            advanceUntilIdle()
+            // Rep 3 hits targetReps (3) -> WORKOUT_COMPLETE fires inside handleRepNotification
+            emitRepWithVelocity(3, velocityMmS = 400.0)
+            advanceUntilIdle()
+
+            val savedSession = harness.fakeWorkoutRepo.saveSessionAttempts.single()
+            val savedRepMetrics = harness.fakeRepMetricRepo.getRepMetrics(savedSession.id)
+            assertEquals(3, savedRepMetrics.size)
+            assertTrue(savedRepMetrics.all {
+                it.powerMethod == com.devil.phoenixproject.domain.model.PAIRED_CABLE_POWER_METHOD
+            })
+            val savedBiomechanics = harness.fakeBiomechanicsRepo.savedBiomechanics[savedSession.id]
+            assertNotNull(savedBiomechanics)
+            assertEquals(
+                3,
+                savedBiomechanics.size,
+                "All 3 reps including final rep 3 must be persisted in RepBiomechanics",
+            )
+            assertEquals(3, savedBiomechanics.last().repNumber)
+            assertEquals(400f, savedBiomechanics.last().velocity.meanConcentricVelocityMmS, 0.5f)
+            assertEquals(
+                500f,
+                assertNotNull(savedSession.avgMcvMmS),
+                0.5f,
+                "avgMcvMmS must average all 3 reps (600, 500, 400 -> 500)",
+            )
+            assertEquals(
+                33.33f,
+                assertNotNull(savedSession.totalVelocityLossPercent),
+                0.5f,
+                "Velocity loss must reflect final rep 3 drop from 600 to 400 mm/s",
+            )
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `finalRepBiomechanicsAreAwaitedWhenRepEventRunsSynchronouslyUnderUnconfinedScope`() = runTest {
+        val harness = DWSMTestHarness(
+            this,
+            scopeDispatcher = UnconfinedTestDispatcher(testScheduler),
+            biomechanicsDispatcher = StandardTestDispatcher(testScheduler),
+        )
+        try {
+            harness.fakeBleRepo.simulateConnect("Vee_Test", "AA:BB:CC:DD:EE:FF")
+            harness.dwsm.updateWorkoutParameters(
+                WorkoutParameters(
+                    programMode = ProgramMode.OldSchool,
+                    reps = 3,
+                    warmupReps = 0,
+                    weightPerCableKg = 25f,
+                ),
+            )
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+            harness.repCounter.configure(
+                warmupTarget = 0,
+                workingTarget = 3,
+                isJustLift = false,
+                stopAtTop = false,
+            )
+
+            suspend fun emitRepWithVelocity(repIndex: Int, velocityMmS: Double) {
+                val previousBoundary = harness.coordinator.repBoundaryTimestamps.value.lastOrNull() ?: 0L
+                while (currentTimeMillis() <= previousBoundary) {
+                    // Advance past previous rep boundary on the wall clock used by handleRepNotification
+                }
+                val startMs = currentTimeMillis()
+                listOf(
+                    WorkoutMetric(timestamp = startMs, loadA = 25f, loadB = 25f, positionA = 120f, positionB = 120f, velocityA = velocityMmS, velocityB = velocityMmS),
+                    WorkoutMetric(timestamp = startMs, loadA = 25f, loadB = 25f, positionA = 220f, positionB = 220f, velocityA = velocityMmS, velocityB = velocityMmS),
+                    WorkoutMetric(timestamp = startMs, loadA = 25f, loadB = 25f, positionA = 320f, positionB = 320f, velocityA = velocityMmS, velocityB = velocityMmS),
+                    WorkoutMetric(timestamp = startMs, loadA = 25f, loadB = 25f, positionA = 180f, positionB = 180f, velocityA = -200.0, velocityB = -200.0),
+                ).forEach { harness.fakeBleRepo.emitMetric(it) }
+                advanceUntilIdle()
+
+                harness.fakeBleRepo.emitRepNotification(
+                    harness.modernRepPacket(
+                        repsSetCount = repIndex,
+                        repsSetTotal = 3,
+                        timestamp = harness.nowMs + repIndex * 10L,
+                        topCounter = repIndex,
+                        completeCounter = repIndex,
+                        repsRomCount = 0,
+                        repsRomTotal = 0,
+                    ),
+                )
+            }
+
+            emitRepWithVelocity(1, velocityMmS = 600.0)
+            advanceUntilIdle()
+            emitRepWithVelocity(2, velocityMmS = 500.0)
+            advanceUntilIdle()
+            emitRepWithVelocity(3, velocityMmS = 400.0)
+            advanceUntilIdle()
+
+            val savedSession = harness.fakeWorkoutRepo.saveSessionAttempts.single()
+            val savedBiomechanics = assertNotNull(harness.fakeBiomechanicsRepo.savedBiomechanics[savedSession.id])
+            assertEquals(3, savedBiomechanics.size)
+            assertEquals(3, savedBiomechanics.last().repNumber)
+            assertEquals(400f, savedBiomechanics.last().velocity.meanConcentricVelocityMmS, 0.5f)
+            assertEquals(500f, assertNotNull(savedSession.avgMcvMmS), 0.5f)
+            assertEquals(33.33f, assertNotNull(savedSession.totalVelocityLossPercent), 0.5f)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `finalRepBiomechanicsAreNeverDroppedUnderMultiThreadedDefaultScope`() = runTest {
+        withContext(Dispatchers.Default) {
+            repeat(50) { iteration ->
+                val harness = DWSMTestHarness(
+                    this@runTest,
+                    scopeDispatcher = Dispatchers.Default,
+                    biomechanicsDispatcher = Dispatchers.Default,
+                    wallClockMillisProvider = ::currentTimeMillis,
+                    elapsedRealtimeProviderOverride = ::currentTimeMillis,
+                    biomechanicsRepProcessor = BiomechanicsRepProcessor { engine, input ->
+                        delay(2)
+                        BiomechanicsRepProcessor.Default.process(engine, input)
+                    },
+                )
+                try {
+                    harness.fakeBleRepo.simulateConnect("Vee_Test", "AA:BB:CC:DD:EE:FF")
+                    harness.dwsm.updateWorkoutParameters(
+                        WorkoutParameters(
+                            programMode = ProgramMode.OldSchool,
+                            reps = 3,
+                            warmupReps = 0,
+                            weightPerCableKg = 25f,
+                        ),
+                    )
+                    harness.dwsm.startWorkout(skipCountdown = true)
+                    withTimeout(5_000L) {
+                        harness.coordinator.workoutState.first { it is WorkoutState.Active }
+                        while (harness.activeSessionEngine.currentExecutionLeaseForTest().activationCutoverTimestampMs == null) {
+                            delay(1)
+                        }
+                    }
+                    val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+                    val cutover = requireNotNull(lease.activationCutoverTimestampMs)
+                    withTimeout(5_000L) {
+                        while (harness.coordinator.currentMetric.value == null) {
+                            harness.fakeBleRepo.emitMetric(WorkoutMetric(timestamp = 1L, loadA = 0f, loadB = 0f, positionA = 0f, positionB = 0f))
+                            delay(1)
+                        }
+                        harness.coordinator.collectedMetrics.clear()
+                    }
+                    harness.repCounter.configure(
+                        warmupTarget = 0,
+                        workingTarget = 3,
+                        isJustLift = false,
+                        stopAtTop = false,
+                    )
+
+                    suspend fun emitRep(repIndex: Int, velocityMmS: Double) {
+                        val previousBoundary = harness.coordinator.repBoundaryTimestamps.value.lastOrNull() ?: 0L
+                        val minTs = maxOf(previousBoundary, cutover)
+                        while (currentTimeMillis() <= minTs) {
+                            delay(1)
+                        }
+                        val startMs = currentTimeMillis()
+                        listOf(
+                            WorkoutMetric(timestamp = startMs, loadA = 25f, loadB = 25f, positionA = 120f, positionB = 120f, velocityA = velocityMmS, velocityB = velocityMmS),
+                            WorkoutMetric(timestamp = startMs + 1, loadA = 25f, loadB = 25f, positionA = 220f, positionB = 220f, velocityA = velocityMmS, velocityB = velocityMmS),
+                            WorkoutMetric(timestamp = startMs + 2, loadA = 25f, loadB = 25f, positionA = 320f, positionB = 320f, velocityA = velocityMmS, velocityB = velocityMmS),
+                            WorkoutMetric(timestamp = startMs + 3, loadA = 25f, loadB = 25f, positionA = 180f, positionB = 180f, velocityA = -200.0, velocityB = -200.0),
+                        ).forEach { harness.fakeBleRepo.emitMetric(it) }
+                        withTimeout(5_000L) {
+                            while ((harness.coordinator.collectedMetrics.snapshot().lastOrNull()?.timestamp ?: 0L) < startMs + 3) {
+                                delay(1)
+                            }
+                        }
+                        while (currentTimeMillis() < startMs + 3) {
+                            delay(1)
+                        }
+
+                        harness.fakeBleRepo.emitRepNotification(
+                            harness.modernRepPacket(
+                                repsSetCount = repIndex,
+                                repsSetTotal = 3,
+                                timestamp = startMs,
+                                topCounter = repIndex,
+                                completeCounter = repIndex,
+                                repsRomCount = 0,
+                                repsRomTotal = 0,
+                            ),
+                        )
+                    }
+
+                    emitRep(1, velocityMmS = 600.0)
+                    withTimeout(5_000L) {
+                        while (
+                            harness.coordinator.repCount.value.workingReps < 1 ||
+                            (harness.coordinator.biomechanicsEngine.latestRepResult.value?.repNumber ?: 0) < 1
+                        ) {
+                            delay(1)
+                        }
+                    }
+                    emitRep(2, velocityMmS = 500.0)
+                    withTimeout(5_000L) {
+                        while (
+                            harness.coordinator.repCount.value.workingReps < 2 ||
+                            (harness.coordinator.biomechanicsEngine.latestRepResult.value?.repNumber ?: 0) < 2
+                        ) {
+                            delay(1)
+                        }
+                    }
+                    emitRep(3, velocityMmS = 400.0)
+
+                    withTimeout(5_000L) {
+                        while (
+                            harness.coordinator.workoutState.value !is WorkoutState.SetSummary ||
+                            harness.activeSessionEngine.executionGuard.persistenceClaimStatus(lease.sessionId) != PersistenceClaimStatus.PERSISTED
+                        ) {
+                            delay(1)
+                        }
+                    }
+
+                    val savedSession = harness.fakeWorkoutRepo.saveSessionAttempts.single()
+                    val savedBiomechanics = assertNotNull(
+                        harness.fakeBiomechanicsRepo.savedBiomechanics[savedSession.id],
+                        "iteration=$iteration must persist RepBiomechanics",
+                    )
+                    assertEquals(
+                        listOf(1, 2, 3),
+                        savedBiomechanics.map { it.repNumber },
+                        "iteration=$iteration must persist all 3 reps without dropping final rep",
+                    )
+                    assertEquals(500f, assertNotNull(savedSession.avgMcvMmS), 0.5f)
+                } finally {
+                    harness.cleanup()
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `finalRepBiomechanicsAreNeverDroppedDuringConcurrentMetricsStreamingOnDefaultScope`() = runTest {
+        withContext(Dispatchers.Default) {
+            repeat(30) { iteration ->
+                val harness = DWSMTestHarness(
+                    this@runTest,
+                    scopeDispatcher = Dispatchers.Default,
+                    biomechanicsDispatcher = Dispatchers.Default,
+                    wallClockMillisProvider = ::currentTimeMillis,
+                    elapsedRealtimeProviderOverride = ::currentTimeMillis,
+                    biomechanicsRepProcessor = BiomechanicsRepProcessor { engine, input ->
+                        delay(2)
+                        BiomechanicsRepProcessor.Default.process(engine, input)
+                    },
+                )
+                var metricStreamer: kotlinx.coroutines.Job? = null
+                try {
+                    harness.fakeBleRepo.simulateConnect("Vee_Test", "AA:BB:CC:DD:EE:FF")
+                    harness.dwsm.updateWorkoutParameters(
+                        WorkoutParameters(
+                            programMode = ProgramMode.OldSchool,
+                            reps = 3,
+                            warmupReps = 0,
+                            weightPerCableKg = 25f,
+                        ),
+                    )
+                    harness.dwsm.startWorkout(skipCountdown = true)
+                    withTimeout(5_000L) {
+                        harness.coordinator.workoutState.first { it is WorkoutState.Active }
+                        while (harness.activeSessionEngine.currentExecutionLeaseForTest().activationCutoverTimestampMs == null) {
+                            delay(1)
+                        }
+                    }
+                    val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+                    val cutover = requireNotNull(lease.activationCutoverTimestampMs)
+                    withTimeout(5_000L) {
+                        while (harness.coordinator.currentMetric.value == null) {
+                            harness.fakeBleRepo.emitMetric(WorkoutMetric(timestamp = 1L, loadA = 0f, loadB = 0f, positionA = 0f, positionB = 0f))
+                            delay(1)
+                        }
+                        harness.coordinator.collectedMetrics.clear()
+                    }
+                    harness.repCounter.configure(
+                        warmupTarget = 0,
+                        workingTarget = 3,
+                        isJustLift = false,
+                        stopAtTop = false,
+                    )
+
+                    suspend fun emitRepSamples(velocityMmS: Double): Long {
+                        val previousBoundary = harness.coordinator.repBoundaryTimestamps.value.lastOrNull() ?: 0L
+                        val minTs = maxOf(previousBoundary, cutover)
+                        while (currentTimeMillis() <= minTs) {
+                            delay(1)
+                        }
+                        val startMs = currentTimeMillis()
+                        listOf(
+                            WorkoutMetric(timestamp = startMs, loadA = 25f, loadB = 25f, positionA = 120f, positionB = 120f, velocityA = velocityMmS, velocityB = velocityMmS),
+                            WorkoutMetric(timestamp = startMs + 1, loadA = 25f, loadB = 25f, positionA = 220f, positionB = 220f, velocityA = velocityMmS, velocityB = velocityMmS),
+                            WorkoutMetric(timestamp = startMs + 2, loadA = 25f, loadB = 25f, positionA = 320f, positionB = 320f, velocityA = velocityMmS, velocityB = velocityMmS),
+                            WorkoutMetric(timestamp = startMs + 3, loadA = 25f, loadB = 25f, positionA = 180f, positionB = 180f, velocityA = -200.0, velocityB = -200.0),
+                        ).forEach { harness.fakeBleRepo.emitMetric(it) }
+                        withTimeout(5_000L) {
+                            while ((harness.coordinator.collectedMetrics.snapshot().lastOrNull()?.timestamp ?: 0L) < startMs + 3) {
+                                delay(1)
+                            }
+                        }
+                        while (currentTimeMillis() < startMs + 3) {
+                            delay(1)
+                        }
+                        return startMs
+                    }
+
+                    val rep1StartMs = emitRepSamples(velocityMmS = 600.0)
+                    harness.fakeBleRepo.emitRepNotification(
+                        harness.modernRepPacket(
+                            repsSetCount = 1,
+                            repsSetTotal = 3,
+                            timestamp = rep1StartMs,
+                            topCounter = 1,
+                            completeCounter = 1,
+                            repsRomCount = 0,
+                            repsRomTotal = 0,
+                        ),
+                    )
+                    withTimeout(5_000L) {
+                        while (
+                            harness.coordinator.repCount.value.workingReps < 1 ||
+                            (harness.coordinator.biomechanicsEngine.latestRepResult.value?.repNumber ?: 0) < 1
+                        ) {
+                            delay(1)
+                        }
+                    }
+
+                    val rep2StartMs = emitRepSamples(velocityMmS = 500.0)
+                    harness.fakeBleRepo.emitRepNotification(
+                        harness.modernRepPacket(
+                            repsSetCount = 2,
+                            repsSetTotal = 3,
+                            timestamp = rep2StartMs,
+                            topCounter = 2,
+                            completeCounter = 2,
+                            repsRomCount = 0,
+                            repsRomTotal = 0,
+                        ),
+                    )
+                    withTimeout(5_000L) {
+                        while (
+                            harness.coordinator.repCount.value.workingReps < 2 ||
+                            (harness.coordinator.biomechanicsEngine.latestRepResult.value?.repNumber ?: 0) < 2
+                        ) {
+                            delay(1)
+                        }
+                    }
+
+                    // Populate ~3000 prior samples (simulating a ~60s set at 50Hz) so scoreCurrentRep
+                    // performs realistic work between repCounter.process() and processBiomechanicsForRep()
+                    // while metricsFlow concurrently streams into handleMonitorMetric.
+                    val rep2Boundary = harness.coordinator.repBoundaryTimestamps.value.last()
+                    val fillerSample = WorkoutMetric(
+                        timestamp = rep2Boundary,
+                        loadA = 25f,
+                        loadB = 25f,
+                        positionA = 180f,
+                        positionB = 180f,
+                        velocityA = -200.0,
+                        velocityB = -200.0,
+                    )
+                    repeat(3_000) {
+                        harness.coordinator.collectedMetrics.append(fillerSample)
+                    }
+
+                    val rep3StartMs = emitRepSamples(velocityMmS = 400.0)
+                    val streamStarted = CompletableDeferred<Unit>()
+                    metricStreamer = launch(Dispatchers.Default) {
+                        streamStarted.complete(Unit)
+                        while (isActive) {
+                            harness.fakeBleRepo.emitMetric(fillerSample)
+                            yield()
+                        }
+                    }
+                    withTimeout(5_000L) {
+                        streamStarted.await()
+                    }
+                    yield()
+
+                    harness.fakeBleRepo.emitRepNotification(
+                        harness.modernRepPacket(
+                            repsSetCount = 3,
+                            repsSetTotal = 3,
+                            timestamp = rep3StartMs,
+                            topCounter = 3,
+                            completeCounter = 3,
+                            repsRomCount = 0,
+                            repsRomTotal = 0,
+                        ),
+                    )
+
+                    withTimeout(5_000L) {
+                        while (
+                            harness.coordinator.workoutState.value !is WorkoutState.SetSummary ||
+                            harness.activeSessionEngine.executionGuard.persistenceClaimStatus(lease.sessionId) != PersistenceClaimStatus.PERSISTED
+                        ) {
+                            delay(1)
+                        }
+                    }
+
+                    val savedSession = harness.fakeWorkoutRepo.saveSessionAttempts.single()
+                    val savedBiomechanics = assertNotNull(
+                        harness.fakeBiomechanicsRepo.savedBiomechanics[savedSession.id],
+                        "iteration=$iteration must persist RepBiomechanics",
+                    )
+                    assertEquals(
+                        listOf(1, 2, 3),
+                        savedBiomechanics.map { it.repNumber },
+                        "iteration=$iteration must persist all 3 reps without dropping final rep",
+                    )
+                    assertEquals(500f, assertNotNull(savedSession.avgMcvMmS), 0.5f)
+                } finally {
+                    metricStreamer?.cancelAndJoin()
+                    harness.cleanup()
+                }
+            }
         }
     }
 

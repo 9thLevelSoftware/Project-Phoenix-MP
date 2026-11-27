@@ -65,8 +65,8 @@ fun CreateExerciseDialog(
     onViewHistory: (() -> Unit)? = null,
     onDismiss: () -> Unit,
 ) {
-    var name by remember { mutableStateOf(existingExercise?.name ?: "") }
-    var selectedMuscleGroup by remember {
+    var name by remember(existingExercise) { mutableStateOf(existingExercise?.name ?: "") }
+    var selectedMuscleGroup by remember(existingExercise) {
         mutableStateOf(
             existingExercise?.muscleGroup?.let { mg ->
                 ExerciseCategory.entries.find { it.displayName.equals(mg, ignoreCase = true) }
@@ -148,7 +148,7 @@ fun CreateExerciseDialog(
                         .padding(Spacing.medium),
                 ) {
                     PhoenixSheetHeader(
-                        title = if (isEditMode) "Edit Exercise" else "Create Exercise",
+                        title = stringResource(if (isEditMode) Res.string.create_exercise_edit_title else Res.string.create_exercise),
                         onClose = onDismiss,
                     )
 
@@ -183,7 +183,7 @@ fun CreateExerciseDialog(
 
                     if (showError && name.isBlank()) {
                         Text(
-                            "Exercise name is required",
+                            stringResource(Res.string.create_exercise_name_required),
                             color = MaterialTheme.colorScheme.error,
                             style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.padding(
@@ -197,7 +197,7 @@ fun CreateExerciseDialog(
 
                     // Muscle Group Dropdown
                     Text(
-                        "Muscle Group *",
+                        stringResource(Res.string.create_exercise_muscle_group_required),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurface,
@@ -212,7 +212,7 @@ fun CreateExerciseDialog(
                             trailingIcon = {
                                 Icon(
                                     Icons.Default.KeyboardArrowDown,
-                                    "Select muscle group",
+                                    stringResource(Res.string.create_exercise_cd_select_muscle),
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             },
@@ -250,7 +250,7 @@ fun CreateExerciseDialog(
 
                     // Resistance Type
                     Text(
-                        "Resistance Type",
+                        stringResource(Res.string.create_exercise_resistance_type),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurface,
@@ -485,7 +485,7 @@ fun CreateExerciseDialog(
                             shape = MaterialTheme.shapes.medium,
                         ) {
                             Text(
-                                if (isEditMode) "Save" else "Create",
+                                stringResource(if (isEditMode) Res.string.action_save else Res.string.action_create),
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold,
                             )

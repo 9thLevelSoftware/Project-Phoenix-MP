@@ -363,6 +363,13 @@ internal fun buildProfilePreferencePushOutcomes(
         if (key !in ledger) return@forEach
         responseCounts[key] = responseCounts.getOrElse(key) { 0 } + 1
         if (rejection.reason !in PROFILE_PREFERENCE_REJECTION_REASONS) return@forEach
+        if (rejection.reason == "UNSUPPORTED_SECTION") {
+            Logger.w(tag = "SyncManager") {
+                "Profile preference section=${rejection.section} profile=${rejection.localProfileId} " +
+                    "rejected with UNSUPPORTED_SECTION; keeping local data dirty"
+            }
+            return@forEach
+        }
         if (rejection.reason != "REVISION_CONFLICT") return@forEach
         val canonicalDto = rejection.canonicalSection ?: return@forEach
         val canonical = PortalPullAdapter.toCanonicalProfilePreferenceSection(canonicalDto)
@@ -383,7 +390,7 @@ internal fun buildProfilePreferencePushOutcomes(
     }
     return candidates.groupBy(PreferenceOutcomeCandidate::key).mapNotNull { (key, entries) ->
         if (entries.size != 1 || responseCounts[key] != 1) {
-            Logger.w("SyncManager") { profilePreferenceDuplicateResultLogLine(key) }
+            Logger.w(tag = "SyncManager") { profilePreferenceDuplicateResultLogLine(key) }
             return@mapNotNull null
         }
         val candidate = entries.single()
@@ -503,6 +510,7 @@ class SyncManager(
      */
 
     private val syncMutex = Mutex()
+    private val unsupportedPreferenceGenerations = mutableMapOf<ProfilePreferenceSectionKey, Long>()
     private val _syncState = MutableStateFlow<SyncState>(SyncState.Idle)
     override val syncState: StateFlow<SyncState> = _syncState.asStateFlow()
 
@@ -554,7 +562,7 @@ class SyncManager(
                     if (commitOutcome is PortalIdentityCommitOutcome.AccountMismatchDetected) {
                         // Do not relink and do not clear the hold: the dialog decides.
                         _syncState.value = commitOutcome.mismatch.toSyncState()
-                        Logger.i("SyncManager") {
+                        Logger.i(tag = "SyncManager") {
                             "Login detected a different portal account; sync paused pending user choice"
                         }
                         return@withProfileMutationBarrier Result.success(
@@ -572,7 +580,7 @@ class SyncManager(
                         fallbackTier = fallbackTier,
                     )
 
-                    Logger.i("SyncManager") {
+                    Logger.i(tag = "SyncManager") {
                         "Login successful, premium=${applied.isPremium}, " +
                             "tier=${applied.tier ?: "none"} (sameAccount=$sameAccount, " +
                             "server check=${entitlementResult.isSuccess})"
@@ -604,7 +612,7 @@ class SyncManager(
                     )
                     if (commitOutcome is PortalIdentityCommitOutcome.AccountMismatchDetected) {
                         _syncState.value = commitOutcome.mismatch.toSyncState()
-                        Logger.i("SyncManager") {
+                        Logger.i(tag = "SyncManager") {
                             "Signup detected a different portal account; sync paused pending user choice"
                         }
                         return@withProfileMutationBarrier Result.success(
@@ -614,7 +622,7 @@ class SyncManager(
                     tokenStorage.updatePremiumStatus(false)
                     tokenStorage.updateSubscriptionTier(null)
                     _syncState.value = SyncState.Idle
-                    Logger.i("SyncManager") { "Signup successful" }
+                    Logger.i(tag = "SyncManager") { "Signup successful" }
                     Result.success(tokenStorage.currentUser.value ?: goTrueResponse.toPortalAuthResponse().user)
                 }
             } catch (error: CancellationException) {
@@ -648,6 +656,7 @@ class SyncManager(
                 tokenStorage.currentUser.value?.id?.let { tokenStorage.setOwnershipConflict(it, null) }
                 tokenStorage.clearAuth()
                 tokenStorage.emitLogoutEvent()
+                unsupportedPreferenceGenerations.clear()
                 // A mismatch the signed-out account never answered must not pause the next sign-in.
                 pendingAccountMismatch.take()
                 _syncState.value = SyncState.NotAuthenticated
@@ -686,7 +695,7 @@ class SyncManager(
         if (current !is SyncState.AccountMismatch && current !is SyncState.OwnershipConflict) {
             val mismatch = detectPersistedAccountMismatch()
             if (mismatch != null) {
-                Logger.w("SyncManager") {
+                Logger.w(tag = "SyncManager") {
                     "Signed-in portal account differs from this device's data; sync paused pending user choice"
                 }
                 _syncState.value = mismatch.toSyncState()
@@ -801,7 +810,7 @@ class SyncManager(
             tokenStorage.setLastSyncedPortalUserId(newUserId)
             tokenStorage.setLastSyncedPortalUserLabel(mismatch.newUserLabel)
             _syncState.value = SyncState.Idle
-            Logger.i("SyncManager") {
+            Logger.i(tag = "SyncManager") {
                 "Account switch resolved (choice=$choice); exclusions recorded for the new account"
             }
             Result.success(Unit)
@@ -845,7 +854,7 @@ class SyncManager(
             }
             tokenStorage.setOwnershipConflict(userId, null)
             _syncState.value = SyncState.Idle
-            Logger.i("SyncManager") {
+            Logger.i(tag = "SyncManager") {
                 "Ownership conflict resolved: pre-switch rows excluded from upload (${conflict.message})"
             }
             Result.success(Unit)
@@ -907,7 +916,7 @@ class SyncManager(
                 val identityUnchanged = tokenStorage.authGeneration() == expectedGeneration &&
                     tokenStorage.currentUser.value?.id == expectedUserId
                 if (!identityUnchanged) {
-                    Logger.w("SyncManager") { "Discarded stale entitlement response after identity changed" }
+                    Logger.w(tag = "SyncManager") { "Discarded stale entitlement response after identity changed" }
                     return@withProfileMutationBarrier
                 }
 
@@ -927,7 +936,7 @@ class SyncManager(
                     _syncState.update { if (it is SyncState.NotPremium) SyncState.Idle else it }
                 }
 
-                Logger.d("SyncManager") {
+                Logger.d(tag = "SyncManager") {
                     "refreshPremiumStatusFromServer: premium=${applied.isPremium}, tier=${applied.tier ?: "none"} " +
                         "(network ok: ${entitlementResult.isSuccess})"
                 }
@@ -988,7 +997,8 @@ class SyncManager(
             // Keep the reset and the following sync in one critical section. Otherwise an
             // already-running sync can complete after this reset, restore a non-zero checkpoint,
             // and make the queued "full" pull a delta pull.
-            Logger.i("SyncManager") { "Forcing full resync - resetting every profile's pull cursor to 0" }
+            Logger.i(tag = "SyncManager") { "Forcing full resync - resetting every profile's pull cursor to 0" }
+            unsupportedPreferenceGenerations.clear()
             tokenStorage.currentUser.value?.id?.let { userId -> tokenStorage.resetAllPullCursors(userId) }
             syncLocked()
         }
@@ -1024,7 +1034,7 @@ class SyncManager(
         }
 
         _syncState.value = SyncState.Syncing
-        Logger.d("SyncManager") { "Sync starting: hasToken=${tokenStorage.hasToken()}" }
+        Logger.d(tag = "SyncManager") { "Sync starting: hasToken=${tokenStorage.hasToken()}" }
 
         val userId = tokenStorage.currentUser.value?.id
         if (userId == null) {
@@ -1056,7 +1066,7 @@ class SyncManager(
             cursorProfileId = tokenStorage.legacyCursorProfileFor(userId),
             profileIds = candidateProfiles.map { it.id },
         )?.let { marked ->
-            Logger.i("SyncManager") { "Upgrade seeding: acknowledged $marked legacy workout row(s) already on the portal" }
+            Logger.i(tag = "SyncManager") { "Upgrade seeding: acknowledged $marked legacy workout row(s) already on the portal" }
         }
         val profiles = bindUnboundProfiles(userId, candidateProfiles)
         val activeProfileId = userProfileRepository.activeProfile.value?.id ?: "default"
@@ -1065,7 +1075,7 @@ class SyncManager(
             allProfileIds = profiles.map { it.id },
         )
         if (seeded) {
-            Logger.i("SyncManager") {
+            Logger.i(tag = "SyncManager") {
                 "Upgrade seeding: legacy global cursor split across ${profiles.size} profile(s); " +
                     "only the profile named by the legacy delta-pull marker keeps its pull cursor, others start at 0"
             }
@@ -1086,7 +1096,7 @@ class SyncManager(
             )
             outcomes += outcome
             if (outcome.authFailure) {
-                Logger.w("SyncManager") {
+                Logger.w(tag = "SyncManager") {
                     "Auth failure while syncing profile ${profile.id}; aborting the remaining profiles"
                 }
                 break
@@ -1095,7 +1105,7 @@ class SyncManager(
             // device: no later profile may push before the user chooses (codex #859).
             // combineProfileOutcomes publishes and persists the terminal state.
             if (outcome.ownershipConflict) {
-                Logger.w("SyncManager") {
+                Logger.w(tag = "SyncManager") {
                     "Ownership refusal while syncing profile ${profile.id}; aborting the remaining profiles"
                 }
                 break
@@ -1109,7 +1119,7 @@ class SyncManager(
             outcomes.all { it.pushSucceeded && !it.repairPushFailed }
         if (repairPushActive && everyProfileDeliveredRepair) {
             tokenStorage.markRoutineCyclePrRepairPushDone(userId)
-            Logger.i("SyncManager") {
+            Logger.i(tag = "SyncManager") {
                 "One-time routines/cycles/PRs repair push completed for every profile"
             }
         }
@@ -1174,7 +1184,7 @@ class SyncManager(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Logger.w("SyncManager") {
+                Logger.w(tag = "SyncManager") {
                     "Could not bind profile ${profile.id} to the signed-in account; skipping it this sync: ${e.message}"
                 }
                 null
@@ -1231,8 +1241,7 @@ class SyncManager(
         }
         val notPremium = outcomes.firstOrNull {
             it.error is PortalApiException &&
-                ((it.error as PortalApiException).statusCode == 402 ||
-                    (it.error as PortalApiException).statusCode == 403)
+                (it.error.statusCode == 402 || it.error.statusCode == 403)
         }
         if (notPremium != null && outcomes.none { it.pushSucceeded }) {
             _syncState.value = SyncState.NotPremium
@@ -1306,7 +1315,7 @@ class SyncManager(
         )
         if (pushResult.isFailure) {
             val error = pushResult.exceptionOrNull()
-            Logger.e("SyncManager") {
+            Logger.e(tag = "SyncManager") {
                 "Push FAILED for profile ${profile.id}: status=${(error as? PortalApiException)?.statusCode}, msg=${error?.message}"
             }
             val authFailure = isAuthFailure(error)
@@ -1321,7 +1330,7 @@ class SyncManager(
                 error = error,
             )
         }
-        Logger.i("SyncManager") { "Push succeeded for profile ${profile.id}" }
+        Logger.i(tag = "SyncManager") { "Push succeeded for profile ${profile.id}" }
         // PR 11: remember which portal account the last successful push landed in, so
         // the next sign-in can tell "same account" from "different account". The step that
         // justifies it is "rows of this device landed in this account", which this push
@@ -1362,7 +1371,7 @@ class SyncManager(
             val prTombstonesDropped = pushOutcome.personalRecordTombstonesSent >
                 pushOutcome.personalRecordsWritten
             if (prTombstonesDropped) {
-                Logger.w("SyncManager") {
+                Logger.w(tag = "SyncManager") {
                     "Pending-deletion profile ${profile.id}: portal wrote ${pushOutcome.personalRecordsWritten} of " +
                         "${pushOutcome.personalRecordTombstonesSent} PR tombstone(s); kept pending for the next sync"
                 }
@@ -1378,7 +1387,7 @@ class SyncManager(
                 outstandingCycleDeletions.forEach { deletion ->
                     trainingCycleRepository?.restampPendingCycleDeletion(deletion.id, restampAt)
                 }
-                Logger.w("SyncManager") {
+                Logger.w(tag = "SyncManager") {
                     "Pending-deletion profile ${profile.id}: ${outstandingCycleDeletions.size} cycle deletion(s) " +
                         "not accepted yet; re-stamped and kept pending for the next sync"
                 }
@@ -1402,7 +1411,7 @@ class SyncManager(
             rejections.cycles.size + rejections.externalActivities.size +
             rejections.rpgAttributes.size + rejections.gamificationStats.size
         if (totalRejections > 0) {
-            Logger.w("SyncManager") {
+            Logger.w(tag = "SyncManager") {
                 "Push LWW rejections for profile ${profile.id} ($totalRejections): " +
                     "sessions=${rejections.sessions.size}, routines=${rejections.routines.size}, " +
                     "cycles=${rejections.cycles.size}, externalActivities=${rejections.externalActivities.size}, " +
@@ -1439,7 +1448,7 @@ class SyncManager(
             gatherStartedAt = gatherStartedAt,
         )
         if (acceptedRowIds.isNotEmpty() || rejectedRowCount > 0) {
-            Logger.d("SyncManager") {
+            Logger.d(tag = "SyncManager") {
                 "Stamped $stampedCount of ${acceptedRowIds.size} accepted session row(s) with updatedAt=$gatherStartedAt" +
                     (
                         if (acceptedRowIds.size > stampedCount) {
@@ -1499,7 +1508,8 @@ class SyncManager(
             if (pullResult.isSuccess) {
                 runCatching { rePushRejectedSessions(userId, profile.id, pushOutcome, rejections.sessions) }
                     .onFailure { error ->
-                        Logger.w("SyncManager") {
+                        if (error is CancellationException) throw error
+                        Logger.w(tag = "SyncManager") {
                             "LWW re-push threw; rejected rows stay pending for the next sync: ${error.message}"
                         }
                         // Belt and braces: if the throw landed before the stamp/clear
@@ -1511,7 +1521,7 @@ class SyncManager(
                 // Pull failed, so the re-push is skipped. Repair-group rows among the
                 // rejections still need re-arming: the cursor may already have walked
                 // past their group, so without this they would never be sent again.
-                Logger.w("SyncManager") {
+                Logger.w(tag = "SyncManager") {
                     "Pull failed; skipping the LWW re-push and re-arming any rejected repair-group rows"
                 }
                 reArmRejectedRepairRows(pushOutcome, rejections.sessions.map { it.id })
@@ -1528,7 +1538,7 @@ class SyncManager(
             )
         }.onFailure { error ->
             if (error is CancellationException) throw error
-            Logger.w("SyncManager") { "Sent-hash garbage collection skipped: ${error.message}" }
+            Logger.w(tag = "SyncManager") { "Sent-hash garbage collection skipped: ${error.message}" }
         }
 
         return if (pullResult.isSuccess) {
@@ -1550,7 +1560,7 @@ class SyncManager(
             // 2. The next pull will still retrieve remote changes from the correct checkpoint
             // 3. The user is notified that sync is incomplete
             val pullError = pullResult.exceptionOrNull()
-            Logger.w("SyncManager") {
+            Logger.w(tag = "SyncManager") {
                 "Partial sync for profile ${profile.id}: push succeeded but pull failed. " +
                     "Not advancing the pull cursor. Error: ${pullError?.message}"
             }
@@ -1586,7 +1596,7 @@ class SyncManager(
         val finalized = runCatching { userProfileRepository.finalizePendingProfileDeletion(profile.id) }
             .onFailure { error ->
                 if (error is CancellationException) throw error
-                Logger.w("SyncManager") {
+                Logger.w(tag = "SyncManager") {
                     "Pending deletion of profile ${profile.id} could not be finalized; retrying next sync: ${error.message}"
                 }
             }
@@ -1599,10 +1609,10 @@ class SyncManager(
                 tokenStorage.resetPullCursor(userId, profile.id)
             }.onFailure { error ->
                 if (error is CancellationException) throw error
-                Logger.w("SyncManager") { "Cleanup of deleted profile ${profile.id} sync state skipped: ${error.message}" }
+                Logger.w(tag = "SyncManager") { "Cleanup of deleted profile ${profile.id} sync state skipped: ${error.message}" }
             }
         }
-        Logger.i("SyncManager") {
+        Logger.i(tag = "SyncManager") {
             "Pending-deletion profile ${profile.id} pushed its tombstones (finalized=$finalized)"
         }
         return ProfileSyncOutcome(
@@ -1663,7 +1673,7 @@ class SyncManager(
                 )
             } else {
                 val pullError = pullResult.exceptionOrNull()
-                Logger.w("SyncManager") {
+                Logger.w(tag = "SyncManager") {
                     "Pull retry failed for profile ${profile.id}: ${pullError?.message}"
                 }
                 outcomes += ProfileSyncOutcome(
@@ -1718,7 +1728,7 @@ class SyncManager(
      */
     private fun recordCompletedPull(completedPull: CompletedPull) {
         if (completedPull.forceFullPull) {
-            Logger.w("SyncManager") {
+            Logger.w(tag = "SyncManager") {
                 "Pull: server truncated external activities (externalActivitiesHasMore=true); " +
                     "next pull for profile ${completedPull.profileId} will be a full pull. " +
                     "Activities beyond the server cap are not delivered."
@@ -1805,7 +1815,7 @@ class SyncManager(
         includeUserScoped: Boolean,
     ): UserScopedDtos {
         if (!includeUserScoped) return UserScopedDtos(null, emptyList(), null)
-        val rpgDto = gamificationRepository.getRpgInput(profileId)?.let { input ->
+        val rpgDto = gamificationRepository.getRpgInput(profileId).let { input ->
             val rpgProfile = RpgAttributeEngine.computeProfile(input)
             PortalRpgAttributesSyncDto(
                 userId = userId,
@@ -1997,7 +2007,7 @@ class SyncManager(
             tokenStorage.setPhasePRBackfillCheckpoint(activeProfileId, maxScannedTimestamp)
         }
         if (phaseBackfillResult.changedRows > 0) {
-            Logger.i("SyncManager") {
+            Logger.i(tag = "SyncManager") {
                 "Backfilled ${phaseBackfillResult.changedRows} phase-specific PR row(s) before portal push"
             }
         }
@@ -2028,7 +2038,7 @@ class SyncManager(
             ?.let { (queueObservedAt - it).coerceAtLeast(0L) }
         val oldestOwnershipTransferAgeMs = pendingOwnershipTransfers.minOfOrNull { it.createdAt }
             ?.let { (queueObservedAt - it).coerceAtLeast(0L) }
-        Logger.i("SyncManager") {
+        Logger.i(tag = "SyncManager") {
             "Durable sync queues: workoutDeletionCount=${pendingWorkoutDeletions.size}, " +
                 "workoutDeletionOldestAgeMs=${oldestWorkoutDeletionAgeMs ?: 0L}, " +
                 "ownershipTransferCount=${pendingOwnershipTransfers.size}, " +
@@ -2061,7 +2071,7 @@ class SyncManager(
             syncRepository.getRoutineGroupsWithChildlessRows(repairGroupIds.keys, activeProfileId)
         }
         if (childlessRepairGroupIds.isNotEmpty()) {
-            Logger.w("SyncManager") {
+            Logger.w(tag = "SyncManager") {
                 "Routine group repair: skipping ${childlessRepairGroupIds.size} group(s) that hold a row with " +
                     "no local measurements — re-sending them would rebuild that sibling as an empty exercise " +
                     "and destroy its portal rep summaries. Groups: " +
@@ -2088,7 +2098,7 @@ class SyncManager(
         val blockedSiblingsByGroup = syncRepository.getBlockedRoutineGroupSiblings(groupIds, activeProfileId)
         val heldGroupIds = blockedSiblingsByGroup.keys
         if (heldGroupIds.isNotEmpty()) {
-            Logger.w("SyncManager") {
+            Logger.w(tag = "SyncManager") {
                 "Push payload: holding ${heldGroupIds.size} routine group(s) — a sibling was pulled from " +
                     "the portal and this device has no rep data for it, so sending the group would delete " +
                     "that sibling's portal sets. Groups/blocking rows: " +
@@ -2106,7 +2116,7 @@ class SyncManager(
         val deltaIds = delta.mapTo(HashSet()) { it.id }
         val heldDeltaRowCount = delta.count { it.routineSessionId in heldGroupIds }
         if (heldDeltaRowCount > 0) {
-            Logger.w("SyncManager") {
+            Logger.w(tag = "SyncManager") {
                 "Push payload: $heldDeltaRowCount local row(s) are not stamped because their routine group is held " +
                     "(retried on a later sync only while their updatedAt is NULL or newer than the push watermark)"
             }
@@ -2118,7 +2128,7 @@ class SyncManager(
             !exclusions.excludesWorkout(session.id, session.routineSessionId)
         }
         if (sessions.size > delta.size - heldDeltaRowCount) {
-            Logger.d("SyncManager") {
+            Logger.d(tag = "SyncManager") {
                 "Push payload: re-gathered ${sessions.size - (delta.size - heldDeltaRowCount)} routine sibling row(s) " +
                     "across ${pushableGroupIds.size} group(s) so no portal workout is sent partially"
             }
@@ -2265,7 +2275,7 @@ class SyncManager(
             if (rearmIds.isNotEmpty()) {
                 syncRepository.clearPersonalRecordUpdatedAt(rearmIds)
             }
-            Logger.w("SyncManager") {
+            Logger.w(tag = "SyncManager") {
                 "Issue #634: held back ${heldBackPrRows.size} conflicting personal record row(s) " +
                     "(ids=${rearmIds.joinToString()}) from this push; re-armed for retry"
             }
@@ -2280,7 +2290,7 @@ class SyncManager(
         }
         val droppedRoutineCount = rawRoutines.size - routines.size
         if (droppedRoutineCount > 0) {
-            Logger.w("SyncManager") {
+            Logger.w(tag = "SyncManager") {
                 "Push payload: dropped $droppedRoutineCount non-UUID routines before send"
             }
         }
@@ -2289,13 +2299,13 @@ class SyncManager(
         val deletedRoutineIds = syncRepository.getDeletedRoutineIdsSince(repairFrom, activeProfileId)
             .filter { CanonicalUuid.matches(it) && !exclusions.excludesRoutine(it) }
         if (deletedRoutineIds.isNotEmpty()) {
-            Logger.d("SyncManager") {
+            Logger.d(tag = "SyncManager") {
                 "Push payload: ${deletedRoutineIds.size} deleted routine(s) to propagate"
             }
         }
 
         if (pendingCycleDeletions.isNotEmpty()) {
-            Logger.d("SyncManager") {
+            Logger.d(tag = "SyncManager") {
                 "Push payload: ${pendingCycleDeletions.size} account-bound cycle deletion(s) to propagate"
             }
         }
@@ -2332,7 +2342,7 @@ class SyncManager(
             }
         }
         if (droppedCycleRoutineRefs > 0) {
-            Logger.w("SyncManager") {
+            Logger.w(tag = "SyncManager") {
                 "Push payload: dropped $droppedCycleRoutineRefs non-UUID cycle-day routine references before send"
             }
         }
@@ -2358,7 +2368,7 @@ class SyncManager(
         }
         val phaseStatsBySessionId = enrichment.phaseStatsBySessionId
         val assessmentDtos = enrichment.assessmentDtos.filter { assessment ->
-            !exclusions.excludesAssessment(assessment.id.toString())
+            !exclusions.excludesAssessment(assessment.id)
         }
         val customExerciseDtos = enrichment.customExerciseDtos.filter { exercise ->
             !exclusions.excludesCustomExercise(exercise.clientId)
@@ -2398,9 +2408,7 @@ class SyncManager(
         val sessionNotesByPortalId = workoutSnapshot.sessionNotesByPortalId
         val portalSessions = buildResult.sessions.map { session ->
             val notes = sessionNotesByPortalId[session.id] ?: return@map session
-            val sessionUpdatedAt = session.updatedAt
-                ?.let { runCatching { kotlin.time.Instant.parse(it).toEpochMilliseconds() }.getOrNull() }
-                ?: 0L
+            val sessionUpdatedAt = parseIso8601EpochMillis(session.updatedAt) ?: 0L
             session.copy(
                 notes = notes.notes,
                 updatedAt = kotlin.time.Instant.fromEpochMilliseconds(
@@ -2409,7 +2417,7 @@ class SyncManager(
             )
         }
         if (!telemetryAllowed) {
-            Logger.d("SyncManager") {
+            Logger.d(tag = "SyncManager") {
                 "Telemetry push gated off: tier=${tier ?: "unknown"} " +
                     "($TELEMETRY_SYNC_TIER required); rep summaries still sync."
             }
@@ -2451,7 +2459,7 @@ class SyncManager(
             // matches `updatedAt IS NULL`, so the rows retry instead of stalling
             // below the advanced push watermark. Not stamped as synced.
             syncRepository.clearRoutineUpdatedAt(heldBackRoutineIds)
-            Logger.w("SyncManager") {
+            Logger.w(tag = "SyncManager") {
                 "Issue #634: held back ${heldBackRoutineIds.size} conflicting routine row(s) " +
                     "(ids=${heldBackRoutineIds.joinToString()}) from this push; re-armed for retry"
             }
@@ -2500,7 +2508,7 @@ class SyncManager(
                     identity = "pr_flagged_sets_without_dedicated_pr_suppressor",
                     entries = prFlaggedSessions.map { "sessionId=${it.id}" },
                 )
-                Logger.w("SyncManager") {
+                Logger.w(tag = "SyncManager") {
                     "Issue #634: holding back ${prFlaggedSessions.size} PR-flagged session(s): " +
                         "every dedicated personal record was held back, and the portal would " +
                         "derive id-less set-derived rows from their set.isPr flags"
@@ -2520,14 +2528,14 @@ class SyncManager(
         val telemetryBySetId = deliverableTelemetry.groupBy { it.setId }
 
         reconcileReport.logDetails("Push payload")
-        val payloadProfileId = activeProfile?.id ?: "default"
+        val payloadProfileId = activeProfile.id
         // Every profile name on the wire is bounded: an unbounded name in the request
         // envelope would make even an empty request oversized (codex #856 P2).
-        val payloadProfileName = boundedProfileName(activeProfile?.name ?: "Default")
+        val payloadProfileName = boundedProfileName(activeProfile.name)
         val profileDtos = allProfiles
             .map { LocalProfileDto(it.id, boundedProfileName(it.name), it.colorIndex) }
             .let { dtos ->
-                if (activeProfile != null && dtos.none { it.id == activeProfile.id }) {
+                if (dtos.none { it.id == activeProfile.id }) {
                     dtos + LocalProfileDto(activeProfile.id, boundedProfileName(activeProfile.name), activeProfile.colorIndex)
                 } else {
                     dtos
@@ -2538,7 +2546,7 @@ class SyncManager(
                     LocalProfileDto(
                         id = payloadProfileId,
                         name = payloadProfileName,
-                        colorIndex = activeProfile?.colorIndex ?: 0,
+                        colorIndex = activeProfile.colorIndex,
                     ),
                 )
             }
@@ -2559,7 +2567,7 @@ class SyncManager(
             )
         }
         if (sendableProfileDtos == null) {
-            Logger.w("SyncManager") {
+            Logger.w(tag = "SyncManager") {
                 "Push: profile metadata for ${profileDtos.size} profile(s) exceeds the push size cap; " +
                     "sending without allProfiles this sync"
             }
@@ -2678,8 +2686,35 @@ class SyncManager(
             prs = personalRecordDtos,
             includeSingletons = true,
         )
+        val needsPreSessionCustomExercises = deliverableCustomExercises.isNotEmpty() &&
+            sessionBatches.isNotEmpty() &&
+            (sessionBatches.size > 1 || !PushPlanner.fits(combinedFinal))
+        val preSessionCustomRequests = if (needsPreSessionCustomExercises) {
+            PushPlanner.planTailRequests(
+                envelope = emptyEnvelope,
+                routines = emptyList(),
+                deletedRoutineIds = emptyList(),
+                cycles = emptyList(),
+                personalRecords = emptyList(),
+                customExercises = deliverableCustomExercises,
+                assessments = emptyList(),
+                badges = emptyList(),
+                externalActivities = emptyList(),
+                rpgAttributes = null,
+                gamificationStats = null,
+                allProfiles = null,
+                onSkip = onSkip,
+            ).filter { it.customExercises.isNotEmpty() }
+        } else {
+            emptyList()
+        }
         val requests: List<PortalSyncPayload> = if (PushPlanner.fits(combinedFinal)) {
-            sessionBatches.dropLast(1).map(::sessionBatchPayload) + combinedFinal
+            val finalRequest = if (needsPreSessionCustomExercises) {
+                combinedFinal.copy(customExercises = emptyList())
+            } else {
+                combinedFinal
+            }
+            preSessionCustomRequests + sessionBatches.dropLast(1).map(::sessionBatchPayload) + finalRequest
         } else {
             val prsAlreadyOnSessionBatches = if (personalRecordDtos.size <= PR_FULL_LIST_PER_BATCH) {
                 sessionBatches.isNotEmpty()
@@ -2692,7 +2727,7 @@ class SyncManager(
                 deletedRoutineIds = deletedRoutineIds,
                 cycles = cycleDtos,
                 personalRecords = if (prsAlreadyOnSessionBatches) emptyList() else personalRecordDtos,
-                customExercises = deliverableCustomExercises,
+                customExercises = if (needsPreSessionCustomExercises) emptyList() else deliverableCustomExercises,
                 assessments = assessmentDtos,
                 badges = badgeDtos,
                 externalActivities = externalActivityDtos,
@@ -2701,7 +2736,7 @@ class SyncManager(
                 allProfiles = sendableProfileDtos,
                 onSkip = onSkip,
             )
-            sessionBatches.map(::sessionBatchPayload) + tails
+            preSessionCustomRequests + sessionBatches.map(::sessionBatchPayload) + tails
         }
         // Issue #634 (Layer 2): the planner can still emit one entity twice inside
         // a single request. Reconcile the assembled requests — identical
@@ -2716,7 +2751,7 @@ class SyncManager(
         val sentPrDtos = deliverableRequests.flatMapTo(hashSetOf()) { it.personalRecords }
         val sentRoutineIds = deliverableRequests.flatMapTo(hashSetOf()) { r -> r.routines.map { it.id } }
 
-        Logger.d("SyncManager") {
+        Logger.d(tag = "SyncManager") {
             "Pushing portal payload: ${allSessions.size} sessions ($totalBatches request(s)), " +
                 "${deliverableTelemetry.size} telemetry points, " +
                 "${routineDtos.size} routines, ${cycleDtos.size} cycles, " +
@@ -2734,7 +2769,7 @@ class SyncManager(
         val skippedDeletedRoutines = linkedSetOf<String>()
         val skippedDeletedCycles = linkedSetOf<String>()
         deliverableRequests.forEachIndexed { index, payload ->
-            Logger.i("SyncManager") {
+            Logger.i(tag = "SyncManager") {
                 "Sync request ${index + 1}/$totalBatches: ${payload.sessions.size} sessions, " +
                     "${payload.routines.size} routines, ${payload.cycles.size} cycles, " +
                     "${payload.personalRecords.size} personal records"
@@ -2747,7 +2782,7 @@ class SyncManager(
                 val batchSummary = "sessions=${payload.sessions.size}, " +
                     "ids=[${batchSessionIds.joinToString()}${if (payload.sessions.size > 3) "..." else ""}]"
 
-                Logger.e("SyncManager") {
+                Logger.e(tag = "SyncManager") {
                     "Request ${index + 1}/$totalBatches failed: ${error?.message} | $batchSummary"
                 }
 
@@ -2759,7 +2794,7 @@ class SyncManager(
                         ).hashCode()
                     if (lastFailedBatchHash == batchHash) {
                         consecutiveFullRetries++
-                        Logger.w("SyncManager") {
+                        Logger.w(tag = "SyncManager") {
                             "Same batch failed again, retry count: $consecutiveFullRetries/$MAX_FULL_BATCH_RETRIES"
                         }
                         if (consecutiveFullRetries >= MAX_FULL_BATCH_RETRIES) {
@@ -2809,7 +2844,7 @@ class SyncManager(
             if (payload.externalActivities.isNotEmpty()) {
                 acknowledgeExternalActivities(payload.externalActivities, response, activeProfileId)
             }
-            Logger.d("SyncManager") {
+            Logger.d(tag = "SyncManager") {
                 "Request ${index + 1}/$totalBatches pushed successfully (timestamp deferred)"
             }
         }
@@ -2821,7 +2856,7 @@ class SyncManager(
             cycles = skippedDeletedCycles.toList(),
         )
         if (skippedOversized.isNotEmpty()) {
-            Logger.w("SyncManager") {
+            Logger.w(tag = "SyncManager") {
                 "Push summary: ${skippedOversized.size} oversized item(s) skipped (too large for any request): " +
                     skippedOversized.take(20).joinToString() + if (skippedOversized.size > 20) ", ..." else ""
             }
@@ -2855,7 +2890,7 @@ class SyncManager(
             try {
                 applyServerDeletions(
                     ownerUserId = userId,
-                    syncProfileId = activeProfile?.id,
+                    syncProfileId = activeProfile.id,
                     routineIds = skipped.routines,
                     cycleIds = skipped.cycles,
                     lastSync = pushWatermark,
@@ -2897,7 +2932,7 @@ class SyncManager(
                 timestamp = gatherStartedAt,
                 gatherStartedAt = gatherStartedAt,
             )
-            Logger.d("SyncManager") {
+            Logger.d(tag = "SyncManager") {
                 "Stamped ${pushedPrIds.size} pushed personal records with updatedAt=$gatherStartedAt"
             }
         }
@@ -3022,7 +3057,7 @@ class SyncManager(
                 sent = sentTransferIds,
                 acknowledged = acknowledgedTransferIds,
             )
-            Logger.i("SyncManager") {
+            Logger.i(tag = "SyncManager") {
                 "Ownership transfer response missingExactAckCount=${missingTransferAcks.size}"
             }
             if (missingTransferAcks.isNotEmpty()) {
@@ -3077,7 +3112,7 @@ class SyncManager(
                 acknowledgedAt = currentTimeMillis(),
             )
             val missingDeletionAckCount = sentDeletionIds.count { it !in acknowledgedDeletionIds }
-            Logger.i("SyncManager") {
+            Logger.i(tag = "SyncManager") {
                 "Workout deletion response missingExactAckCount=$missingDeletionAckCount"
             }
             if (missingDeletionAckCount > 0) {
@@ -3167,23 +3202,23 @@ class SyncManager(
                 syncKeys = acknowledgedSyncKeys,
                 profileId = profileId,
             )
-            Logger.d("SyncManager") {
+            Logger.d(tag = "SyncManager") {
                 "Marked ${acknowledgedSyncKeys.size} external activities as synced (by server-confirmed provider/externalId keys)"
             }
-        } else if (response.externalActivityIds.isNotEmpty()) {
-            Logger.w("SyncManager") {
+        } else if (@Suppress("DEPRECATION") response.externalActivityIds.isNotEmpty()) {
+            Logger.w(tag = "SyncManager") {
                 "Server returned legacy externalActivityIds without provider scoping; skipping optimistic sync stamping"
             }
         } else if (response.externalActivitiesUpserted > 0) {
             // Backward compat: server confirmed a count but no IDs list — only for THIS request.
             val syncedIds = sent.map { it.id }
             externalActivityRepository.markSynced(syncedIds)
-            Logger.d("SyncManager") {
+            Logger.d(tag = "SyncManager") {
                 "Marked ${syncedIds.size} external activities as synced (backward compat, server confirmed ${response.externalActivitiesUpserted})"
             }
         } else {
             // Server did not confirm any activities were persisted — do NOT mark as synced
-            Logger.w("SyncManager") {
+            Logger.w(tag = "SyncManager") {
                 "Pushed ${sent.size} external activities but server confirmed 0 — will retry on next sync"
             }
         }
@@ -3218,9 +3253,7 @@ class SyncManager(
         rejections.forEach { (cycleId, rejection) ->
             if (cycleId !in sentCycleIds) return@forEach
             val rejectedComponent = sentComponentsById[cycleId] ?: return@forEach
-            val rejectedAt = rejection.serverUpdatedAt
-                ?.let { runCatching { kotlin.time.Instant.parse(it).toEpochMilliseconds() }.getOrNull() }
-                ?: currentTimeMillis()
+            val rejectedAt = parseIso8601EpochMillis(rejection.serverUpdatedAt) ?: currentTimeMillis()
             trainingCycleRepository?.saveRejectedCycleDraft(rejectedComponent, rejectedAt)
         }
     }
@@ -3276,9 +3309,7 @@ class SyncManager(
             // M2: grouped sessions only. See the KDoc above for why a standalone
             // re-push erases its web note.
             if (dto.routineSessionId.isNullOrBlank()) return@mapNotNull null
-            val serverMillis = rejection.serverUpdatedAt
-                ?.let { iso -> runCatching { kotlin.time.Instant.parse(iso).toEpochMilliseconds() }.getOrNull() }
-                ?: return@mapNotNull null
+            val serverMillis = parseIso8601EpochMillis(rejection.serverUpdatedAt) ?: return@mapNotNull null
             dto to serverMillis
         }
         if (unchangedContent.isNotEmpty()) {
@@ -3297,7 +3328,7 @@ class SyncManager(
                 // The gather is generation-based: without the snapshot ack these parents
                 // stay dirty and are pushed (and rejected) again on every sync.
                 syncRepository.acknowledgeWorkoutSnapshot(outcome.workoutSnapshot, unchangedContent.toSet())
-                Logger.i("SyncManager") {
+                Logger.i(tag = "SyncManager") {
                     "LWW re-push: ${unchangedRows.size} rejected session row(s) had unchanged content " +
                         "and were stamped instead of re-sent"
                 }
@@ -3307,7 +3338,7 @@ class SyncManager(
         // re-push them this sync: the repair cursor has already walked past their group.
         val repairRowsToClear = repairRowIdsFor(outcome, sessionRejections.map { it.id })
         if (retryable.isEmpty()) {
-            Logger.w("SyncManager") {
+            Logger.w(tag = "SyncManager") {
                 "Push LWW: ${sessionRejections.size} rejected session(s) cannot be re-pushed this sync " +
                     "(standalone, no server timestamp, or not part of this payload); they are not stamped " +
                     "and retry only while updatedAt is NULL or newer than the push watermark."
@@ -3332,7 +3363,7 @@ class SyncManager(
         }
         val retryTelemetry = retrySessions.flatMap { outcome.telemetryByPortalSessionId[it.id].orEmpty() }
 
-        Logger.i("SyncManager") {
+        Logger.i(tag = "SyncManager") {
             "Re-pushing ${retrySessions.size} LWW-rejected session(s) with serverUpdatedAt+1ms after the pull"
         }
 
@@ -3381,7 +3412,7 @@ class SyncManager(
             val result = pushPayloadWithRateLimit(payload)
             if (result.isFailure) {
                 anyFailure = true
-                Logger.w("SyncManager") {
+                Logger.w(tag = "SyncManager") {
                     "LWW re-push failed for ${batch.size} session(s): ${result.exceptionOrNull()?.message}. " +
                         "Their rows are not stamped and retry only while updatedAt is NULL or newer than the push watermark."
                 }
@@ -3431,18 +3462,18 @@ class SyncManager(
             clearIds = stillRejectedRepairRows,
         )
         if (acceptedRowIds.isNotEmpty()) {
-            Logger.i("SyncManager") {
+            Logger.i(tag = "SyncManager") {
                 "LWW re-push accepted ${acceptedRowIds.size} session row(s); stamped $stamped"
             }
         }
         if (stillRejectedRepairRows.isNotEmpty()) {
-            Logger.i("SyncManager") {
+            Logger.i(tag = "SyncManager") {
                 "Re-armed ${stillRejectedRepairRows.size} still-rejected repair-group row(s) " +
                     "(updatedAt cleared) so the next sync's delta retries them after the cursor moved on"
             }
         }
         if (stillRejected.isNotEmpty() && !anyFailure) {
-            Logger.w("SyncManager") {
+            Logger.w(tag = "SyncManager") {
                 "LWW re-push still rejected ${stillRejected.size} session(s); they are not stamped and retry " +
                     "only while updatedAt is NULL or newer than lastSync."
             }
@@ -3473,7 +3504,7 @@ class SyncManager(
             gatherStartedAt = outcome.gatherStartedAt,
             clearIds = rows,
         )
-        Logger.i("SyncManager") {
+        Logger.i(tag = "SyncManager") {
             "Re-armed ${rows.size} rejected repair-group row(s) (updatedAt cleared) after the re-push was skipped"
         }
     }
@@ -3623,7 +3654,7 @@ class SyncManager(
             .getRoutineGroupRepairCandidates(cursor, ROUTINE_GROUP_REPAIR_BATCH, profileId)
             .toMap()
         if (candidates.isNotEmpty()) {
-            Logger.i("SyncManager") {
+            Logger.i(tag = "SyncManager") {
                 "Routine group repair: re-sending ${candidates.size} complete routine workout(s) " +
                     "older than $cursor to rebuild portal history lost to the per-set push"
             }
@@ -3637,7 +3668,7 @@ class SyncManager(
         if (processed.size < ROUTINE_GROUP_REPAIR_BATCH) {
             // The query returned less than a full batch, so nothing older is left.
             tokenStorage.setRoutineGroupRepairCursor(profileId, 0L)
-            Logger.i("SyncManager") { "Routine group repair: complete for profile $profileId" }
+            Logger.i(tag = "SyncManager") { "Routine group repair: complete for profile $profileId" }
             return
         }
         val oldest = processed.values.min()
@@ -3695,7 +3726,7 @@ class SyncManager(
     ) {
         if (!isProfilePreferenceMigrationReady()) return
         val safeFailureLogger: (String) -> Unit = { line ->
-            Logger.w("SyncManager") { line }
+            Logger.w(tag = "SyncManager") { line }
         }
         val snapshot = isolateProfilePreferenceFailure(
             ProfilePreferenceLocalFailureStage.SNAPSHOT,
@@ -3704,19 +3735,22 @@ class SyncManager(
             profilePreferenceSyncRepository.snapshotDirtySections()
         } ?: return
         snapshot.unsyncable.forEach { issue ->
-            Logger.w("SyncManager") { profilePreferenceIssueLogLine(issue) }
+            Logger.w(tag = "SyncManager") { profilePreferenceIssueLogLine(issue) }
         }
         val (eligible, deferred) = snapshot.valid.partition {
             it.key.localProfileId in sentMetadataProfileIds
         }
         deferred.forEach { section ->
-            Logger.i("SyncManager") { profilePreferenceMetadataDeferredLogLine(section.key) }
+            Logger.i(tag = "SyncManager") { profilePreferenceMetadataDeferredLogLine(section.key) }
+        }
+        val supported = eligible.filter { section ->
+            unsupportedPreferenceGenerations[section.key] != section.localGeneration
         }
         val prepared = isolateProfilePreferenceFailure(
             ProfilePreferenceLocalFailureStage.MUTATION_MAPPING,
             safeFailureLogger,
         ) {
-            eligible.map(PortalSyncAdapter::toPortalProfilePreferenceMutation)
+            supported.map(PortalSyncAdapter::toPortalProfilePreferenceMutation)
         } ?: return
         if (prepared.isEmpty()) return
 
@@ -3732,23 +3766,37 @@ class SyncManager(
             planProfilePreferencePushChunks(base, prepared)
         } ?: return
         plan.unsyncable.forEach { issue ->
-            Logger.w("SyncManager") { profilePreferenceIssueLogLine(issue) }
+            Logger.w(tag = "SyncManager") { profilePreferenceIssueLogLine(issue) }
         }
 
         for (chunk in plan.chunks) {
             val result = pushPayloadWithRateLimit(chunk.payload)
             if (result.isFailure) {
-                Logger.w("SyncManager") {
+                Logger.w(tag = "SyncManager") {
                     profilePreferenceChunkFailureLogLine(result.exceptionOrNull())
                 }
                 return
             }
             val response = result.getOrThrow()
             if (response.profilePreferencesAccepted != true) {
-                Logger.i("SyncManager") {
+                Logger.i(tag = "SyncManager") {
                     "Backend did not acknowledge profile preference support"
                 }
                 return
+            }
+            response.canonicalProfilePreferenceSections.forEach { dto ->
+                responseKey(dto.localProfileId, dto.section)?.let { key ->
+                    unsupportedPreferenceGenerations.remove(key)
+                }
+            }
+            response.profilePreferenceRejections.forEach { rejection ->
+                if (rejection.reason == "UNSUPPORTED_SECTION") {
+                    val key = responseKey(rejection.localProfileId, rejection.section)
+                    val sentGeneration = key?.let { chunk.ledger[it] }
+                    if (key != null && sentGeneration != null) {
+                        unsupportedPreferenceGenerations[key] = sentGeneration
+                    }
+                }
             }
             val outcomes = isolateProfilePreferenceFailure(
                 ProfilePreferenceLocalFailureStage.RESPONSE_MAPPING,
@@ -3819,7 +3867,7 @@ class SyncManager(
         }
         val mergeLastSync = pullCursor
         val serverWinsRoutineIds = tokenStorage.pendingServerWinsRoutineIds(userId, mergeProfileId)
-        Logger.i("SyncManager") {
+        Logger.i(tag = "SyncManager") {
             "Pull mode: requestLastSync=$requestLastSync (stored=$pullCursor, " +
                 "mergeLastSync=$mergeLastSync, profile=$mergeProfileId, " +
                 "serverWinsRoutines=${serverWinsRoutineIds.size}, includeUserScoped=$includeUserScoped)"
@@ -3857,7 +3905,7 @@ class SyncManager(
             val filtered = ids.filter { CanonicalUuid.matches(it) }
             val dropped = ids.size - filtered.size
             if (dropped > 0) {
-                Logger.w("SyncManager") {
+                Logger.w(tag = "SyncManager") {
                     "Parity list '$label': dropped $dropped non-UUID entries before send"
                 }
             }
@@ -3875,7 +3923,7 @@ class SyncManager(
         fun <T> capParity(list: List<T>, label: String): List<T> = if (list.size <= SyncConfig.MAX_PARITY_IDS) {
             list
         } else {
-            Logger.w("SyncManager") {
+            Logger.w(tag = "SyncManager") {
                 "Parity list '$label' has ${list.size} entries; truncating to first " +
                     "${SyncConfig.MAX_PARITY_IDS} (newest-first) to stay within server cap. " +
                     "Local dedupe will handle the older tail."
@@ -3891,7 +3939,7 @@ class SyncManager(
         fun <T> nonEmptyOrSentinel(list: List<T>, label: String): List<T> = if (list.isNotEmpty()) {
             list
         } else {
-            Logger.d("SyncManager") {
+            Logger.d(tag = "SyncManager") {
                 "Parity list '$label' is empty; substituting the nil-UUID sentinel so the " +
                     "request never carries an empty known-id list with a non-zero cursor"
             }
@@ -3926,7 +3974,7 @@ class SyncManager(
         )
 
         val entityIds = currentKnownEntityIds()
-        Logger.i("SyncManager") {
+        Logger.i(tag = "SyncManager") {
             "Parity sync: sending ${entityIds.sessionIds.size} session IDs, " +
                 "${entityIds.routineIds.size} routine IDs, ${entityIds.cycleIds.size} cycle IDs, " +
                 "${entityIds.badgeIds.size} badge IDs, " +
@@ -3956,7 +4004,7 @@ class SyncManager(
                         "Processed $totalEntitiesFetched entities across $pagesProcessed pages. " +
                         "Server pagination may be broken - please contact support.",
                 )
-                Logger.e("SyncManager") { error.message!! }
+                Logger.e(tag = "SyncManager") { error.message!! }
                 return Result.failure(error)
             }
 
@@ -3969,7 +4017,7 @@ class SyncManager(
                         "Pull received blank continuation cursor after $pagesProcessed pages. " +
                             "Processed $totalEntitiesFetched entities. Server pagination protocol error.",
                     )
-                    Logger.e("SyncManager") { error.message!! }
+                    Logger.e(tag = "SyncManager") { error.message!! }
                     return Result.failure(error)
                 }
                 if (!seenCursors.add(currentCursor)) {
@@ -3978,7 +4026,7 @@ class SyncManager(
                             "(cursor=${currentCursor.take(16)}...). " +
                             "Processed $totalEntitiesFetched entities. Server may be stuck in a loop.",
                     )
-                    Logger.e("SyncManager") { error.message!! }
+                    Logger.e(tag = "SyncManager") { error.message!! }
                     return Result.failure(error)
                 }
             }
@@ -3995,7 +4043,7 @@ class SyncManager(
 
             // Fetch next page
             // DIAGNOSTIC: Log pull request parameters to trace sync issues
-            Logger.d("SyncManager") {
+            Logger.d(tag = "SyncManager") {
                 "PULL REQUEST: deviceId=$deviceId, profileId=$mergeProfileId, " +
                     "knownSessions=${knownEntityIds.sessionIds.size}, knownRoutines=${knownEntityIds.routineIds.size}, " +
                     "knownPersonalRecords=${knownEntityIds.personalRecordIds.size}, " +
@@ -4025,7 +4073,7 @@ class SyncManager(
                     }
 
                     val error = pullResult.exceptionOrNull() ?: PortalApiException("Pull failed")
-                    Logger.w("SyncManager") {
+                    Logger.w(tag = "SyncManager") {
                         "Pull page ${pagesProcessed + 1} failed (cursor=$currentCursor): ${error.message}"
                     }
 
@@ -4040,18 +4088,18 @@ class SyncManager(
                         firstRateLimitError = error
                     }
                     if (retryAttempts > SyncConfig.MAX_RETRY_AFTER_ATTEMPTS_PER_PAGE) {
-                        return Result.failure(firstRateLimitError ?: error)
+                        return Result.failure(firstRateLimitError)
                     }
 
-                    val retryDelayMs = portalError?.retryAfterSeconds?.toLong()?.coerceAtLeast(0L)?.times(1000L)
+                    val retryDelayMs = portalError.retryAfterSeconds?.toLong()?.coerceAtLeast(0L)?.times(1000L)
                         ?: SyncConfig.RATE_LIMIT_WINDOW_MS
-                    Logger.w("SyncManager") {
+                    Logger.w(tag = "SyncManager") {
                         "Retrying pull page ${pagesProcessed + 1} after ${retryDelayMs}ms " +
                             "(attempt $retryAttempts/${SyncConfig.MAX_RETRY_AFTER_ATTEMPTS_PER_PAGE}, cursor=$currentCursor)"
                     }
                     delay(retryDelayMs)
                 }
-                successfulResponse ?: return Result.failure(PortalApiException("Pull failed"))
+                successfulResponse
             }
             pagesProcessed++
 
@@ -4068,31 +4116,31 @@ class SyncManager(
                 pullResponse.workoutDeletions.size +
                 pullResponse.ownershipEvents.size +
                 pullResponse.deletedRoutineIds.size +
-                pullResponse.deletedCycleIds.size
+                pullResponse.deletedCycleIds.size +
+                pullResponse.customExercises.size
             totalEntitiesFetched += pageEntityCount
 
-            // A page with no entities mobile decodes but hasMore=true is legitimate: e.g. a
-            // page holding only customExercises (paged last by the server, not decoded
-            // here). Keep following its cursor. The missing/blank/repeated-cursor guards
-            // and MAX_PAGES bound the loop; each fails the pull, so neither lastSync nor the
-            // delta-pull marker advances over pages that were never fetched.
+            // A page with no entities mobile decodes but hasMore=true is legitimate; keep
+            // following its cursor. The missing/blank/repeated-cursor guards and MAX_PAGES
+            // bound the loop; each fails the pull, so neither lastSync nor the delta-pull
+            // marker advances over pages that were never fetched.
             if (pageEntityCount == 0 && pullResponse.hasMore) {
-                Logger.d("SyncManager") {
+                Logger.d(tag = "SyncManager") {
                     "Pull page $pagesProcessed has no decoded entities but hasMore=true; following cursor"
                 }
             }
 
-            Logger.d("SyncManager") {
+            Logger.d(tag = "SyncManager") {
                 "Pull page $pagesProcessed: sessions=${pullResponse.sessions.size}, routines=${pullResponse.routines.size}, " +
                     "cycles=${pullResponse.cycles.size}, badges=${pullResponse.badges.size}, hasMore=${pullResponse.hasMore}"
             }
             if (pullResponse.routines.isNotEmpty()) {
-                Logger.d("SyncManager") {
+                Logger.d(tag = "SyncManager") {
                     "Pull routines: ${pullResponse.routines.size} received"
                 }
             }
             if (pullResponse.cycles.isNotEmpty()) {
-                Logger.d("SyncManager") {
+                Logger.d(tag = "SyncManager") {
                     "Pull cycles: ${pullResponse.cycles.size} received"
                 }
             }
@@ -4133,7 +4181,7 @@ class SyncManager(
 
             if (!pullResponse.hasMore) {
                 // All pages complete
-                Logger.i("SyncManager") {
+                Logger.i(tag = "SyncManager") {
                     "Pull complete: $pagesProcessed page(s), $totalEntitiesFetched total entities"
                 }
                 break
@@ -4149,7 +4197,7 @@ class SyncManager(
                         "Processed $totalEntitiesFetched entities across $pagesProcessed pages. " +
                         "Server pagination protocol error — missing continuation cursor.",
                 )
-                Logger.e("SyncManager") { error.message!! }
+                Logger.e(tag = "SyncManager") { error.message!! }
                 return Result.failure(error)
             }
         }
@@ -4165,10 +4213,10 @@ class SyncManager(
         // 5-minute overlap. Fall back to the stored cursor unchanged if no page produced
         // one — subtracting the overlap again would ratchet the cursor backwards on every
         // occurrence (G-9).
-        val pullSyncTime = if (firstPageSyncTime != null) {
-            if (firstPageSyncTime > PULL_CURSOR_OVERLAP_MS) firstPageSyncTime - PULL_CURSOR_OVERLAP_MS else 0L
+        val pullSyncTime = if (firstPageSyncTime > PULL_CURSOR_OVERLAP_MS) {
+            firstPageSyncTime - PULL_CURSOR_OVERLAP_MS
         } else {
-            pullCursor
+            0L
         }
 
         return Result.success(
@@ -4192,7 +4240,7 @@ class SyncManager(
         val sections = dtos.orEmpty()
         if (sections.isEmpty()) return
         if (!isFirstPage) {
-            Logger.w("SyncManager") {
+            Logger.w(tag = "SyncManager") {
                 profilePreferencePullCountLogLine(
                     ProfilePreferencePullDiagnosticCategory.LATER_PAGE_IGNORED,
                     sections.size,
@@ -4203,7 +4251,7 @@ class SyncManager(
         if (!isProfilePreferenceMigrationReady()) return
 
         val safeFailureLogger: (String) -> Unit = { line ->
-            Logger.w("SyncManager") { line }
+            Logger.w(tag = "SyncManager") { line }
         }
         val plan = isolateProfilePreferenceFailure(
             ProfilePreferenceLocalFailureStage.PULL_RESPONSE_MAPPING,
@@ -4212,7 +4260,7 @@ class SyncManager(
             planProfilePreferencePullSections(sections)
         } ?: return
         if (plan.invalidCanonicalCount > 0) {
-            Logger.w("SyncManager") {
+            Logger.w(tag = "SyncManager") {
                 profilePreferencePullCountLogLine(
                     ProfilePreferencePullDiagnosticCategory.INVALID_CANONICAL,
                     plan.invalidCanonicalCount,
@@ -4220,7 +4268,7 @@ class SyncManager(
             }
         }
         if (plan.duplicateKeyCount > 0) {
-            Logger.w("SyncManager") {
+            Logger.w(tag = "SyncManager") {
                 profilePreferencePullCountLogLine(
                     ProfilePreferencePullDiagnosticCategory.DUPLICATE_KEY,
                     plan.duplicateKeyCount,
@@ -4228,6 +4276,7 @@ class SyncManager(
             }
         }
         if (plan.valid.isEmpty()) return
+        plan.valid.forEach { section -> unsupportedPreferenceGenerations.remove(section.key) }
 
         val report = isolateProfilePreferenceFailure(
             ProfilePreferenceLocalFailureStage.PULL_APPLY,
@@ -4240,7 +4289,7 @@ class SyncManager(
             applyReport
         } ?: return
         if (report.ignoredUnknownProfile > 0) {
-            Logger.i("SyncManager") {
+            Logger.i(tag = "SyncManager") {
                 profilePreferencePullCountLogLine(
                     ProfilePreferencePullDiagnosticCategory.UNKNOWN_PROFILE,
                     report.ignoredUnknownProfile,
@@ -4248,7 +4297,7 @@ class SyncManager(
             }
         }
         if (report.invalid > 0) {
-            Logger.w("SyncManager") {
+            Logger.w(tag = "SyncManager") {
                 profilePreferencePullCountLogLine(
                     ProfilePreferencePullDiagnosticCategory.REPOSITORY_INVALID,
                     report.invalid,
@@ -4285,6 +4334,7 @@ class SyncManager(
             types.CYCLE to pullResponse.cycles.map { it.id },
             types.PERSONAL_RECORD to pullResponse.personalRecords.map { it.id },
             types.EARNED_BADGE to pullResponse.badges.map { it.badgeId },
+            types.CUSTOM_EXERCISE to pullResponse.customExercises.mapNotNull { it.clientId.takeIf(String::isNotBlank) },
         ).filterValues { it.isNotEmpty() }
     }
 
@@ -4345,7 +4395,7 @@ class SyncManager(
 
         // Telemetry: log unmatched exercises for catalog gap analysis
         if (unmatchedExerciseCount > 0) {
-            Logger.w("SyncManager") {
+            Logger.w(tag = "SyncManager") {
                 "Pull: $unmatchedExerciseCount exercises not found in local catalog: ${unmatchedExerciseNames.take(10).joinToString()}" +
                     if (unmatchedExerciseNames.size > 10) " (and ${unmatchedExerciseNames.size - 10} more)" else ""
             }
@@ -4358,14 +4408,11 @@ class SyncManager(
         } else {
             emptyList()
         }
-        // Resolve the catalog exercise id by name/muscle group; the portal PR
-        // projection carries no exercise_id (audit F021). Cache lookups by
-        // (name, muscleGroup) so a pull with many PRs for the same exercise does
-        // not issue a DB query per row (N+1).
-        val exerciseIdCache = mutableMapOf<Pair<String, String>, String?>()
+        val exerciseIdCache = mutableMapOf<Triple<String, String, String?>, String?>()
         val prDtos = pullResponse.personalRecords.map { pr ->
-            val resolvedExerciseId = exerciseIdCache.getOrPut(pr.exerciseName to pr.muscleGroup) {
-                syncRepository.findExerciseId(pr.exerciseName, pr.muscleGroup)
+            val key = Triple(pr.exerciseName, pr.muscleGroup, pr.exerciseId)
+            val resolvedExerciseId = exerciseIdCache.getOrPut(key) {
+                syncRepository.findExerciseId(pr.exerciseName, pr.muscleGroup, pr.exerciseId)
             }
             PortalPullAdapter.toPersonalRecordSyncDto(pr, resolvedExerciseId)
         }
@@ -4407,7 +4454,7 @@ class SyncManager(
             sessionNoteKeys = sessionNotesMap.keys,
         )
         if (syncInvariantViolations.isNotEmpty()) {
-            Logger.w("SyncManager") {
+            Logger.w(tag = "SyncManager") {
                 val sample = syncInvariantViolations.take(8).joinToString("; ") { violation ->
                     "${violation.code}:${violation.entityId ?: "n/a"}"
                 }
@@ -4421,13 +4468,14 @@ class SyncManager(
         // Each portal session's updatedAt applies to all child mobile rows.
         val sessionUpdatedAtById: Map<String, Long> = pullResponse.sessions
             .flatMap { ps ->
-                val ts = ps.updatedAt?.let { iso ->
-                    runCatching { kotlin.time.Instant.parse(iso).toEpochMilliseconds() }
-                        .getOrNull()
-                } ?: 0L
+                val ts = parseIso8601EpochMillis(ps.updatedAt) ?: 0L
                 ps.exercises.map { ex -> ex.id to ts }
             }
             .toMap()
+
+        val pulledCustomExercises = pullResponse.customExercises
+            .filter { it.clientId.isNotBlank() }
+            .map(PortalPullAdapter::toCustomExerciseSyncDto)
 
         // 3. Apply durable deletions before live session projections in one repository
         // transaction. The repository selects LWW or legacy insertion from the timestamp map.
@@ -4448,6 +4496,7 @@ class SyncManager(
                 sessionNotes = sessionNotesMap,
                 sessionUpdatedAtById = sessionUpdatedAtById,
                 pulledProvenance = pulledProvenance(pullResponse, mobileSessions),
+                customExercises = pulledCustomExercises,
             )
             // PR 11: every row this merge committed came from this portal account. Record
             // that provenance for any pull (including a pull-only retry, which does not
@@ -4476,12 +4525,14 @@ class SyncManager(
                 source = "pull",
             )
 
-            Logger.d("SyncManager") {
+            Logger.d(tag = "SyncManager") {
                 "Ordinary pull merge complete: ${mobileSessions.size} sessions (${mobileSessions.count { it.exerciseId != null }} with exerciseId), " +
                     "${pullResponse.routines.size} routines, ${pullResponse.cycles.size} cycles, " +
                     "${pullResponse.badges.size} badges, ${prDtos.size} PRs, " +
                     "${sessionNotesMap.size} session notes"
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Logger.e(e) {
                 "Ordinary pull merge failed; the pull cursor will not advance and earlier per-repository " +
@@ -4513,7 +4564,7 @@ class SyncManager(
                     lastComputed = currentTimeMillis(),
                 )
                 gamificationRepository.saveRpgProfile(rpgProfile, mergeProfileId)
-                Logger.d("SyncManager") { "Merged portal RPG attributes: ${rpg.characterClass}" }
+                Logger.d(tag = "SyncManager") { "Merged portal RPG attributes: ${rpg.characterClass}" }
             }
         } catch (e: CancellationException) {
             throw e
@@ -4555,7 +4606,7 @@ class SyncManager(
                     )
                 }
                 externalActivityRepository.upsertActivities(activities)
-                Logger.d("SyncManager") { "Merged ${activities.size} portal external activities" }
+                Logger.d(tag = "SyncManager") { "Merged ${activities.size} portal external activities" }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -4590,19 +4641,19 @@ class SyncManager(
             source = source,
         )
         if (result.discardedRoutineEditIds.isNotEmpty()) {
-            Logger.w("SyncManager") {
+            Logger.w(tag = "SyncManager") {
                 "Server deleted ${result.discardedRoutineEditIds.size} routine(s) with unsynced local edits " +
                     "($source); local edits discarded (delete wins): ${result.discardedRoutineEditIds.joinToString()}"
             }
         }
         if (result.deletedActiveCycleIds.isNotEmpty()) {
-            Logger.w("SyncManager") {
+            Logger.w(tag = "SyncManager") {
                 "Server deleted ${result.deletedActiveCycleIds.size} active/in-progress cycle(s) ($source); " +
                     "local cycle progress removed (delete wins): ${result.deletedActiveCycleIds.joinToString()}"
             }
         }
         if (result.discardedCycleEditIds.isNotEmpty()) {
-            Logger.w("SyncManager") {
+            Logger.w(tag = "SyncManager") {
                 "Server deleted ${result.discardedCycleEditIds.size} cycle(s) with unsynced local edits " +
                     "($source); local edits discarded (delete wins): ${result.discardedCycleEditIds.joinToString()}"
             }
@@ -4623,7 +4674,7 @@ class SyncManager(
                 )
             }
         }
-        Logger.i("SyncManager") {
+        Logger.i(tag = "SyncManager") {
             "Applied server deletions ($source): reported routines=${routineIds.size}, cycles=${cycleIds.size}; " +
                 "removed locally routines=${result.deletedRoutineIds.size}, cycles=${result.deletedCycleIds.size}, " +
                 "template routines=${result.deletedTemplateRoutineIds.size}"
@@ -4653,7 +4704,7 @@ class SyncManager(
             .take(10)
             .joinToString { (id, count) -> "$id x$count" }
         val suffix = if (duplicateCounts.size > 10) ", ..." else ""
-        Logger.w("SyncManager") {
+        Logger.w(tag = "SyncManager") {
             "$context: dropped ${sessions.size - deduped.size} duplicate workout session row(s) " +
                 "before portal sync; duplicate IDs/counts=[$sample$suffix]"
         }
@@ -4673,7 +4724,7 @@ class SyncManager(
         if (duplicates.isEmpty()) return null
         val message = "Duplicate IDs in local push payload: " +
             duplicates.joinToString("; ") { it.toExceptionMessage() }
-        Logger.e("SyncManager") { message }
+        Logger.e(tag = "SyncManager") { message }
         return PortalApiException(message, null, 400)
     }
 
@@ -4707,7 +4758,7 @@ internal fun planSessionBatches(
     for (session in sessions) {
         val sessionTelemetry = telemetryCountBySessionId[session.id] ?: 0
         if (sessionTelemetry > SyncConfig.MAX_TELEMETRY_PER_BATCH) {
-            Logger.w("SyncManager") {
+            Logger.w(tag = "SyncManager") {
                 "Session ${session.id} has $sessionTelemetry telemetry points, " +
                     "exceeding per-batch cap ${SyncConfig.MAX_TELEMETRY_PER_BATCH}. " +
                     "Batch will likely be rejected by the server until telemetry is trimmed."
@@ -4801,7 +4852,7 @@ internal object PushPlanner {
     }
 
     private fun warnSkip(onSkip: SkipListener, entityType: String, id: String) {
-        Logger.w("SyncManager") {
+        Logger.w(tag = "SyncManager") {
             "Push skipped $entityType $id: it exceeds the push size cap on its own and can never be accepted"
         }
         onSkip.skipped(entityType, id)
@@ -4832,8 +4883,8 @@ internal object PushPlanner {
 
     /**
      * Packs non-session entities into requests after the session batches, in dependency
-     * order: routines, deleted-routine ids, cycles, PRs, then custom exercises (catalog
-     * rows first), assessments, badges and external activities. Each is upserted on its
+     * order: custom exercises (catalog rows first), routines, deleted-routine ids, cycles,
+     * PRs, assessments, badges and external activities. Each is upserted on its
      * own by mobile-sync-push, so none has to travel with another. The truly singular
      * fields — [rpgAttributes], [gamificationStats] and [allProfiles] — stay together on
      * the last request (merged into the last packed request when it fits there, else sent
@@ -4903,11 +4954,11 @@ internal object PushPlanner {
                 currentBytes += itemBytes
             }
         }
+        pack(customExercises, "custom exercise", curCustom, { it.clientId }) { envelope.copy(customExercises = listOf(it)) }
         pack(routines, "routine", curRoutines, { it.id }) { envelope.copy(routines = listOf(it)) }
         pack(deletedRoutineIds, "deleted routine", curDeleted, { it }) { envelope.copy(deletedRoutineIds = listOf(it)) }
         pack(cycles, "cycle", curCycles, { it.id }) { envelope.copy(cycles = listOf(it)) }
         pack(personalRecords, "personal record", curPrs, { it.id.orEmpty() }) { envelope.copy(personalRecords = listOf(it)) }
-        pack(customExercises, "custom exercise", curCustom, { it.clientId }) { envelope.copy(customExercises = listOf(it)) }
         pack(assessments, "assessment", curAssessments, { it.id }) { envelope.copy(assessments = listOf(it)) }
         pack(badges, "badge", curBadges, { it.badgeId }) { envelope.copy(badges = listOf(it)) }
         pack(externalActivities, "external activity", curExternal, { it.id }) { envelope.copy(externalActivities = listOf(it)) }
@@ -4934,7 +4985,7 @@ internal object PushPlanner {
         // deletes nothing. Every profile, pending-deletion ones included, still registers
         // through its own push's profileId.
         if (!fits(singular) && allProfiles != null) {
-            Logger.w("SyncManager") {
+            Logger.w(tag = "SyncManager") {
                 "Push: profile metadata for ${allProfiles.size} profile(s) exceeds the push size cap; " +
                     "sending without allProfiles this sync"
             }

@@ -185,7 +185,7 @@ fun SetSummaryCard(
     // formatter so a fractional kg/lb volume is not rounded away.
     val displayReps = summary.repCount
     val totalVolumeDisplay = kgToDisplay(summary.totalVolumeKg, weightUnit)
-    val unitLabel = if (weightUnit == WeightUnit.LB) "lbs" else "kg"
+    val unitLabel = stringResource(if (weightUnit == WeightUnit.LB) Res.string.label_lbs else Res.string.label_kg)
     // Issue #1182: an Echo set's primary load is the ACHIEVED measured peak ("Peak load"),
     // never the configured seed. A fixed-load set keeps its configured "Set Weight"; an Echo
     // set with no accepted measurement shows "Load unavailable" (not the seed, not 0).
@@ -251,7 +251,7 @@ fun SetSummaryCard(
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(
-                                "Total reps",
+                                stringResource(Res.string.summary_total_reps),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.9f),
                             )
@@ -264,7 +264,7 @@ fun SetSummaryCard(
                         }
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(
-                                "Total volume ($unitLabel)",
+                                stringResource(Res.string.summary_total_volume_unit, unitLabel),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.9f),
                             )
@@ -335,6 +335,13 @@ fun SetSummaryCard(
             )
             val energyValue = "${summary.estimatedCalories.roundToInt()}"
 
+            val modeStatLabel = stringResource(Res.string.summary_stat_mode)
+            val peakDynamicLabel = stringResource(Res.string.summary_peak_dynamic_unit, unitLabel)
+            val avgActiveLabel = stringResource(Res.string.summary_avg_active_unit, unitLabel)
+            val durationLabel = stringResource(Res.string.label_duration)
+            val energyLabel = stringResource(Res.string.summary_stat_energy)
+            val energyUnitLabel = stringResource(Res.string.summary_unit_kcal)
+
             val pairModifier = Modifier.fillMaxWidth()
             Column(
                 modifier = pairModifier,
@@ -343,37 +350,37 @@ fun SetSummaryCard(
                 // Row 1: Mode and Heaviest Lift
                 ResponsiveStatRow(
                     useTwoColumns = ContentAwareFit.equalColumnsFit(
-                        firstRequiredDp = statCardRequiredDp("Mode", workoutMode, null),
+                        firstRequiredDp = statCardRequiredDp(modeStatLabel, workoutMode, null),
                         secondRequiredDp = statCardRequiredDp(setWeightLabel, setWeightValueText, setWeightUnitText),
                         spacingDp = rowSpacingDp,
                         availableDp = availableDp,
                     ),
-                    first = { mod -> SummaryStatCard(label = "Mode", value = workoutMode, icon = Icons.Default.GridView, modifier = mod) },
+                    first = { mod -> SummaryStatCard(label = modeStatLabel, value = workoutMode, icon = Icons.Default.GridView, modifier = mod) },
                     second = { mod -> SummaryStatCard(label = setWeightLabel, value = setWeightValueText, unit = setWeightUnitText, icon = Icons.Default.FitnessCenter, modifier = mod) },
                 )
 
                 // Row 2: Peak Force (concentric/eccentric)
                 ResponsiveStatRow(
                     useTwoColumns = ContentAwareFit.equalColumnsFit(
-                        firstRequiredDp = forceCardRequiredDp("Peak Dynamic ($unitLabel)", peakForceItems),
-                        secondRequiredDp = forceCardRequiredDp("Avg Active ($unitLabel)", avgForceItems),
+                        firstRequiredDp = forceCardRequiredDp(peakDynamicLabel, peakForceItems),
+                        secondRequiredDp = forceCardRequiredDp(avgActiveLabel, avgForceItems),
                         spacingDp = rowSpacingDp,
                         availableDp = availableDp,
                     ),
-                    first = { mod -> SummaryForceCard(label = "Peak Dynamic ($unitLabel)", concentricValue = peakConcentric, eccentricValue = peakEccentric, modifier = mod) },
-                    second = { mod -> SummaryForceCard(label = "Avg Active ($unitLabel)", concentricValue = avgConcentric, eccentricValue = avgEccentric, modifier = mod) },
+                    first = { mod -> SummaryForceCard(label = peakDynamicLabel, concentricValue = peakConcentric, eccentricValue = peakEccentric, modifier = mod) },
+                    second = { mod -> SummaryForceCard(label = avgActiveLabel, concentricValue = avgConcentric, eccentricValue = avgEccentric, modifier = mod) },
                 )
 
                 // Row 3: Duration and Energy
                 ResponsiveStatRow(
                     useTwoColumns = ContentAwareFit.equalColumnsFit(
-                        firstRequiredDp = statCardRequiredDp("Duration", durationFormatted, null),
-                        secondRequiredDp = statCardRequiredDp("Energy", energyValue, "(kCal)"),
+                        firstRequiredDp = statCardRequiredDp(durationLabel, durationFormatted, null),
+                        secondRequiredDp = statCardRequiredDp(energyLabel, energyValue, energyUnitLabel),
                         spacingDp = rowSpacingDp,
                         availableDp = availableDp,
                     ),
-                    first = { mod -> SummaryStatCard(label = "Duration", value = durationFormatted, icon = Icons.Default.Timer, modifier = mod) },
-                    second = { mod -> SummaryStatCard(label = "Energy", value = energyValue, unit = "(kCal)", icon = Icons.Default.LocalFireDepartment, modifier = mod) },
+                    first = { mod -> SummaryStatCard(label = durationLabel, value = durationFormatted, icon = Icons.Default.Timer, modifier = mod) },
+                    second = { mod -> SummaryStatCard(label = energyLabel, value = energyValue, unit = energyUnitLabel, icon = Icons.Default.LocalFireDepartment, modifier = mod) },
                 )
 
             // Echo Mode Phase Breakdown
@@ -445,12 +452,12 @@ fun SetSummaryCard(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            "RPE",
+                            stringResource(Res.string.summary_rpe_label),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Text(
-                            "$savedRpe/10",
+                            stringResource(Res.string.summary_rpe_out_of_ten, savedRpe),
                             style = MaterialTheme.typography.bodyLarge,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface,
@@ -480,13 +487,13 @@ fun SetSummaryCard(
                     ) {
                         Column(modifier = Modifier.fillMaxWidth()) {
                             Text(
-                                "How hard was that?",
+                                stringResource(Res.string.summary_rpe_prompt_title),
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Medium,
                                 color = MaterialTheme.colorScheme.onSurface,
                             )
                             Text(
-                                "Log your perceived exertion",
+                                stringResource(Res.string.summary_rpe_prompt_subtitle),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -544,11 +551,12 @@ fun SetSummaryCard(
                     containerColor = MaterialTheme.colorScheme.primary,
                 ),
             ) {
+                val resolvedButtonLabel = if (buttonLabel == "Done") stringResource(Res.string.assessment_done) else buttonLabel
                 Text(
                     text = if (autoplayEnabled && summaryCountdownSeconds > 0 && autoCountdown > 0 && !holdAutoContinue) {
-                        "$buttonLabel ($autoCountdown)"
+                        stringResource(Res.string.summary_button_countdown, resolvedButtonLabel, autoCountdown)
                     } else {
-                        buttonLabel
+                        resolvedButtonLabel
                     },
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
@@ -866,14 +874,18 @@ private fun EchoPhaseBreakdownCard(
                 verticalArrangement = Arrangement.Center,
             ) {
                 Text(
-                    "Echo Phase Breakdown",
+                    stringResource(Res.string.summary_echo_phase_breakdown),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.align(Alignment.CenterVertically),
                 )
                 Text(
-                    "Peak: ${WeightDisplayFormatter.formatDisplayNumber(peakWeight)} $unitLabel/cable",
+                    stringResource(
+                        Res.string.summary_echo_peak_per_cable,
+                        WeightDisplayFormatter.formatDisplayNumber(peakWeight),
+                        unitLabel,
+                    ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.align(Alignment.CenterVertically),
@@ -890,7 +902,7 @@ private fun EchoPhaseBreakdownCard(
                 // Warmup Phase
                 if (warmupReps > 0 || warmupAvgWeight > 0) {
                     PhaseStatColumn(
-                        phaseName = "Warmup",
+                        phaseName = stringResource(Res.string.hrm_phase_warmup),
                         reps = warmupReps,
                         avgWeight = warmupAvgWeight,
                         unitLabel = unitLabel,
@@ -900,7 +912,7 @@ private fun EchoPhaseBreakdownCard(
 
                 // Working Phase
                 PhaseStatColumn(
-                    phaseName = "Working",
+                    phaseName = stringResource(Res.string.hrm_phase_working),
                     reps = workingReps,
                     avgWeight = workingAvgWeight,
                     unitLabel = unitLabel,
@@ -911,7 +923,7 @@ private fun EchoPhaseBreakdownCard(
                 // Burnout Phase
                 if (burnoutReps > 0 || burnoutAvgWeight > 0) {
                     PhaseStatColumn(
-                        phaseName = "Burnout",
+                        phaseName = stringResource(Res.string.summary_burnout_phase),
                         reps = burnoutReps,
                         avgWeight = burnoutAvgWeight,
                         unitLabel = unitLabel,
@@ -944,13 +956,13 @@ private fun PhaseStatColumn(phaseName: String, reps: Int, avgWeight: Float, unit
             color = MaterialTheme.colorScheme.onSurface,
         )
         Text(
-            "$unitLabel/cable",
+            stringResource(Res.string.summary_unit_per_cable, unitLabel),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         if (reps > 0) {
             Text(
-                "$reps reps",
+                stringResource(Res.string.recovery_reps_count, reps),
                 style = MaterialTheme.typography.bodySmall,
                 color = color,
             )
@@ -1010,7 +1022,7 @@ private fun VelocitySummaryCard(biomechanics: BiomechanicsSetSummary) {
                         tint = MaterialTheme.colorScheme.primary,
                     )
                     Text(
-                        "Velocity Analysis",
+                        stringResource(Res.string.summary_velocity_analysis),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary,
@@ -1031,7 +1043,7 @@ private fun VelocitySummaryCard(biomechanics: BiomechanicsSetSummary) {
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text(
-                        "Avg MCV",
+                        stringResource(Res.string.summary_avg_mcv),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -1042,7 +1054,7 @@ private fun VelocitySummaryCard(biomechanics: BiomechanicsSetSummary) {
                         color = velocityZoneColor(BiomechanicsVelocityZone.fromMcv(biomechanics.avgMcvMmS)),
                     )
                     Text(
-                        "m/s",
+                        stringResource(Res.string.summary_unit_m_per_s),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -1054,7 +1066,7 @@ private fun VelocitySummaryCard(biomechanics: BiomechanicsSetSummary) {
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text(
-                        "Peak",
+                        stringResource(Res.string.hud_peak),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -1065,7 +1077,7 @@ private fun VelocitySummaryCard(biomechanics: BiomechanicsSetSummary) {
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     Text(
-                        "m/s",
+                        stringResource(Res.string.summary_unit_m_per_s),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -1077,7 +1089,7 @@ private fun VelocitySummaryCard(biomechanics: BiomechanicsSetSummary) {
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text(
-                        "Velocity Loss",
+                        stringResource(Res.string.hud_velocity_loss),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -1169,7 +1181,7 @@ private fun VelocitySummaryCard(biomechanics: BiomechanicsSetSummary) {
                                         .background(velocityZoneColor(zone), MaterialTheme.shapes.extraSmall),
                                 )
                                 Text(
-                                    "${velocityZoneLabel(zone)}: $count",
+                                    stringResource(Res.string.summary_zone_count, velocityZoneLabel(zone), count),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -1187,12 +1199,15 @@ private fun VelocitySummaryCard(biomechanics: BiomechanicsSetSummary) {
 /**
  * Strength profile display name mapping.
  */
-private fun strengthProfileDisplayName(profile: StrengthProfile): String = when (profile) {
-    StrengthProfile.ASCENDING -> "Ascending"
-    StrengthProfile.DESCENDING -> "Descending"
-    StrengthProfile.BELL_SHAPED -> "Bell Curve"
-    StrengthProfile.FLAT -> "Flat"
-}
+@Composable
+private fun strengthProfileDisplayName(profile: StrengthProfile): String = stringResource(
+    when (profile) {
+        StrengthProfile.ASCENDING -> Res.string.biomech_strength_ascending
+        StrengthProfile.DESCENDING -> Res.string.biomech_strength_descending
+        StrengthProfile.BELL_SHAPED -> Res.string.summary_strength_bell_curve
+        StrengthProfile.FLAT -> Res.string.biomech_strength_flat
+    },
+)
 
 /**
  * Force curve summary card for post-set review.
@@ -1241,7 +1256,7 @@ private fun ForceCurveSummaryCard(avgForceCurve: ForceCurveResult, strengthProfi
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    "Force Curve",
+                    stringResource(Res.string.summary_force_curve_title),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary,
@@ -1353,12 +1368,12 @@ private fun ForceCurveSummaryCard(avgForceCurve: ForceCurveResult, strengthProfi
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text(
-                        "Sticking Point",
+                        stringResource(Res.string.summary_sticking_point),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
-                        "${stickingPointPct?.toInt() ?: "--"}% ROM",
+                        stringResource(Res.string.summary_rom_value, (stickingPointPct?.toInt()?.toString() ?: "--")),
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Medium,
                         color = if (stickingPointPct != null) errorColor else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1370,12 +1385,12 @@ private fun ForceCurveSummaryCard(avgForceCurve: ForceCurveResult, strengthProfi
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text(
-                        "Peak Force",
+                        stringResource(Res.string.summary_peak_force),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
-                        "${maxForce.toInt()} N",
+                        stringResource(Res.string.summary_force_newton, maxForce.toInt()),
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurface,
@@ -1387,12 +1402,12 @@ private fun ForceCurveSummaryCard(avgForceCurve: ForceCurveResult, strengthProfi
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text(
-                        "Min Force",
+                        stringResource(Res.string.summary_min_force),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
-                        "${interiorMinForce.toInt()} N",
+                        stringResource(Res.string.summary_force_newton, interiorMinForce.toInt()),
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurface,
@@ -1470,7 +1485,7 @@ private fun AsymmetrySummaryCard(biomechanics: BiomechanicsSetSummary) {
                     tint = MaterialTheme.colorScheme.primary,
                 )
                 Text(
-                    "Balance Analysis",
+                    stringResource(Res.string.summary_balance_analysis),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary,
@@ -1490,7 +1505,7 @@ private fun AsymmetrySummaryCard(biomechanics: BiomechanicsSetSummary) {
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text(
-                        "Avg Asymmetry",
+                        stringResource(Res.string.summary_avg_asymmetry),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -1508,15 +1523,17 @@ private fun AsymmetrySummaryCard(biomechanics: BiomechanicsSetSummary) {
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text(
-                        "Dominant Side",
+                        stringResource(Res.string.summary_dominant_side),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    val sideLabel = when (biomechanics.dominantSide) {
-                        "A" -> "Left (A)"
-                        "B" -> "Right (B)"
-                        else -> "Balanced"
-                    }
+                    val sideLabel = stringResource(
+                        when (biomechanics.dominantSide) {
+                            "A" -> Res.string.summary_side_left_a
+                            "B" -> Res.string.summary_side_right_b
+                            else -> Res.string.biomech_side_balanced
+                        },
+                    )
                     Text(
                         sideLabel,
                         style = MaterialTheme.typography.bodyLarge,
@@ -1531,7 +1548,7 @@ private fun AsymmetrySummaryCard(biomechanics: BiomechanicsSetSummary) {
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text(
-                        "Trend",
+                        stringResource(Res.string.summary_trend_label),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -1545,11 +1562,13 @@ private fun AsymmetrySummaryCard(biomechanics: BiomechanicsSetSummary) {
                         AsymmetryTrend.IMPROVING -> AccessibilityTheme.colors.success
                         AsymmetryTrend.STABLE -> MaterialTheme.colorScheme.onSurfaceVariant
                     }
-                    val trendLabel = when (trend) {
-                        AsymmetryTrend.WORSENING -> "Worsening"
-                        AsymmetryTrend.IMPROVING -> "Improving"
-                        AsymmetryTrend.STABLE -> "Stable"
-                    }
+                    val trendLabel = stringResource(
+                        when (trend) {
+                            AsymmetryTrend.WORSENING -> Res.string.summary_trend_worsening
+                            AsymmetryTrend.IMPROVING -> Res.string.summary_trend_improving
+                            AsymmetryTrend.STABLE -> Res.string.summary_trend_stable
+                        },
+                    )
                     Icon(
                         trendIcon,
                         contentDescription = trendLabel,
@@ -1683,7 +1702,7 @@ private fun QualityStatsSection(quality: SetQualitySummary) {
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Text(
-                        "Rep Quality",
+                        stringResource(Res.string.summary_rep_quality),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary,
@@ -1706,11 +1725,13 @@ private fun QualityStatsSection(quality: SetQualitySummary) {
                     )
                 }
                 // Trend label
-                val trendLabel = when (quality.trend) {
-                    QualityTrend.IMPROVING -> "Improving"
-                    QualityTrend.STABLE -> "Stable"
-                    QualityTrend.DECLINING -> "Declining"
-                }
+                val trendLabel = stringResource(
+                    when (quality.trend) {
+                        QualityTrend.IMPROVING -> Res.string.summary_trend_improving
+                        QualityTrend.STABLE -> Res.string.summary_trend_stable
+                        QualityTrend.DECLINING -> Res.string.summary_trend_declining
+                    },
+                )
                 val trendLabelColor = when (quality.trend) {
                     QualityTrend.IMPROVING -> AccessibilityTheme.colors.success
                     QualityTrend.STABLE -> MaterialTheme.colorScheme.onSurfaceVariant
@@ -1736,7 +1757,7 @@ private fun QualityStatsSection(quality: SetQualitySummary) {
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text(
-                        "Average",
+                        stringResource(Res.string.summary_quality_average),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -1753,12 +1774,12 @@ private fun QualityStatsSection(quality: SetQualitySummary) {
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text(
-                        "Best",
+                        stringResource(Res.string.summary_quality_best),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
-                        "#${quality.bestRepNumber}: ${quality.bestScore}",
+                        stringResource(Res.string.summary_quality_rep_score, quality.bestRepNumber, quality.bestScore),
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Medium,
                         color = qualityScoreColor(quality.bestScore),
@@ -1770,12 +1791,12 @@ private fun QualityStatsSection(quality: SetQualitySummary) {
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text(
-                        "Worst",
+                        stringResource(Res.string.summary_quality_worst),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
-                        "#${quality.worstRepNumber}: ${quality.worstScore}",
+                        stringResource(Res.string.summary_quality_rep_score, quality.worstRepNumber, quality.worstScore),
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Medium,
                         color = qualityScoreColor(quality.worstScore),
@@ -1807,7 +1828,7 @@ private fun QualityStatsSection(quality: SetQualitySummary) {
 
             // Swipe hint
             Text(
-                text = if (showRadar) "Tap for sparkline" else "Tap for component radar",
+                text = stringResource(if (showRadar) Res.string.summary_tap_for_sparkline else Res.string.summary_tap_for_radar),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.fillMaxWidth(),
@@ -1982,7 +2003,7 @@ private fun RadarChart(quality: SetQualitySummary) {
         ) {
             // Top label: ROM
             Text(
-                "ROM: ${KmpUtils.formatFloat(avgRom, 1)}/30",
+                stringResource(Res.string.summary_radar_rom, KmpUtils.formatFloat(avgRom, 1)),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
@@ -1998,12 +2019,12 @@ private fun RadarChart(quality: SetQualitySummary) {
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     Text(
-                        "Smooth: ${KmpUtils.formatFloat(avgSmoothness, 1)}/20",
+                        stringResource(Res.string.summary_radar_smooth_inline, KmpUtils.formatFloat(avgSmoothness, 1)),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
-                        "Velocity: ${KmpUtils.formatFloat(avgVelocity, 1)}/25",
+                        stringResource(Res.string.summary_radar_velocity_inline, KmpUtils.formatFloat(avgVelocity, 1)),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -2015,7 +2036,7 @@ private fun RadarChart(quality: SetQualitySummary) {
                 ) {
                     // Left label: Smoothness
                     Text(
-                        "${KmpUtils.formatFloat(avgSmoothness, 1)}/20\nSmooth",
+                        stringResource(Res.string.summary_radar_smooth_stacked, KmpUtils.formatFloat(avgSmoothness, 1)),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
@@ -2027,7 +2048,7 @@ private fun RadarChart(quality: SetQualitySummary) {
 
                     // Right label: Velocity
                     Text(
-                        "${KmpUtils.formatFloat(avgVelocity, 1)}/25\nVelocity",
+                        stringResource(Res.string.summary_radar_velocity_stacked, KmpUtils.formatFloat(avgVelocity, 1)),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
@@ -2038,7 +2059,7 @@ private fun RadarChart(quality: SetQualitySummary) {
 
             // Bottom label: Eccentric
             Text(
-                "Eccentric: ${KmpUtils.formatFloat(avgEccentric, 1)}/25",
+                stringResource(Res.string.summary_radar_eccentric, KmpUtils.formatFloat(avgEccentric, 1)),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
@@ -2064,10 +2085,26 @@ private fun WeakestComponentTip(quality: SetQualitySummary) {
     data class Component(val name: String, val percentage: Float, val tip: String)
 
     val components = listOf(
-        Component("ROM", avgRom / 30f, "Try to maintain consistent range of motion each rep"),
-        Component("Velocity", avgVelocity / 25f, "Keep a steady tempo throughout the set"),
-        Component("Eccentric", avgEccentric / 25f, "Focus on a controlled 2-second lowering phase"),
-        Component("Smoothness", avgSmoothness / 20f, "Avoid jerky movements -- smooth and steady wins"),
+        Component(
+            stringResource(Res.string.summary_component_rom),
+            avgRom / 30f,
+            stringResource(Res.string.summary_tip_rom),
+        ),
+        Component(
+            stringResource(Res.string.summary_component_velocity),
+            avgVelocity / 25f,
+            stringResource(Res.string.summary_tip_velocity),
+        ),
+        Component(
+            stringResource(Res.string.summary_component_eccentric),
+            avgEccentric / 25f,
+            stringResource(Res.string.summary_tip_eccentric),
+        ),
+        Component(
+            stringResource(Res.string.summary_component_smoothness),
+            avgSmoothness / 20f,
+            stringResource(Res.string.summary_tip_smoothness),
+        ),
     )
 
     val weakest = components.minByOrNull { it.percentage } ?: return

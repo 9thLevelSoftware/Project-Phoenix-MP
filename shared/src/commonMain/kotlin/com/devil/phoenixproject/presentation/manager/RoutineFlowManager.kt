@@ -34,6 +34,7 @@ import com.devil.phoenixproject.domain.usecase.RoutineSetWeightRequest
 import com.devil.phoenixproject.domain.usecase.RoutineSetWeightResolver
 import com.devil.phoenixproject.util.CommandLimits
 import com.devil.phoenixproject.util.Constants
+import com.devil.phoenixproject.util.rethrowIfCancellation
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -165,6 +166,15 @@ class RoutineFlowManager(
          * together with the routine append or not at all.
          */
         fun rebindTerminalSuccessor(newExerciseIndex: Int): Boolean
+
+        /** Finalize a completed routine run through the unified session engine cleanup path. */
+        fun completeRoutineRun(backupTag: String)
+
+        /** Invalidate an execution lease consumed by skipping the final exercise. */
+        fun invalidateSkippedExecutionLease(lease: ExecutionLease)
+
+        /** Clear any active rest transition plan and runtime rest ownership when skipping an exercise. */
+        fun clearRestTransitionForExerciseSkip()
     }
 
     /**
@@ -285,6 +295,7 @@ class RoutineFlowManager(
                         }
                     break
                 } catch (e: Exception) {
+                    e.rethrowIfCancellation()
                     retryCount++
                     Logger.e(e) { "ROUTINE_GROUPS: Error loading groups (attempt $retryCount/$maxRetries)" }
                     if (retryCount <= maxRetries) {
@@ -731,8 +742,13 @@ class RoutineFlowManager(
      */
     fun deleteRoutines(routineIds: Set<String>) {
         scope.launch {
-            routineIds.forEach { id ->
-                workoutRepository.deleteRoutine(id)
+            try {
+                routineIds.forEach { id ->
+                    workoutRepository.deleteRoutine(id)
+                }
+            } catch (e: Exception) {
+                e.rethrowIfCancellation()
+                Logger.e(e) { "Failed to delete routines $routineIds" }
             }
         }
     }
@@ -741,43 +757,63 @@ class RoutineFlowManager(
 
     fun createGroup(name: String) {
         scope.launch {
-            val repo = groupRepo ?: return@launch
-            val group = RoutineGroup(
-                id = generateUUID(),
-                name = name,
-                profileId = userProfileRepository.activeProfile.value?.id ?: "default",
-                orderIndex = coordinator._routineGroups.value.size,
-                createdAt = currentTimeMillis(),
-            )
-            repo.saveRoutineGroup(group)
-            Logger.d { "ROUTINE_GROUPS: Created group '${group.name}' (${group.id})" }
+            try {
+                val repo = groupRepo ?: return@launch
+                val group = RoutineGroup(
+                    id = generateUUID(),
+                    name = name,
+                    profileId = userProfileRepository.activeProfile.value?.id ?: "default",
+                    orderIndex = coordinator._routineGroups.value.size,
+                    createdAt = currentTimeMillis(),
+                )
+                repo.saveRoutineGroup(group)
+                Logger.d { "ROUTINE_GROUPS: Created group '${group.name}' (${group.id})" }
+            } catch (e: Exception) {
+                e.rethrowIfCancellation()
+                Logger.e(e) { "ROUTINE_GROUPS: Failed to create group '$name'" }
+            }
         }
     }
 
     fun renameGroup(groupId: String, newName: String) {
         scope.launch {
-            val repo = groupRepo ?: return@launch
-            val existing = coordinator._routineGroups.value.find { it.id == groupId } ?: return@launch
-            repo.updateRoutineGroup(existing.copy(name = newName))
-            Logger.d { "ROUTINE_GROUPS: Renamed group '$groupId' to '$newName'" }
+            try {
+                val repo = groupRepo ?: return@launch
+                val existing = coordinator._routineGroups.value.find { it.id == groupId } ?: return@launch
+                repo.updateRoutineGroup(existing.copy(name = newName))
+                Logger.d { "ROUTINE_GROUPS: Renamed group '$groupId' to '$newName'" }
+            } catch (e: Exception) {
+                e.rethrowIfCancellation()
+                Logger.e(e) { "ROUTINE_GROUPS: Failed to rename group '$groupId'" }
+            }
         }
     }
 
     fun deleteGroup(groupId: String) {
         scope.launch {
-            val repo = groupRepo ?: return@launch
-            repo.deleteRoutineGroup(groupId)
-            Logger.d { "ROUTINE_GROUPS: Deleted group '$groupId' (routines become ungrouped via ON DELETE SET NULL)" }
+            try {
+                val repo = groupRepo ?: return@launch
+                repo.deleteRoutineGroup(groupId)
+                Logger.d { "ROUTINE_GROUPS: Deleted group '$groupId' (routines become ungrouped via ON DELETE SET NULL)" }
+            } catch (e: Exception) {
+                e.rethrowIfCancellation()
+                Logger.e(e) { "ROUTINE_GROUPS: Failed to delete group '$groupId'" }
+            }
         }
     }
 
     fun moveRoutinesToGroup(routineIds: Set<String>, groupId: String?) {
         scope.launch {
-            val repo = groupRepo ?: return@launch
-            routineIds.forEach { id ->
-                repo.moveRoutineToGroup(id, groupId)
+            try {
+                val repo = groupRepo ?: return@launch
+                routineIds.forEach { id ->
+                    repo.moveRoutineToGroup(id, groupId)
+                }
+                Logger.d { "ROUTINE_GROUPS: Moved ${routineIds.size} routine(s) to group=${groupId ?: "ungrouped"}" }
+            } catch (e: Exception) {
+                e.rethrowIfCancellation()
+                Logger.e(e) { "ROUTINE_GROUPS: Failed to move routines $routineIds to group=$groupId" }
             }
-            Logger.d { "ROUTINE_GROUPS: Moved ${routineIds.size} routine(s) to group=${groupId ?: "ungrouped"}" }
         }
     }
 
@@ -869,18 +905,28 @@ class RoutineFlowManager(
      * the editor now uses.
      */
     private fun normalizeExerciseOrder(routine: Routine): Routine {
+        val validSupersetIds = routine.supersets.mapTo(mutableSetOf()) { it.id }
         val reordered = routine.getItems().flatMap { item ->
             when (item) {
-                is RoutineItem.Single -> listOf(item.exercise)
+                is RoutineItem.Single -> {
+                    val ex = item.exercise
+                    listOf(
+                        if (ex.supersetId != null && ex.supersetId !in validSupersetIds) {
+                            ex.copy(supersetId = null, orderInSuperset = 0)
+                        } else {
+                            ex
+                        },
+                    )
+                }
 
                 is RoutineItem.SupersetItem ->
                     item.superset.exercises.sortedBy { it.orderInSuperset }
             }
         }
-        // Fast path: skip copy if order already matches
-        if (reordered.map { it.id } == routine.exercises.map { it.id }) return routine
+        // Fast path: skip copy if exercises (including healed superset references) already match
+        if (reordered == routine.exercises) return routine
 
-        Logger.w { "HEAL: Routine '${routine.name}' had non-contiguous superset exercises — reordering" }
+        Logger.w { "HEAL: Routine '${routine.name}' had non-contiguous or orphaned superset exercises — normalizing" }
         val reindexed = reordered.mapIndexed { index, ex -> ex.copy(orderIndex = index) }
         val normalizedSupersets = routine.supersets.mapNotNull { superset ->
             val minOrder = reindexed
@@ -916,7 +962,7 @@ class RoutineFlowManager(
     ): Boolean {
         val normalized = normalizeExerciseOrder(routine)
         // Load parameters from first exercise (matching parent repo behavior)
-        val firstExercise = normalized.exercises[0]
+        val firstExercise = normalized.exercises.firstOrNull() ?: return false
         val rackSelection = resolveDefaultRackSelection(firstExercise)
         val firstSetReps = firstExercise.setReps.firstOrNull() // Can be null for AMRAP sets
         // Loading a routine starts a new logical run; never inherit an overlay from a prior session.
@@ -933,7 +979,7 @@ class RoutineFlowManager(
 
         val params = WorkoutParameters(
             programMode = firstExercise.programMode,
-            echoLevel = firstExercise.echoLevel,
+            echoLevel = firstExercise.getEchoLevelForSet(0),
             eccentricLoad = firstExercise.eccentricLoad,
             reps = firstSetReps ?: 0, // AMRAP sets have null reps, use 0 as placeholder
             weightPerCableKg = firstSetWeight,
@@ -971,6 +1017,7 @@ class RoutineFlowManager(
             coordinator._workoutState.value = WorkoutState.Idle
             publishRackSelection(rackSelection)
             coordinator._currentWarmupSetIndex.value = if (hasVariableWarmups) 0 else -1
+            coordinator.preWarmupWorkingParameters = null
             coordinator._userAdjustedWeightDuringRest = false
             coordinator._workoutParameters.value = params.withPublishedRackSelection(
                 coordinator._workoutParameters.value,
@@ -1077,8 +1124,13 @@ class RoutineFlowManager(
         // TRAINING_CYCLES immediately after this function returns — see coordinator KDoc.
         coordinator.routineLaunchOrigin = RoutineLaunchOrigin.DAILY_ROUTINES
         scope.launch {
-            val resolvedRoutine = resolveRoutineWeights(routine)
-            loadRoutineInternal(resolvedRoutine)
+            try {
+                val resolvedRoutine = resolveRoutineWeights(routine)
+                loadRoutineInternal(resolvedRoutine)
+            } catch (e: Exception) {
+                e.rethrowIfCancellation()
+                Logger.e(e) { "Failed to load routine ${routine.id}" }
+            }
         }
     }
 
@@ -1101,8 +1153,7 @@ class RoutineFlowManager(
         // will overwrite this with TRAINING_CYCLES immediately after this suspend call returns.
         coordinator.routineLaunchOrigin = RoutineLaunchOrigin.DAILY_ROUTINES
         val resolvedRoutine = resolveRoutineWeights(routine)
-        loadRoutineInternal(resolvedRoutine)
-        return true
+        return loadRoutineInternal(resolvedRoutine)
     }
 
     internal suspend fun loadRoutineForResumeAsync(
@@ -1137,7 +1188,12 @@ class RoutineFlowManager(
         // destination even if the user exits before the coroutine completes.
         coordinator.routineLaunchOrigin = RoutineLaunchOrigin.DAILY_ROUTINES
         scope.launch {
-            enterRoutineOverviewInternal(resolveRoutineWeights(routine))
+            try {
+                enterRoutineOverviewInternal(resolveRoutineWeights(routine))
+            } catch (e: Exception) {
+                e.rethrowIfCancellation()
+                Logger.e(e) { "Failed to enter routine overview for ${routine.id}" }
+            }
         }
     }
 
@@ -1152,9 +1208,14 @@ class RoutineFlowManager(
         // destination even if the user exits before the coroutine completes.
         coordinator.routineLaunchOrigin = RoutineLaunchOrigin.DAILY_ROUTINES
         scope.launch {
-            val resolvedRoutine = resolveRoutineWeights(routine)
-            val adjustedRoutine = applyRoutineModifierUseCase(resolvedRoutine, modifier, resolvedRoutine.profileId)
-            enterRoutineOverviewInternal(adjustedRoutine)
+            try {
+                val resolvedRoutine = resolveRoutineWeights(routine)
+                val adjustedRoutine = applyRoutineModifierUseCase(resolvedRoutine, modifier, resolvedRoutine.profileId)
+                enterRoutineOverviewInternal(adjustedRoutine)
+            } catch (e: Exception) {
+                e.rethrowIfCancellation()
+                Logger.e(e) { "Failed to enter routine overview with modifier for ${routine.id}" }
+            }
         }
     }
 
@@ -1179,6 +1240,7 @@ class RoutineFlowManager(
                 selectedExerciseIndex = 0,
             )
             coordinator._currentWarmupSetIndex.value = if (warmupExercise != null) 0 else -1
+            coordinator.preWarmupWorkingParameters = null
         }
         warmupExercise?.let { exercise ->
             Logger.d(tag = "RoutineFlowManager") { "Issue #356: Overview init warm-up for ${exercise.exercise.name}: ${exercise.warmupSets.size} sets" }
@@ -1209,62 +1271,18 @@ class RoutineFlowManager(
         val routine = coordinator._loadedRoutine.value ?: return
         val exercise = routine.exercises.getOrNull(exerciseIndex) ?: return
         val isNewExercise = exerciseIndex != coordinator._currentExerciseIndex.value
-        val rackSelection = resolveDefaultRackSelection(exercise)
         val setWeight = lifecycleDelegate.resolveOccurrenceSetWeight(exercise, setIndex)
-        val rawSetReps = exercise.setReps.getOrNull(setIndex)
-        val setReps = rawSetReps ?: exercise.reps
-        val preserveRestEditedProgression = shouldPreserveRestEditedProgression()
-        val progressionKg = if (preserveRestEditedProgression) {
-            coordinator._workoutParameters.value.progressionRegressionKg
-        } else {
-            exercise.progressionKg
-        }
-        val readyState = RoutineFlowState.SetReady(
+        val setReps = exercise.setReps.getOrNull(setIndex) ?: exercise.reps
+        val initializeWarmups = (isNewExercise || reinitializeWarmups) && setIndex == 0
+        publishSetReadyState(
+            exercise = exercise,
             exerciseIndex = exerciseIndex,
             setIndex = setIndex,
-            adjustedWeight = setWeight,
-            adjustedReps = setReps,
-            adjustedProgressionKg = progressionKg,
-            echoLevel = if (exercise.programMode is ProgramMode.Echo) exercise.echoLevel else null,
-            eccentricLoadPercent = if (exercise.programMode is ProgramMode.Echo) exercise.eccentricLoad.percentage else null,
-        )
-        val isSetAmrap = exercise.isAmrapSet(setIndex)
-        val initializeWarmups = (isNewExercise || reinitializeWarmups) && setIndex == 0
-        val hasVariableWarmups = initializeWarmups && exercise.warmupSets.isNotEmpty() && !exercise.exercise.isBodyweight
-        val nextParams = coordinator._workoutParameters.value.copy(
-            programMode = exercise.programMode,
-            weightPerCableKg = setWeight,
+            weight = setWeight,
             reps = setReps,
-            echoLevel = exercise.echoLevel,
-            eccentricLoad = exercise.eccentricLoad,
-            selectedExerciseId = exercise.exercise.id,
-            stallDetectionEnabled = exercise.stallDetectionEnabled,
-            repCountTiming = exercise.repCountTiming,
-            stopAtTop = exercise.stopAtTop,
-            isAMRAP = isSetAmrap,
-            progressionRegressionKg = progressionKg,
-            isJustLift = false,
-            useAutoStart = false,
+            initializeWarmups = initializeWarmups,
+            callerLabel = "enterSetReady",
         )
-        lifecycleDelegate.mutateConfigurationInputs {
-            coordinator._currentExerciseIndex.value = exerciseIndex
-            coordinator._currentSetIndex.value = setIndex
-            publishRackSelection(rackSelection)
-            if (!preserveRestEditedProgression) {
-                coordinator._userAdjustedWeightDuringRest = false
-            }
-            coordinator._routineFlowState.value = readyState
-            if (initializeWarmups) {
-                coordinator._currentWarmupSetIndex.value = if (hasVariableWarmups) 0 else -1
-            }
-            coordinator._workoutParameters.value = nextParams.withPublishedRackSelection(
-                coordinator._workoutParameters.value,
-            )
-        }
-
-        Logger.d {
-            "enterSetReady: exercise=${exercise.exercise.name}, set=$setIndex, isAMRAP=$isSetAmrap, stallDetection=${exercise.stallDetectionEnabled}"
-        }
         // Issue #357: Log weight source for PR% debugging
         val weightFromList = exercise.setWeightsPerCableKg.getOrNull(setIndex)
         Logger.d(tag = "RoutineFlowManager") {
@@ -1272,10 +1290,6 @@ class RoutineFlowManager(
                 "fallback weightPerCableKg=${exercise.weightPerCableKg}, using=$setWeight, " +
                 "usePercentOfPR=${exercise.usePercentOfPR}, setWeights.size=${exercise.setWeightsPerCableKg.size}"
         }
-        if (hasVariableWarmups) {
-            Logger.d(tag = "RoutineFlowManager") { "Issue #356: SetReady init warm-up for ${exercise.exercise.name}: ${exercise.warmupSets.size} sets" }
-        }
-        clearWeightRecommendationIfNotTarget(exercise.exercise.id, setIndex)
     }
 
     /**
@@ -1286,6 +1300,26 @@ class RoutineFlowManager(
         val routine = coordinator._loadedRoutine.value ?: return
         val exercise = routine.exercises.getOrNull(exerciseIndex) ?: return
         val isNewExercise = exerciseIndex != coordinator._currentExerciseIndex.value
+        publishSetReadyState(
+            exercise = exercise,
+            exerciseIndex = exerciseIndex,
+            setIndex = setIndex,
+            weight = adjustedWeight,
+            reps = adjustedReps,
+            initializeWarmups = isNewExercise && setIndex == 0,
+            callerLabel = "enterSetReadyWithAdjustments",
+        )
+    }
+
+    private fun publishSetReadyState(
+        exercise: RoutineExercise,
+        exerciseIndex: Int,
+        setIndex: Int,
+        weight: Float,
+        reps: Int,
+        initializeWarmups: Boolean,
+        callerLabel: String,
+    ) {
         val rackSelection = resolveDefaultRackSelection(exercise)
         val preserveRestEditedProgression = shouldPreserveRestEditedProgression()
         val progressionKg = if (preserveRestEditedProgression) {
@@ -1293,23 +1327,23 @@ class RoutineFlowManager(
         } else {
             exercise.progressionKg
         }
+        val setEchoLevel = exercise.getEchoLevelForSet(setIndex)
         val readyState = RoutineFlowState.SetReady(
             exerciseIndex = exerciseIndex,
             setIndex = setIndex,
-            adjustedWeight = adjustedWeight,
-            adjustedReps = adjustedReps,
+            adjustedWeight = weight,
+            adjustedReps = reps,
             adjustedProgressionKg = progressionKg,
-            echoLevel = if (exercise.programMode is ProgramMode.Echo) exercise.echoLevel else null,
+            echoLevel = if (exercise.programMode is ProgramMode.Echo) setEchoLevel else null,
             eccentricLoadPercent = if (exercise.programMode is ProgramMode.Echo) exercise.eccentricLoad.percentage else null,
         )
         val isSetAmrap = exercise.isAmrapSet(setIndex)
-        val initializeWarmups = isNewExercise && setIndex == 0
         val hasVariableWarmups = initializeWarmups && exercise.warmupSets.isNotEmpty() && !exercise.exercise.isBodyweight
         val nextParams = coordinator._workoutParameters.value.copy(
             programMode = exercise.programMode,
-            weightPerCableKg = adjustedWeight,
-            reps = adjustedReps,
-            echoLevel = exercise.echoLevel,
+            weightPerCableKg = weight,
+            reps = reps,
+            echoLevel = setEchoLevel,
             eccentricLoad = exercise.eccentricLoad,
             selectedExerciseId = exercise.exercise.id,
             stallDetectionEnabled = exercise.stallDetectionEnabled,
@@ -1331,16 +1365,17 @@ class RoutineFlowManager(
             if (initializeWarmups) {
                 coordinator._currentWarmupSetIndex.value = if (hasVariableWarmups) 0 else -1
             }
+            coordinator.preWarmupWorkingParameters = null
             coordinator._workoutParameters.value = nextParams.withPublishedRackSelection(
                 coordinator._workoutParameters.value,
             )
         }
 
         Logger.d {
-            "enterSetReadyWithAdjustments: exercise=${exercise.exercise.name}, set=$setIndex, isAMRAP=$isSetAmrap, stallDetection=${exercise.stallDetectionEnabled}"
+            "$callerLabel: exercise=${exercise.exercise.name}, set=$setIndex, isAMRAP=$isSetAmrap, stallDetection=${exercise.stallDetectionEnabled}"
         }
         if (hasVariableWarmups) {
-            Logger.d(tag = "RoutineFlowManager") { "Issue #356: SetReadyWithAdjustments init warm-up for ${exercise.exercise.name}: ${exercise.warmupSets.size} sets" }
+            Logger.d(tag = "RoutineFlowManager") { "Issue #356: $callerLabel init warm-up for ${exercise.exercise.name}: ${exercise.warmupSets.size} sets" }
         }
         clearWeightRecommendationIfNotTarget(exercise.exercise.id, setIndex)
     }
@@ -1490,6 +1525,7 @@ class RoutineFlowManager(
             coordinator.currentRoutineId = null
             coordinator.routineAccumulatedCalories = 0f
             coordinator._completedRoutineSetKeys.value = emptySet()
+            coordinator.preWarmupWorkingParameters = null
             coordinator.routineLaunchOrigin = null
         }
     }
@@ -1567,6 +1603,7 @@ class RoutineFlowManager(
             coordinator.currentRoutineId = null
             coordinator.routineAccumulatedCalories = 0f
             coordinator._completedRoutineSetKeys.value = emptySet()
+            coordinator.preWarmupWorkingParameters = null
         }
     }
 
@@ -1607,6 +1644,15 @@ class RoutineFlowManager(
      * Uses [WorkoutLifecycleDelegate] for BLE stop commands before navigation.
      */
     fun jumpToExercise(index: Int) {
+        jumpToExerciseInternal(index, preserveSkipStatus = false)
+    }
+
+    private fun jumpToExerciseInternal(
+        index: Int,
+        preserveSkipStatus: Boolean,
+        targetSetIndex: Int = 0,
+        reinitializeWarmups: Boolean = true,
+    ) {
         val routine = coordinator._loadedRoutine.value ?: return
         if (index < 0 || index >= routine.exercises.size) return
 
@@ -1619,16 +1665,18 @@ class RoutineFlowManager(
             return
         }
 
-        // Save current exercise progress
-        val currentRepCount = coordinator._repCount.value
-        if (currentRepCount.workingReps > 0 && coordinator._workoutState.value !is WorkoutState.Completed) {
-            markExerciseCompleted(coordinator._currentExerciseIndex.value)
-            Logger.d(tag = "RoutineFlowManager") {
-                "Saving progress for exercise ${coordinator._currentExerciseIndex.value}: ${currentRepCount.workingReps} reps"
+        // Save current exercise progress unless caller already marked the exercise skipped.
+        if (!preserveSkipStatus) {
+            val currentRepCount = coordinator._repCount.value
+            if (currentRepCount.workingReps > 0 && coordinator._workoutState.value !is WorkoutState.Completed) {
+                markExerciseCompleted(coordinator._currentExerciseIndex.value)
+                Logger.d(tag = "RoutineFlowManager") {
+                    "Saving progress for exercise ${coordinator._currentExerciseIndex.value}: ${currentRepCount.workingReps} reps"
+                }
+            } else if (coordinator._workoutState.value !is WorkoutState.Completed) {
+                markExerciseSkipped(coordinator._currentExerciseIndex.value)
+                Logger.d(tag = "RoutineFlowManager") { "Skipping exercise ${coordinator._currentExerciseIndex.value}" }
             }
-        } else if (coordinator._workoutState.value !is WorkoutState.Completed) {
-            markExerciseSkipped(coordinator._currentExerciseIndex.value)
-            Logger.d(tag = "RoutineFlowManager") { "Skipping exercise ${coordinator._currentExerciseIndex.value}" }
         }
 
         // Cancel any active timers
@@ -1645,6 +1693,7 @@ class RoutineFlowManager(
             if (transitionLease == null && lifecycleDelegate.currentExecutionLeaseOrNull() != null) {
                 return@transition
             }
+            lifecycleDelegate.clearRestTransitionForExerciseSkip()
             lifecycleDelegate.mutateConfigurationInputs {
                 markExerciseActive(index)
                 coordinator._userAdjustedWeightDuringRest = false
@@ -1652,23 +1701,55 @@ class RoutineFlowManager(
                 coordinator._workoutState.value = WorkoutState.Idle
             }
             lifecycleDelegate.resetRepCounter()
-            enterSetReady(index, 0, reinitializeWarmups = true)
-            Logger.i(tag = "RoutineFlowManager") { "Jumped to exercise $index; entered Set Ready (waiting for START)" }
+            enterSetReady(index, targetSetIndex, reinitializeWarmups = reinitializeWarmups)
+            Logger.i(tag = "RoutineFlowManager") { "Jumped to exercise $index set $targetSetIndex; entered Set Ready (waiting for START)" }
         }
     }
 
     /**
-     * Skip the current exercise and move to the next one.
+     * Skip the current exercise and move to the next one, or complete the routine
+     * when skipping the final remaining exercise.
      */
     fun skipCurrentExercise() {
         val routine = coordinator._loadedRoutine.value ?: return
+        if (coordinator._workoutState.value is WorkoutState.Active) {
+            Logger.w(tag = "RoutineFlowManager") { "Cannot skip exercise while workout is Active - stop workout first" }
+            scope.launch {
+                coordinator._userFeedbackEvents.emit("Stop the current set first")
+            }
+            return
+        }
         val currentExIndex = coordinator._currentExerciseIndex.value
+        val currentSetIndex = coordinator._currentSetIndex.value
         // Mark as skipped first so getNextStep skips past the current exercise
         // when looking for the next navigable exercise.
         markExerciseSkipped(currentExIndex)
-        val next = getNextStep(routine, currentExIndex, currentSetIndex = 0)
+        val next = getNextStep(routine, currentExIndex, currentSetIndex)
         if (next != null) {
-            jumpToExercise(next.first)
+            jumpToExerciseInternal(
+                index = next.first,
+                preserveSkipStatus = true,
+                targetSetIndex = next.second,
+                reinitializeWarmups = next.second == 0,
+            )
+            return
+        }
+
+        coordinator.restTimerJob?.cancel()
+        coordinator.bodyweightTimerJob?.cancel()
+        coordinator._timedExerciseRemainingSeconds.value = null
+        resetAutoStopState()
+
+        val transitionLease = lifecycleDelegate.currentExecutionLeaseOrNull()
+        lifecycleDelegate.requestTeardownForTransition(transitionLease, TeardownReason.SKIP_EXERCISE) transition@{
+            if (transitionLease != null && !lifecycleDelegate.isCurrentExecution(transitionLease)) {
+                return@transition
+            }
+            if (transitionLease == null && lifecycleDelegate.currentExecutionLeaseOrNull() != null) {
+                return@transition
+            }
+            lifecycleDelegate.completeRoutineRun("skip-final-exercise")
+            transitionLease?.let(lifecycleDelegate::invalidateSkippedExecutionLease)
         }
     }
 
@@ -1685,6 +1766,7 @@ class RoutineFlowManager(
 
         val nextStep = getNextStep(routine, currentExIndex, currentSetIndex) ?: return false
         val (nextExIdx, nextSetIdx) = nextStep
+        lifecycleDelegate.clearRestTransitionForExerciseSkip()
         enterSetReady(nextExIdx, nextSetIdx)
         return true
     }

@@ -1,8 +1,10 @@
 package com.devil.phoenixproject.presentation.manager
 
+import com.devil.phoenixproject.data.repository.MachineSafetyLoadResult
 import com.devil.phoenixproject.data.repository.MachineSafetyPhase
 import com.devil.phoenixproject.data.repository.MachineSafetyHazardDocument
 import com.devil.phoenixproject.data.repository.MachineSafetyPhysicalRelease
+import com.devil.phoenixproject.data.repository.MachineSafetyRejection
 import com.devil.phoenixproject.data.repository.MachineSafetyWorkoutKind
 import com.devil.phoenixproject.testutil.FakeMachineSafetyTransport
 import com.devil.phoenixproject.testutil.InMemoryMachineSafetyHazardRepository
@@ -351,6 +353,166 @@ class MachineSafetyHazardCoordinatorTest {
         advanceUntilIdle()
         assertEquals(MachineSafetyUiState.Hidden, coordinator.uiState.value)
         assertTrue(store.rows.isEmpty())
+        assertTrue(coordinator.canStartMachine())
+    }
+
+    @Test
+    fun `rejected corrupt json row with high generation clears on acknowledgement and unblocks starts`() = runTest {
+        val store = InMemoryMachineSafetyHazardRepository()
+        store.rejectedRows["trainer-corrupt"] = MachineSafetyLoadResult.Rejected(
+            reason = MachineSafetyRejection.CORRUPT_JSON,
+            trainerAddress = "trainer-corrupt",
+            rawTrainerAddress = "trainer-corrupt",
+            storedGeneration = 5L,
+        )
+        val coordinator = coordinator(store)
+
+        coordinator.restoreOnStartup()
+        val visible = assertIs<MachineSafetyUiState.Visible>(coordinator.uiState.value)
+        assertTrue(visible.restoreWasRejected)
+        assertEquals("trainer-corrupt", visible.document.trainerAddress)
+        assertEquals(5L, visible.document.generation)
+        assertFalse(coordinator.canStartMachine())
+
+        coordinator.acknowledgeUnloaded(visible.identity)
+        advanceUntilIdle()
+        assertEquals(MachineSafetyUiState.Hidden, coordinator.uiState.value)
+        assertTrue(store.rejectedRows.isEmpty())
+        assertTrue(coordinator.canStartMachine())
+    }
+
+    @Test
+    fun `rejected unsupported version row clears on acknowledgement and unblocks starts`() = runTest {
+        val store = InMemoryMachineSafetyHazardRepository()
+        store.rejectedRows["trainer-v2"] = MachineSafetyLoadResult.Rejected(
+            reason = MachineSafetyRejection.UNSUPPORTED_VERSION,
+            trainerAddress = "trainer-v2",
+            rawTrainerAddress = "trainer-v2",
+            storedGeneration = 3L,
+        )
+        val coordinator = coordinator(store)
+
+        coordinator.restoreOnStartup()
+        val visible = assertIs<MachineSafetyUiState.Visible>(coordinator.uiState.value)
+        assertTrue(visible.restoreWasRejected)
+        assertEquals(3L, visible.document.generation)
+
+        coordinator.acknowledgeUnloaded(visible.identity)
+        advanceUntilIdle()
+        assertEquals(MachineSafetyUiState.Hidden, coordinator.uiState.value)
+        assertTrue(store.rejectedRows.isEmpty())
+        assertTrue(coordinator.canStartMachine())
+    }
+
+    @Test
+    fun `rejected blank identity row clears on acknowledgement without leaving unknown-trainer deadlocked`() = runTest {
+        val store = InMemoryMachineSafetyHazardRepository()
+        store.rejectedRows[""] = MachineSafetyLoadResult.Rejected(
+            reason = MachineSafetyRejection.IDENTITY_BLANK,
+            trainerAddress = null,
+            rawTrainerAddress = "",
+            storedGeneration = 2L,
+        )
+        val coordinator = coordinator(store)
+
+        coordinator.restoreOnStartup()
+        val visible = assertIs<MachineSafetyUiState.Visible>(coordinator.uiState.value)
+        assertTrue(visible.restoreWasRejected)
+        assertEquals("unknown-trainer", visible.document.trainerAddress)
+        assertEquals(2L, visible.document.generation)
+
+        coordinator.acknowledgeUnloaded(visible.identity)
+        advanceUntilIdle()
+        assertEquals(MachineSafetyUiState.Hidden, coordinator.uiState.value)
+        assertTrue(store.rejectedRows.isEmpty())
+        assertTrue(coordinator.canStartMachine())
+    }
+
+    @Test
+    fun `rejected whitespace blank identity row with recovery before acknowledgement clears both rows and unblocks starts`() = runTest {
+        val store = InMemoryMachineSafetyHazardRepository()
+        store.rejectedRows["   "] = MachineSafetyLoadResult.Rejected(
+            reason = MachineSafetyRejection.IDENTITY_BLANK,
+            trainerAddress = null,
+            rawTrainerAddress = "   ",
+            storedGeneration = 5L,
+        )
+        val coordinator = coordinator(store, FakeMachineSafetyTransport(null))
+
+        coordinator.restoreOnStartup()
+        val visible = assertIs<MachineSafetyUiState.Visible>(coordinator.uiState.value)
+        assertTrue(visible.restoreWasRejected)
+        assertEquals("unknown-trainer", visible.document.trainerAddress)
+        assertEquals(5L, visible.document.generation)
+
+        assertEquals(MachineSafetyRecoveryRequestResult.STARTED, coordinator.requestReleaseRecovery(visible.identity))
+        advanceUntilIdle()
+        assertTrue(store.rows.containsKey("unknown-trainer"))
+        assertTrue(store.rejectedRows.containsKey("   "))
+
+        coordinator.acknowledgeUnloaded(visible.identity)
+        advanceUntilIdle()
+        assertEquals(MachineSafetyUiState.Hidden, coordinator.uiState.value)
+        assertTrue(store.rejectedRows.isEmpty())
+        assertTrue(store.rows.isEmpty())
+        assertTrue(coordinator.canStartMachine())
+    }
+
+    @Test
+    fun `mixed valid and rejected rows preserve restoreWasRejected accuracy and strict generation checks on valid rows`() = runTest {
+        var now = 1_000L
+        val store = InMemoryMachineSafetyHazardRepository()
+        val valid = MachineSafetyHazardDocument(
+            generation = 4L,
+            trainerAddress = "trainer-valid",
+            sessionId = "valid-session",
+            workoutKind = MachineSafetyWorkoutKind.ROUTINE,
+            createdAtEpochMs = 1_000L,
+            updatedAtEpochMs = 2_000L,
+            phase = MachineSafetyPhase.UNRESOLVED,
+            physicalRelease = MachineSafetyPhysicalRelease.UNKNOWN,
+        )
+        store.rows[valid.trainerAddress] = valid
+        store.rejectedRows["trainer-corrupt"] = MachineSafetyLoadResult.Rejected(
+            reason = MachineSafetyRejection.CORRUPT_JSON,
+            trainerAddress = "trainer-corrupt",
+            rawTrainerAddress = "trainer-corrupt",
+            storedGeneration = 5L,
+        )
+        val coordinator = MachineSafetyCoordinator(
+            store,
+            FakeMachineSafetyTransport(null),
+            CoroutineScope(SupervisorJob() + coroutineContext),
+            { now },
+        )
+
+        // Valid row is newer (2_000L > now=1_000L), so valid row is surfaced with restoreWasRejected = false.
+        coordinator.restoreOnStartup()
+        val firstVisible = assertIs<MachineSafetyUiState.Visible>(coordinator.uiState.value)
+        assertEquals("trainer-valid", firstVisible.document.trainerAddress)
+        assertFalse(firstVisible.restoreWasRejected)
+
+        // Stale generation on valid row must NOT clear it.
+        coordinator.acknowledgeUnloaded(MachineSafetyHazardIdentity("trainer-valid", 1L))
+        advanceUntilIdle()
+        assertIs<MachineSafetyUiState.Visible>(coordinator.uiState.value)
+
+        // Valid identity clears only the valid row.
+        coordinator.acknowledgeUnloaded(firstVisible.identity)
+        advanceUntilIdle()
+        assertEquals(MachineSafetyUiState.Hidden, coordinator.uiState.value)
+        assertFalse(coordinator.canStartMachine())
+
+        // Now surfacing brings up the rejected row and acknowledging clears it too.
+        now = 3_000L
+        coordinator.surfaceStoredHazard()
+        val secondVisible = assertIs<MachineSafetyUiState.Visible>(coordinator.uiState.value)
+        assertTrue(secondVisible.restoreWasRejected)
+        assertEquals("trainer-corrupt", secondVisible.document.trainerAddress)
+
+        coordinator.acknowledgeUnloaded(secondVisible.identity)
+        advanceUntilIdle()
+        assertEquals(MachineSafetyUiState.Hidden, coordinator.uiState.value)
         assertTrue(coordinator.canStartMachine())
     }
 

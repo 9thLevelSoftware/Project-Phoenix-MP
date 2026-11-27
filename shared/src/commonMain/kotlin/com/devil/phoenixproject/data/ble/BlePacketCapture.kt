@@ -25,6 +25,10 @@ import kotlinx.atomicfu.locks.withLock
 object BlePacketCapture {
 
     private val log = Logger.withTag("BlePacketCapture")
+    private val spaceUpperHex = HexFormat {
+        upperCase = true
+        bytes { byteSeparator = " " }
+    }
 
     data class CapturedPacket(val timestampMs: Long, val rawBytes: ByteArray, val hex: String, val size: Int) {
         override fun equals(other: Any?): Boolean = other is CapturedPacket && timestampMs == other.timestampMs && hex == other.hex
@@ -103,7 +107,7 @@ object BlePacketCapture {
                 return
             }
 
-            val hex = data.toHex()
+            val hex = data.toHexString(HexFormat.UpperCase)
             val packet = CapturedPacket(
                 timestampMs = currentTimeMillis(),
                 rawBytes = data.copyOf(),
@@ -141,7 +145,7 @@ object BlePacketCapture {
 
         // Bytes 18+ are still unknown. Keep their hex for investigation.
         val extraHex = if (data.size > 18) {
-            data.copyOfRange(18, data.size).toHex(" ")
+            data.copyOfRange(18, data.size).toHexString(spaceUpperHex)
         } else {
             "none"
         }
@@ -155,7 +159,4 @@ object BlePacketCapture {
 
     /** Check if currently capturing. */
     val isCapturing: Boolean get() = capturing
-
-    /** KMP-compatible hex conversion for ByteArray. */
-    private fun ByteArray.toHex(separator: String = ""): String = joinToString(separator) { (it.toInt() and 0xFF).toString(16).padStart(2, '0').uppercase() }
 }

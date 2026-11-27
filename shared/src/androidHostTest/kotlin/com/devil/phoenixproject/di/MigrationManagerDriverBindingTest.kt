@@ -1,10 +1,10 @@
 package com.devil.phoenixproject.di
 
 import app.cash.sqldelight.db.SqlDriver
-import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.devil.phoenixproject.data.migration.MigrationManager
 import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.PRType
+import com.devil.phoenixproject.testutil.createTestDriver
 import com.devil.phoenixproject.util.OneRepMaxCalculator
 import com.russhwolf.settings.MapSettings
 import com.russhwolf.settings.Settings
@@ -18,8 +18,7 @@ import org.koin.dsl.module
 class MigrationManagerDriverBindingTest {
     @Test
     fun domainModulePassesTheSameSqlDriverSqlDelightUsesSoStartupRepairRuns() = runTest {
-        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
-        PhoenixDatabase.Schema.create(driver)
+        val driver = createTestDriver()
         val database = PhoenixDatabase(driver)
         val application = koinApplication {
             allowOverride(true)

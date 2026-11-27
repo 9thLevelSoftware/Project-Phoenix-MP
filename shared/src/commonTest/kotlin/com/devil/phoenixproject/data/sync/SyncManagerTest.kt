@@ -3710,4 +3710,145 @@ class SyncManagerTest {
         assertTrue(createManager().sync().isSuccess)
         assertTrue(tokenStorage.pendingServerWinsRoutineIds("user-123", "default").isEmpty())
     }
+
+    @Test
+    fun cancellationInsideRePushRejectedSessionsPropagatesWithoutReArmingRepairRows() = runTest {
+        setupAuthenticated()
+        val repairSession = WorkoutSession(
+            id = "repair-sess-1",
+            timestamp = 1_740_000_000_000L,
+            mode = "OldSchool",
+            reps = 10,
+            weightPerCableKg = 25f,
+            totalReps = 10,
+            exerciseName = "Squat",
+            routineSessionId = "routine-group-1",
+            profileId = "default",
+        )
+        val baseRepo = com.devil.phoenixproject.testutil.FakeSyncRepository().apply {
+            workoutSessionsToReturn = listOf(repairSession)
+        }
+        var pullCompleted = false
+        val rePushRepo = object : com.devil.phoenixproject.data.repository.SyncRepository by baseRepo {
+            override suspend fun mergeAllPullData(
+                ownerUserId: String,
+                workoutDeletions: List<PulledWorkoutDeletionDto>,
+                sessions: List<WorkoutSession>,
+                routines: List<PullRoutineDto>,
+                cycles: List<PullTrainingCycleDto>,
+                badges: List<EarnedBadgeSyncDto>,
+                gamificationStats: GamificationStatsSyncDto?,
+                personalRecords: List<PersonalRecordSyncDto>,
+                lastSync: Long,
+                profileId: String,
+                serverWinsRoutineIds: Set<String>,
+                sessionNotes: Map<String, com.devil.phoenixproject.data.repository.SessionNotesEntry>,
+                sessionUpdatedAtById: Map<String, Long>,
+                pushWatermark: Long,
+                pulledProvenance: Map<String, Collection<String>>,
+                customExercises: List<CustomExerciseSyncDto>,
+            ) {
+                pullCompleted = true
+                baseRepo.mergeAllPullData(
+                    ownerUserId = ownerUserId,
+                    workoutDeletions = workoutDeletions,
+                    sessions = sessions,
+                    routines = routines,
+                    cycles = cycles,
+                    badges = badges,
+                    gamificationStats = gamificationStats,
+                    personalRecords = personalRecords,
+                    lastSync = lastSync,
+                    profileId = profileId,
+                    serverWinsRoutineIds = serverWinsRoutineIds,
+                    sessionNotes = sessionNotes,
+                    sessionUpdatedAtById = sessionUpdatedAtById,
+                    pushWatermark = pushWatermark,
+                    pulledProvenance = pulledProvenance,
+                    customExercises = customExercises,
+                )
+            }
+
+            override suspend fun getSessionNotesForIds(portalSessionIds: Collection<String>): Map<String, String?> {
+                if (pullCompleted) {
+                    throw kotlin.coroutines.cancellation.CancellationException("cancelled inside rePushRejectedSessions")
+                }
+                return baseRepo.getSessionNotesForIds(portalSessionIds)
+            }
+        }
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(
+                syncTime = "2026-03-02T12:00:00Z",
+                rejections = SyncRejectionsDto(sessions = listOf(SyncRejectionDto("routine-group-1", "2026-03-02T12:00:00Z"))),
+            ),
+        )
+        fakeApi.pullResult = Result.success(PortalSyncPullResponse(syncTime = 1_740_916_800_000L))
+        val manager = SyncManager(
+            apiClient = fakeApi,
+            tokenStorage = tokenStorage,
+            syncRepository = rePushRepo,
+            gamificationRepository = fakeGamificationRepo,
+            repMetricRepository = fakeRepMetricRepo,
+            userProfileRepository = fakeUserProfileRepo,
+            profilePreferenceSyncRepository = fakeProfilePreferenceSyncRepo,
+            externalActivityRepository = fakeExternalActivityRepo,
+            velocityOneRepMaxRepository = fakeVelocityRepo,
+            isProfilePreferenceMigrationReady = { true },
+        )
+
+        kotlin.test.assertFailsWith<kotlin.coroutines.cancellation.CancellationException> {
+            manager.sync()
+        }
+        assertTrue(pullCompleted, "must reach rePushRejectedSessions after pull")
+        assertTrue(
+            baseRepo.clearedSessionTimestampIds.isEmpty(),
+            "CancellationException must propagate without invoking reArmRejectedRepairRows",
+        )
+    }
+
+    @Test
+    fun cancellationInsideMergePullPagePropagatesInsteadOfReturningFailure() = runTest {
+        setupAuthenticated()
+        val baseRepo = com.devil.phoenixproject.testutil.FakeSyncRepository()
+        val cancellingSyncRepo = object : com.devil.phoenixproject.data.repository.SyncRepository by baseRepo {
+            override suspend fun mergeAllPullData(
+                ownerUserId: String,
+                workoutDeletions: List<PulledWorkoutDeletionDto>,
+                sessions: List<WorkoutSession>,
+                routines: List<PullRoutineDto>,
+                cycles: List<PullTrainingCycleDto>,
+                badges: List<EarnedBadgeSyncDto>,
+                gamificationStats: GamificationStatsSyncDto?,
+                personalRecords: List<PersonalRecordSyncDto>,
+                lastSync: Long,
+                profileId: String,
+                serverWinsRoutineIds: Set<String>,
+                sessionNotes: Map<String, com.devil.phoenixproject.data.repository.SessionNotesEntry>,
+                sessionUpdatedAtById: Map<String, Long>,
+                pushWatermark: Long,
+                pulledProvenance: Map<String, Collection<String>>,
+                customExercises: List<CustomExerciseSyncDto>,
+            ) {
+                throw kotlin.coroutines.cancellation.CancellationException("cancelled during mergeAllPullData")
+            }
+        }
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
+        fakeApi.pullResult = Result.success(PortalSyncPullResponse(syncTime = 1_740_916_800_000L))
+        val manager = SyncManager(
+            apiClient = fakeApi,
+            tokenStorage = tokenStorage,
+            syncRepository = cancellingSyncRepo,
+            gamificationRepository = fakeGamificationRepo,
+            repMetricRepository = fakeRepMetricRepo,
+            userProfileRepository = fakeUserProfileRepo,
+            profilePreferenceSyncRepository = fakeProfilePreferenceSyncRepo,
+            externalActivityRepository = fakeExternalActivityRepo,
+            velocityOneRepMaxRepository = fakeVelocityRepo,
+            isProfilePreferenceMigrationReady = { true },
+        )
+
+        kotlin.test.assertFailsWith<kotlin.coroutines.cancellation.CancellationException> {
+            manager.sync()
+        }
+    }
 }

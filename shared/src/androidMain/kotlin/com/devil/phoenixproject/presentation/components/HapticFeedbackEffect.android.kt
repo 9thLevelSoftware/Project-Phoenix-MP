@@ -221,7 +221,7 @@ private fun playWithMediaPlayer(event: HapticEvent, context: Context) {
     }
 }
 
-private fun buildCueAudioAttributes(): AudioAttributes = AudioAttributes.Builder()
+internal fun buildCueAudioAttributes(): AudioAttributes = AudioAttributes.Builder()
     .setUsage(AudioAttributes.USAGE_MEDIA)
     .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
     .build()
@@ -231,7 +231,7 @@ internal data class AndroidCueResource(
     val rawResId: Int,
 )
 
-private object AndroidCueResources {
+internal object AndroidCueResources {
     private val beep = AndroidCueResource("beep", R.raw.beep)
     private val beepBoop = AndroidCueResource("beepboop", R.raw.beepboop)
     private val boopBeepBeep = AndroidCueResource("boopbeepbeep", R.raw.boopbeepbeep)

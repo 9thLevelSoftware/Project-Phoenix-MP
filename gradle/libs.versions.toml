@@ -45,7 +45,7 @@ sqldelight = "2.4.1"
 multiplatform-settings = "1.3.0"
 
 # BLE - Kable (Kotlin Multiplatform)
-kable = "0.45.0"
+kable = "0.43.1"
 
 # Garmin Connect IQ companion app SDK (issue #1391: watch button controls)
 # Verified on Maven Central: com.garmin.connectiq:ciq-companion-app-sdk (POM + AAR).

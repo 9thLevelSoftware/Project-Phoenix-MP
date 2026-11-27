@@ -258,11 +258,6 @@ class ExerciseMediaSaveCoordinator(
         }
     }
 
-    /** Undo a queued removal (draft state only). */
-    fun cancelQueuedRemove(imageId: Long) {
-        queuedRemovals.removeAll { it.imageId == imageId }
-    }
-
     fun isQueuedForRemoval(imageId: Long): Boolean = queuedRemovals.any { it.imageId == imageId }
 
     /**

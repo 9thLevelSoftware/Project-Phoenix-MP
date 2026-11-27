@@ -7,7 +7,9 @@ import com.devil.phoenixproject.data.repository.ReconnectionRequest
 import com.devil.phoenixproject.data.repository.ScannedDevice
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.util.BleConstants
+import com.devil.phoenixproject.util.CommandLimits
 import com.devil.phoenixproject.util.HardwareDetection
+import com.devil.phoenixproject.util.WorkoutCommandValidator
 import com.devil.phoenixproject.util.rethrowIfCancellation
 import com.juul.kable.Advertisement
 import com.juul.kable.Characteristic
@@ -20,12 +22,15 @@ import kotlin.time.Clock
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 import kotlinx.atomicfu.atomic
+import kotlinx.atomicfu.locks.reentrantLock
+import kotlinx.atomicfu.locks.withLock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
@@ -68,6 +73,36 @@ private const val UNNAMED_SCAN_MATCH_LABEL = "Unnamed device"
 
 private class ConnectionRequestSupersededException :
     IllegalStateException("Connection request superseded by explicit teardown")
+
+internal fun hasRecognizedTrainerName(name: String?): Boolean =
+    name != null && (
+        name.startsWith("Vee_", ignoreCase = true) ||
+            name.startsWith("VIT", ignoreCase = true) ||
+            name.startsWith("Phoenix", ignoreCase = true)
+        )
+
+@OptIn(ExperimentalUuidApi::class)
+internal fun matchesTrainerScanFilter(advertisement: Advertisement): Boolean {
+    val name = advertisement.name
+    if (name != null) {
+        return hasRecognizedTrainerName(name)
+    }
+    val hasPhoenixServiceUuid = advertisement.uuids.any { uuid ->
+        val uuidStr = uuid.toString().lowercase()
+        uuidStr.startsWith("0000fef3") ||
+            uuidStr == BleConstants.NUS_SERVICE_UUID_STRING
+    }
+    if (hasPhoenixServiceUuid) {
+        return true
+    }
+    val fef3Uuid = try {
+        Uuid.parse("0000fef3-0000-1000-8000-00805f9b34fb")
+    } catch (_: Exception) {
+        null
+    } ?: return false
+    val fef3Data = advertisement.serviceData(fef3Uuid)
+    return fef3Data != null && fef3Data.isNotEmpty()
+}
 
 class KableBleConnectionManager(
     private val scope: CoroutineScope,
@@ -128,16 +163,17 @@ class KableBleConnectionManager(
     val currentPeripheral: Peripheral? get() = peripheral
 
     /** Discovered advertisements keyed by identifier for connection lookup. */
+    private val advertisementLock = reentrantLock()
     private val discoveredAdvertisements = mutableMapOf<String, Advertisement>()
 
     /**
      * Scan-stop summary that separates named trainers from nameless service-UUID matches, so
      * "Found 1 device" never means a far-away unrelated device advertising the vendor UUID.
      */
-    private fun scanResultSummary(): String {
+    private fun scanResultSummary(): String = advertisementLock.withLock {
         val named = discoveredAdvertisements.values.count { it.name != null }
         val unnamed = discoveredAdvertisements.size - named
-        return "Found $named named Phoenix device(s), $unnamed unnamed service-UUID match(es)"
+        "Found $named named Phoenix device(s), $unnamed unnamed service-UUID match(es)"
     }
 
     // Serializes connect callers through their final cleanup, not public teardown:
@@ -149,10 +185,21 @@ class KableBleConnectionManager(
     private val teardownEpoch = atomic(0L)
 
     /** Active scanning job reference. */
+    @Volatile
     private var scanJob: Job? = null
 
     /** Active state observer job — must be cancelled before launching a new one. */
+    @Volatile
     private var stateObserverJob: Job? = null
+
+    private val observerJobsLock = reentrantLock()
+    @Volatile
+    private var repsObserveJob: Job? = null
+    @Volatile
+    private var diagnosticVersionReadJob: Job? = null
+    private val nonCriticalObserveJobs = mutableListOf<Job>()
+    @Volatile
+    private var postConfigDiagnosticJob: Job? = null
 
     /**
      * Issue #333 (v10 ready gate): job running onDeviceReady() for the current
@@ -186,9 +233,11 @@ class KableBleConnectionManager(
     private var compatibilityPathActive = false
 
     /** Connected device name (for logging). */
+    @Volatile
     private var connectedDeviceName: String = ""
 
     /** Connected device address (for logging). */
+    @Volatile
     private var connectedDeviceAddress: String = ""
 
     /**
@@ -200,15 +249,18 @@ class KableBleConnectionManager(
     private var isExplicitDisconnect = false
 
     /**
-     * Flag to track if we ever successfully connected (for auto-reconnect logic).
-     * This prevents auto-reconnect from firing on the initial Disconnected state
-     * when a Peripheral is first created (before connect() is even called).
-     * @Volatile: written by cleanupExistingConnection()/clearConnectionState()
-     * on the caller's dispatcher while the state observer reads and writes it
-     * on [scope] — same cross-dispatcher hazard as [isExplicitDisconnect].
+     * True once the physical link reached State.Connected for the current peripheral.
+     * Used to distinguish initial State.Disconnected from a real drop during ready-up.
      */
     @Volatile
-    private var wasEverConnected = false
+    private var hasPhysicalConnection = false
+
+    /**
+     * True only after onDeviceReady() and requireReadyAttempt() finish and Connected
+     * is published. Drops before ready-up must NOT request auto-reconnect.
+     */
+    @Volatile
+    private var wasReadyConnected = false
 
     /** Detected firmware version (from DIS or proprietary characteristic). */
     private var detectedFirmwareVersion: String? = null
@@ -225,35 +277,39 @@ class KableBleConnectionManager(
      * Tracks the last connection state reported via callback.
      * Used by stopScanning() to guard against resetting state when not scanning.
      */
+    @Volatile
     private var lastReportedState: ConnectionState = ConnectionState.Disconnected
 
-    internal enum class LifecycleJob { SCAN, STATE_OBSERVER }
-
-    internal fun isLifecycleJobActiveForTest(job: LifecycleJob): Boolean = when (job) {
-        LifecycleJob.SCAN -> scanJob?.isActive == true
-        LifecycleJob.STATE_OBSERVER -> stateObserverJob?.isActive == true
+    private fun trackNonCriticalObserveJob(job: Job) {
+        observerJobsLock.withLock {
+            nonCriticalObserveJobs.removeAll { !it.isActive }
+            nonCriticalObserveJobs.add(job)
+        }
     }
 
-    internal fun startFakeLifecycleJobsForTest() {
-        scanJob?.cancel()
-        scanJob = scope.launch {
-            delay(Long.MAX_VALUE)
+    private fun cancelObserverAndDiagnosticJobs() {
+        repsObserveJob?.cancel()
+        repsObserveJob = null
+        diagnosticVersionReadJob?.cancel()
+        diagnosticVersionReadJob = null
+        postConfigDiagnosticJob?.cancel()
+        postConfigDiagnosticJob = null
+        observerJobsLock.withLock {
+            nonCriticalObserveJobs.forEach { it.cancel() }
+            nonCriticalObserveJobs.clear()
         }
-        stateObserverJob?.cancel()
-        stateObserverJob = scope.launch {
-            delay(Long.MAX_VALUE)
+    }
+
+    private suspend fun cancelActiveScanJob() {
+        val previousScan = scanJob
+        scanJob = null
+        if (previousScan != null) {
+            if (previousScan !== currentCoroutineContext()[Job]) {
+                previousScan.cancelAndJoin()
+            } else {
+                previousScan.cancel()
+            }
         }
-        onScannedDevicesChanged(
-            listOf(
-                ScannedDevice(
-                    name = "Vee_Test",
-                    address = "AA:BB:CC:DD:EE:FF",
-                    rssi = -45,
-                ),
-            ),
-        )
-        discoveredAdvertisements.clear()
-        reportConnectionState(ConnectionState.Scanning)
     }
 
     // -------------------------------------------------------------------------
@@ -270,10 +326,13 @@ class KableBleConnectionManager(
         connectedDeviceAddress = ""
         detectedFirmwareVersion = null
         negotiatedMtu = null
-        wasEverConnected = false
+        hasPhysicalConnection = false
+        wasReadyConnected = false
         compatibilityPathActive = false
         if (clearScannedDevices) {
-            discoveredAdvertisements.clear()
+            advertisementLock.withLock {
+                discoveredAdvertisements.clear()
+            }
             onScannedDevicesChanged(emptyList())
         }
     }
@@ -287,12 +346,13 @@ class KableBleConnectionManager(
         logRepo.info(LogEventType.SCAN_START, "Starting BLE scan for Phoenix devices")
 
         return try {
-            // Cancel any existing scan job to prevent duplicates
-            scanJob?.cancel()
-            scanJob = null
+            // Cancel and join any existing scan job before clearing scan state.
+            cancelActiveScanJob()
 
             onScannedDevicesChanged(emptyList())
-            discoveredAdvertisements.clear()
+            advertisementLock.withLock {
+                discoveredAdvertisements.clear()
+            }
             reportConnectionState(ConnectionState.Scanning)
 
             // Track scanned devices locally for filtering logic
@@ -309,68 +369,24 @@ class KableBleConnectionManager(
                                 }
                             }
                             .filter { advertisement ->
-                                // Filter by name if available
+                                val matched = matchesTrainerScanFilter(advertisement)
                                 val name = advertisement.name
                                 if (name != null) {
-                                    val isPhoenix = name.startsWith("Vee_", ignoreCase = true) ||
-                                        name.startsWith("VIT", ignoreCase = true) ||
-                                        name.startsWith("Phoenix", ignoreCase = true)
-                                    if (isPhoenix) {
+                                    if (matched) {
                                         log.i { "Found Phoenix by name: $name" }
                                     } else {
                                         log.d { "Ignoring device: $name (not Phoenix)" }
                                     }
-                                    return@filter isPhoenix
+                                } else if (matched) {
+                                    log.i { "Found Phoenix by service UUID/data: ${advertisement.identifier}" }
                                 }
-
-                                // Check for Phoenix service UUIDs (mServiceUuids)
-                                val serviceUuids = advertisement.uuids
-                                val hasPhoenixServiceUuid = serviceUuids.any { uuid ->
-                                    val uuidStr = uuid.toString().lowercase()
-                                    uuidStr.startsWith("0000fef3") ||
-                                        uuidStr == BleConstants.NUS_SERVICE_UUID_STRING
-                                }
-
-                                if (hasPhoenixServiceUuid) {
-                                    log.i { "Found Phoenix by service UUID: ${advertisement.identifier}" }
-                                    return@filter true
-                                }
-
-                                // CRITICAL: Check for FEF3 service data
-                                // The Phoenix device advertises FEF3 in serviceData, not serviceUuids!
-                                // In Kable, serviceData is accessed differently - try to get FEF3 directly
-                                val fef3Uuid = try {
-                                    Uuid.parse("0000fef3-0000-1000-8000-00805f9b34fb")
-                                } catch (_: Exception) {
-                                    null
-                                }
-
-                                val hasPhoenixServiceData = if (fef3Uuid != null) {
-                                    // Try to get data for FEF3 service UUID
-                                    val fef3Data = advertisement.serviceData(fef3Uuid)
-                                    if (fef3Data != null && fef3Data.isNotEmpty()) {
-                                        log.i {
-                                            "Found Phoenix by FEF3 serviceData: ${advertisement.identifier}, data size: ${fef3Data.size}"
-                                        }
-                                        true
-                                    } else {
-                                        false
-                                    }
-                                } else {
-                                    false
-                                }
-
-                                hasPhoenixServiceData
+                                matched
                             }
                             .onEach { advertisement ->
                                 @Suppress("REDUNDANT_CALL_OF_CONVERSION_METHOD") // Needed for iOS where identifier is Uuid
                                 val identifier = advertisement.identifier.toString()
                                 val advertisedName = advertisement.name
-                                val hasRealName = advertisedName != null &&
-                                    (
-                                        advertisedName.startsWith("Vee_", ignoreCase = true) ||
-                                            advertisedName.startsWith("VIT", ignoreCase = true)
-                                        )
+                                val hasRealName = hasRecognizedTrainerName(advertisedName)
 
                                 // Use name if available, otherwise use identifier as placeholder
                                 val name = advertisedName ?: "Trainer ($identifier)"
@@ -378,8 +394,7 @@ class KableBleConnectionManager(
                                 // Skip devices without a real Phoenix name if we already have one
                                 if (!hasRealName) {
                                     val alreadyHaveRealDevice = currentScannedDevices.any { existing ->
-                                        existing.name.startsWith("Vee_", ignoreCase = true) ||
-                                            existing.name.startsWith("VIT", ignoreCase = true)
+                                        hasRecognizedTrainerName(existing.name)
                                     }
                                     if (alreadyHaveRealDevice) {
                                         log.d { "Skipping nameless device $identifier - already have named Phoenix device" }
@@ -387,8 +402,14 @@ class KableBleConnectionManager(
                                     }
                                 }
 
+                                val isNewDiscovery = advertisementLock.withLock {
+                                    val isNew = !discoveredAdvertisements.containsKey(identifier)
+                                    discoveredAdvertisements[identifier] = advertisement
+                                    isNew
+                                }
+
                                 // Only log if this is a new device
-                                if (!discoveredAdvertisements.containsKey(identifier)) {
+                                if (isNewDiscovery) {
                                     log.d { "Discovered device: $name ($identifier) RSSI: ${advertisement.rssi}" }
                                     if (advertisedName == null) {
                                         // A nameless advertisement only matched by service UUID / FEF3
@@ -412,9 +433,6 @@ class KableBleConnectionManager(
                                     }
                                 }
 
-                                // Store advertisement reference
-                                discoveredAdvertisements[identifier] = advertisement
-
                                 // Update scanned devices list
                                 val device = ScannedDevice(
                                     name = name,
@@ -427,8 +445,7 @@ class KableBleConnectionManager(
                                 // (same physical device can advertise with different identifiers)
                                 if (hasRealName) {
                                     devices = devices.filter { existing ->
-                                        existing.name.startsWith("Vee_", ignoreCase = true) ||
-                                            existing.name.startsWith("VIT", ignoreCase = true) ||
+                                        hasRecognizedTrainerName(existing.name) ||
                                             existing.address == identifier // Keep if same address (will update below)
                                     }.toMutableList()
                                 }
@@ -491,8 +508,7 @@ class KableBleConnectionManager(
             "BLE scan stopped",
             details = scanResultSummary(),
         )
-        scanJob?.cancel()
-        scanJob = null
+        cancelActiveScanJob()
         if (lastReportedState == ConnectionState.Scanning) {
             reportConnectionState(ConnectionState.Disconnected)
         }
@@ -504,12 +520,16 @@ class KableBleConnectionManager(
      */
     suspend fun shutdown() {
         log.i { "Shutting down BLE connection manager" }
+        teardownEpoch.incrementAndGet()
         isExplicitDisconnect = true
+        readyGate.completeExceptionally(ConnectionRequestSupersededException())
+        deviceReadyJob?.cancel()
+        deviceReadyJob = null
 
-        scanJob?.cancel()
-        scanJob = null
+        cancelActiveScanJob()
         stateObserverJob?.cancel()
         stateObserverJob = null
+        cancelObserverAndDiagnosticJobs()
         pollingEngine.stopAll()
         discoMode.shutdown()
         handleDetector.disable()
@@ -538,23 +558,53 @@ class KableBleConnectionManager(
         log.i { "scanAndConnect: Starting scan and auto-connect (timeout: ${timeoutMs}ms)" }
         logRepo.info(LogEventType.SCAN_START, "Scan and connect started")
 
-        // Connection cleanup is handled inside connect() to ensure consistent behavior.
-        reportConnectionState(ConnectionState.Scanning)
-        onScannedDevicesChanged(emptyList())
-        discoveredAdvertisements.clear()
-
         return try {
-            // Find first Phoenix device with a real name
-            val advertisement = withTimeoutOrNull(timeoutMs) {
-                advertisements()
-                    .filter { adv ->
-                        val name = adv.name
-                        name != null && (
-                            name.startsWith("Vee_", ignoreCase = true) ||
-                                name.startsWith("VIT", ignoreCase = true)
-                            )
+            cancelActiveScanJob()
+            // Connection cleanup is handled inside connect() to ensure consistent behavior.
+            reportConnectionState(ConnectionState.Scanning)
+            onScannedDevicesChanged(emptyList())
+            advertisementLock.withLock {
+                discoveredAdvertisements.clear()
+            }
+
+            // Track scan phase under scanJob so stopScanning() can abort it cleanly.
+            val foundAdvertisement = CompletableDeferred<Advertisement?>()
+            val activeScan = scope.launch {
+                try {
+                    val found = withTimeoutOrNull(timeoutMs) {
+                        advertisements()
+                            .filter { adv -> hasRecognizedTrainerName(adv.name) }
+                            .first()
                     }
-                    .first()
+                    foundAdvertisement.complete(found)
+                } catch (e: CancellationException) {
+                    foundAdvertisement.cancel(e)
+                    throw e
+                } catch (e: Exception) {
+                    foundAdvertisement.completeExceptionally(e)
+                } finally {
+                    if (scanJob === coroutineContext[Job]) {
+                        scanJob = null
+                    }
+                }
+            }
+            scanJob = activeScan
+
+            val advertisement = try {
+                foundAdvertisement.await()
+            } catch (e: CancellationException) {
+                currentCoroutineContext().ensureActive()
+                if (lastReportedState == ConnectionState.Scanning) {
+                    reportConnectionState(ConnectionState.Disconnected)
+                }
+                return Result.failure(IllegalStateException("Scan cancelled"))
+            } finally {
+                if (activeScan.isActive) {
+                    activeScan.cancel()
+                }
+                if (scanJob === activeScan) {
+                    scanJob = null
+                }
             }
 
             if (advertisement == null) {
@@ -570,7 +620,9 @@ class KableBleConnectionManager(
             log.i { "scanAndConnect: Found device $name ($identifier), connecting..." }
 
             // Store for connection
-            discoveredAdvertisements[identifier] = advertisement
+            advertisementLock.withLock {
+                discoveredAdvertisements[identifier] = advertisement
+            }
             val device = ScannedDevice(name = name, address = identifier, rssi = advertisement.rssi)
             onScannedDevicesChanged(listOf(device))
 
@@ -642,7 +694,7 @@ class KableBleConnectionManager(
             isExplicitDisconnect = false
             reportConnectionState(ConnectionState.Connecting)
 
-            val advertisement = discoveredAdvertisements[device.address]
+            val advertisement = advertisementLock.withLock { discoveredAdvertisements[device.address] }
             if (advertisement == null) {
                 log.e { "Advertisement not found for device: ${device.address}" }
                 logRepo.error(
@@ -675,15 +727,14 @@ class KableBleConnectionManager(
                 .onEach { state ->
                     currentCoroutineContext().ensureActive()
                     if (peripheral !== attemptPeripheral) return@onEach
-                    val observerGate = readyGate
                     when (state) {
                         is State.Connecting -> {
                             reportConnectionState(ConnectionState.Connecting)
                         }
 
                         is State.Connected -> {
-                            // Mark that we successfully connected (for auto-reconnect logic)
-                            wasEverConnected = true
+                            // Physical link is up; ready-up still must complete before wasReadyConnected becomes true.
+                            hasPhysicalConnection = true
                             log.i { "Connection established to ${device.name}" }
                             logRepo.info(
                                 LogEventType.CONNECT_SUCCESS,
@@ -712,6 +763,7 @@ class KableBleConnectionManager(
                                         // Check exact ownership AFTER ready-up suspensions,
                                         // including a ready job that outlived bounded cleanup.
                                         requireReadyAttempt(attemptPeripheral, gate)
+                                        wasReadyConnected = true
                                         reportConnectionState(
                                             ConnectionState.Connected(
                                                 deviceName = device.name,
@@ -735,7 +787,12 @@ class KableBleConnectionManager(
                                         )
                                         gate.completeExceptionally(failure)
                                     } catch (e: CancellationException) {
-                                        gate.cancel(e)
+                                        val failure = if (requestEpoch != teardownEpoch.value) {
+                                            ConnectionRequestSupersededException()
+                                        } else {
+                                            BleDeviceInitializationException("Device initialization cancelled", e)
+                                        }
+                                        gate.completeExceptionally(failure)
                                         throw e
                                     } catch (e: Exception) {
                                         log.e(e) { "onDeviceReady failed: ${e.message}" }
@@ -771,10 +828,12 @@ class KableBleConnectionManager(
                             // Capture device info and connection state BEFORE clearing
                             val deviceName = connectedDeviceName
                             val deviceAddress = connectedDeviceAddress
-                            val hadConnection = wasEverConnected
+                            val hadPhysical = hasPhysicalConnection
+                            val shouldRequestReconnect = wasReadyConnected && !isExplicitDisconnect && deviceAddress.isNotEmpty()
+                            val disconnectEpoch = teardownEpoch.value
 
-                            // Only process disconnect if we were actually connected
-                            if (hadConnection) {
+                            // Only process disconnect if the physical link had actually connected
+                            if (hadPhysical) {
                                 // Issue #333 (v10 ready gate): fail the gate so a connect
                                 // attempt waiting on ready-up surfaces the disconnect
                                 // instead of timing out.
@@ -785,6 +844,7 @@ class KableBleConnectionManager(
                                 }
                                 deviceReadyJob?.cancel()
                                 deviceReadyJob = null
+                                cancelObserverAndDiagnosticJobs()
 
                                 logRepo.info(
                                     LogEventType.DISCONNECT,
@@ -793,12 +853,11 @@ class KableBleConnectionManager(
                                     deviceAddress,
                                 )
 
-                                // Stop all polling jobs
+                                // Stop all polling jobs and disco mode
                                 pollingEngine.stopAll()
+                                discoMode.shutdown()
+                                clearConnectionState()
                                 reportConnectionState(ConnectionState.Disconnected)
-                                peripheral = null
-                                connectedDeviceName = ""
-                                connectedDeviceAddress = ""
                             } else {
                                 // This is the initial Disconnected state when Peripheral is created
                                 // Don't reset state or peripheral - we're about to call connect()
@@ -807,13 +866,13 @@ class KableBleConnectionManager(
                             }
 
                             // Request auto-reconnect ONLY if:
-                            // 1. We were previously connected (wasEverConnected)
+                            // 1. Ready-up completed (wasReadyConnected)
                             // 2. This was NOT an explicit disconnect
                             // 3. We have a valid device address
-                            if (hadConnection && !isExplicitDisconnect && deviceAddress.isNotEmpty()) {
+                            if (shouldRequestReconnect) {
                                 log.i { "Requesting auto-reconnect to $deviceName ($deviceAddress)" }
                                 scope.launch {
-                                    if (readyGate !== observerGate) return@launch
+                                    if (teardownEpoch.value != disconnectEpoch) return@launch
                                     onReconnectionRequested(
                                         ReconnectionRequest(
                                             deviceName = deviceName,
@@ -825,9 +884,8 @@ class KableBleConnectionManager(
                                 }
                             }
 
-                            // Reset flags for next connection cycle
+                            // Reset explicit flag for next connection cycle
                             isExplicitDisconnect = false
-                            wasEverConnected = false
                         }
                     }
                 }
@@ -1188,7 +1246,8 @@ class KableBleConnectionManager(
         // either the CCCD write lands OR it permanently gives up — so the gated work
         // below never waits longer than necessary.
         val repsReady = CompletableDeferred<Unit>()
-        scope.launch {
+        repsObserveJob?.cancel()
+        repsObserveJob = scope.launch {
             observeRepsWithRetry(p) { repsReady.complete(Unit) }
         }
 
@@ -1207,7 +1266,8 @@ class KableBleConnectionManager(
         if (!compatibilityPathActive) {
             // Firmware/version reads (best effort, diagnostic only) — own coroutine so
             // their up-to-2s timeouts never delay polling start.
-            scope.launch {
+            diagnosticVersionReadJob?.cancel()
+            diagnosticVersionReadJob = scope.launch {
                 tryReadFirmwareVersion(p)
                 tryReadPhoenixVersion(p)
             }
@@ -1319,7 +1379,7 @@ class KableBleConnectionManager(
      * not retried because no app behavior depends on them.
      */
     private fun startNonCriticalObserve(p: Peripheral, characteristic: Characteristic, label: String) {
-        scope.launch {
+        val job = scope.launch {
             try {
                 log.d { "Starting $label characteristic notifications" }
                 p.observe(characteristic)
@@ -1335,6 +1395,7 @@ class KableBleConnectionManager(
                 log.d { "$label notifications not available (expected): ${e.message}" }
             }
         }
+        trackNonCriticalObserveJob(job)
     }
 
     /**
@@ -1425,11 +1486,14 @@ class KableBleConnectionManager(
 
         // Issue #333: stop an in-flight ready-up so it cannot publish Connected
         // after this explicit teardown reports Disconnected.
+        readyGate.completeExceptionally(ConnectionRequestSupersededException())
         deviceReadyJob?.cancel()
         deviceReadyJob = null
+        cancelObserverAndDiagnosticJobs()
 
-        // Cancel all polling jobs
+        // Cancel all polling jobs and disco mode
         pollingEngine.stopAll()
+        discoMode.shutdown()
 
         try {
             peripheral?.disconnect()
@@ -1439,6 +1503,61 @@ class KableBleConnectionManager(
         }
         clearConnectionState()
         reportConnectionState(ConnectionState.Disconnected)
+    }
+
+    /**
+     * Handle an unexpected connection loss detected by polling (e.g. POLL-03 monitor timeout/error cap).
+     * Emits [onReconnectionRequested] once (without setting [isExplicitDisconnect]) and shuts down
+     * polling/observers/discoMode before disconnecting the peripheral so [State.Disconnected] does not double-emit.
+     */
+    suspend fun handleUnexpectedConnectionLost(reason: String = "monitor_polling_timeout") {
+        val p = peripheral ?: return
+        val deviceName = connectedDeviceName
+        val deviceAddress = connectedDeviceAddress
+        val hadReadyConnection = wasReadyConnected
+        val hadPhysical = hasPhysicalConnection
+        if ((!hadReadyConnection && !hadPhysical) || isExplicitDisconnect) return
+        val lossEpoch = teardownEpoch.value
+
+        log.w { "Unexpected connection lost ($reason) for $deviceName ($deviceAddress)" }
+        logRepo.warning(
+            LogEventType.DISCONNECT,
+            "Unexpected connection lost: $reason",
+            deviceName,
+            deviceAddress,
+        )
+
+        if (!readyGate.isCompleted) {
+            readyGate.completeExceptionally(
+                BleDeviceInitializationException("Connection lost: $reason"),
+            )
+        }
+        deviceReadyJob?.cancel()
+        deviceReadyJob = null
+        cancelObserverAndDiagnosticJobs()
+        pollingEngine.stopAll()
+        discoMode.shutdown()
+
+        clearConnectionState()
+        reportConnectionState(ConnectionState.Disconnected)
+
+        try {
+            p.disconnect()
+        } catch (e: Exception) {
+            e.rethrowIfCancellation()
+            log.w { "Unexpected connection-lost disconnect error (non-fatal): ${e.message}" }
+        }
+
+        if (hadReadyConnection && deviceAddress.isNotEmpty() && teardownEpoch.value == lossEpoch && !isExplicitDisconnect) {
+            onReconnectionRequested(
+                ReconnectionRequest(
+                    deviceName = deviceName,
+                    deviceAddress = deviceAddress,
+                    reason = reason,
+                    timestamp = currentTimeMillis(),
+                ),
+            )
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -1451,8 +1570,12 @@ class KableBleConnectionManager(
         isExplicitDisconnect = true // Prevent auto-reconnect
         // Issue #333: stop an in-flight ready-up so it cannot publish Connected
         // after this cancellation reports Disconnected.
+        readyGate.completeExceptionally(ConnectionRequestSupersededException())
         deviceReadyJob?.cancel()
         deviceReadyJob = null
+        cancelObserverAndDiagnosticJobs()
+        pollingEngine.stopAll()
+        discoMode.shutdown()
         try {
             peripheral?.disconnect()
         } catch (e: Exception) {
@@ -1497,7 +1620,9 @@ class KableBleConnectionManager(
         deviceReadyJob = null
         observer?.cancel()
         ready?.cancel()
+        cancelObserverAndDiagnosticJobs()
         pollingEngine.stopAll()
+        discoMode.shutdown()
 
         if (existingPeripheral != null) {
             log.d { "Cleaning up existing connection before new connection attempt" }
@@ -1530,7 +1655,8 @@ class KableBleConnectionManager(
         // NEXT connect's observer would treat the new peripheral's initial
         // Disconnected emission as a real drop and tear the attempt down
         // before connect() is even called (PR #622 review).
-        wasEverConnected = false
+        hasPhysicalConnection = false
+        wasReadyConnected = false
         // Connection-scoped snapshot — don't leak the previous connection's
         // choreography into the next one (PR #621 review). onDeviceReady()
         // re-resolves it for the new connection.
@@ -1552,6 +1678,21 @@ class KableBleConnectionManager(
                 "Cannot send command - not connected",
             )
             return Result.failure(IllegalStateException("Not connected"))
+        }
+
+        val maxWeightPerCableKg = CommandLimits.maxWeightPerCableKg(
+            HardwareDetection.detectModel(connectedDeviceName),
+        )
+        WorkoutCommandValidator.validateFrame(command, maxWeightPerCableKg).onFailure { error ->
+            log.e { "Rejected unvalidated BLE command: ${error.message}" }
+            logRepo.error(
+                LogEventType.ERROR,
+                "Rejected invalid workout command",
+                connectedDeviceName,
+                connectedDeviceAddress,
+                error.message,
+            )
+            return Result.failure(error)
         }
 
         val commandDetails = commandSummary(command)
@@ -1634,12 +1775,16 @@ class KableBleConnectionManager(
             // so nothing races the pending long-write completion on BCM4389.
             if ((isEchoConfig || isProgramConfig) && !useCompatibilityPath) {
                 val delayMs = if (isProgramConfig) 350L else 200L
-                scope.launch {
+                val attemptPeripheral = p
+                postConfigDiagnosticJob?.cancel()
+                postConfigDiagnosticJob = scope.launch {
                     delay(delayMs)
+                    if (peripheral !== attemptPeripheral || isExplicitDisconnect) return@launch
                     try {
                         val data = withTimeoutOrNull(500L) {
-                            bleQueue.read { p.read(diagnosticCharacteristic) }
+                            bleQueue.read { attemptPeripheral.read(diagnosticCharacteristic) }
                         }
+                        if (peripheral !== attemptPeripheral || isExplicitDisconnect) return@launch
                         if (data != null) {
                             log.d { "Post-CONFIG diagnostic read (${data.size} bytes)" }
                             parseDiagnosticData(data)

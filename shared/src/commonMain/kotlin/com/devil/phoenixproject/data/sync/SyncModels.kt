@@ -140,6 +140,7 @@ data class CustomExerciseSyncDto(
     val muscleGroup: String,
     val equipment: String,
     val defaultCableConfig: String,
+    val archived: Boolean = false,
     val deletedAt: Long? = null,
     val createdAt: Long,
     val updatedAt: Long,
@@ -170,4 +171,7 @@ data class GamificationStatsSyncDto(
 // === Error Response ===
 
 @Serializable
-data class PortalErrorResponse(val error: String)
+data class PortalErrorResponse(
+    val error: String = "",
+    val code: String? = null,
+)

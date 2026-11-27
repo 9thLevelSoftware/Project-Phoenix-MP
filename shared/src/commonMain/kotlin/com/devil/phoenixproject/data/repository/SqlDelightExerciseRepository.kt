@@ -326,6 +326,7 @@ class SqlDelightExerciseRepository(
                     // Legacy-only recovery value. Ordinary exercise edits must preserve it
                     // until the required baseline repair explicitly consumes it.
                     one_rep_max_kg = existing.one_rep_max_kg,
+                    updatedAt = currentTimeMillis(),
                     id = exerciseId,
                 )
 
@@ -354,9 +355,14 @@ class SqlDelightExerciseRepository(
                     )
                 }
 
-                queries.deleteCustomExercise(exerciseId)
+                val now = currentTimeMillis()
+                queries.deleteCustomExercise(
+                    deletedAt = now,
+                    updatedAt = now,
+                    id = exerciseId,
+                )
 
-                Logger.d { "Deleted custom exercise: $exerciseId" }
+                Logger.d { "Soft-deleted custom exercise: $exerciseId" }
                 Result.success(Unit)
             } catch (e: Exception) {
                 Logger.e(e) { "Failed to delete custom exercise: $exerciseId" }

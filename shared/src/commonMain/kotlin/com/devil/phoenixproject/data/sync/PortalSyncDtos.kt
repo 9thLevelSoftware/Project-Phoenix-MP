@@ -211,6 +211,8 @@ data class PortalRepSummaryDto(
     val meanForceN: Float? = null,
     val peakForceN: Float? = null,
     val powerWatts: Float? = null,
+    val peakPowerWatts: Float? = null,
+    val powerMethod: String? = null,
     val romMm: Float? = null,
     val tutMs: Int? = null, // concentric + eccentric duration
     val leftForceAvg: Float? = null, // cable A → left
@@ -921,6 +923,24 @@ data class PortalSyncPullResponse(
      */
     val deletedRoutineIds: List<String> = emptyList(),
     val deletedCycleIds: List<String> = emptyList(),
+    val customExercises: List<PullCustomExerciseDto> = emptyList(),
+)
+
+@Serializable
+data class PullCustomExerciseDto(
+    val clientId: String = "",
+    val name: String = "",
+    val displayName: String? = null,
+    val muscleGroup: String = "General",
+    val equipment: String? = null,
+    val defaultCableConfig: String = "DOUBLE",
+    val archived: Boolean = false,
+    @Serializable(with = PortalCycleUpdatedAtSerializer::class)
+    val deletedAt: String? = null,
+    @Serializable(with = PortalCycleUpdatedAtSerializer::class)
+    val updatedAt: String? = null,
+    @Serializable(with = PortalCycleUpdatedAtSerializer::class)
+    val createdAt: String? = null,
 )
 
 /** Permanent account-level deletion pulled from the portal. */
@@ -1029,6 +1049,8 @@ data class PullRepSummaryDto(
     val meanForceN: Float? = null,
     val peakForceN: Float? = null,
     val powerWatts: Float? = null,
+    val peakPowerWatts: Float? = null,
+    val powerMethod: String? = null,
     val romMm: Float? = null,
     val tutMs: Int? = null,
     val leftForceAvg: Float? = null,
@@ -1234,4 +1256,5 @@ data class PullPersonalRecordDto(
     val achievedAt: String? = null,
     val updatedAt: String? = null,
     val deletedAt: String? = null,
+    val workoutMode: String? = null,
 )

@@ -1240,7 +1240,7 @@ class SqlDelightUserProfileRepositoryTest {
         val retainedDeletion = database.phoenixDatabaseQueries
             .selectWorkoutDeletionByMutationId("retained-delete")
             .executeAsOne()
-        assertEquals(sourceId, retainedDeletion.profile_id)
+        assertEquals("default", retainedDeletion.profile_id)
         assertNull(retainedDeletion.acknowledged_at)
         assertNull(database.phoenixDatabaseQueries.selectProfilePreferences(sourceId).executeAsOneOrNull())
     }
@@ -1483,6 +1483,75 @@ class SqlDelightUserProfileRepositoryTest {
         assertNotNull(merged)
         assertEquals(2, merged.totalWorkouts.toInt())
         assertEquals(22, merged.totalReps.toInt())
+    }
+
+    @Test
+    fun `mergeProfile_transfersWorkoutDeletions_and_clearsRoutineRecovery`() = runTest {
+        ready()
+        val source = repository.createProfile("Source", 2)
+        val queries = database.phoenixDatabaseQueries
+        queries.linkProfileToSupabase("owner-1", 10L, "default")
+        queries.linkProfileToSupabase("owner-1", 10L, source.id)
+
+        queries.insertWorkoutDeletion(
+            mutationId = "del-source-1",
+            ownerUserId = null,
+            profileId = source.id,
+            scope = "WORKOUT",
+            portalSessionId = "portal-sess-1",
+            componentSessionId = null,
+            deletedAt = 100L,
+            source = "LOCAL",
+        )
+        queries.insertRoutineRecoveryIfAbsent(
+            id = "rec-source-1",
+            portalUserId = "owner-1",
+            profileId = source.id,
+            canonicalIdentity = "canon-1",
+            reason = "server_delete",
+            payloadJson = "{}",
+            createdAt = 100L,
+            expiresAt = 200L,
+        )
+
+        assertTrue(repository.deleteProfile(source.id))
+
+        val transferredDeletion = queries.selectWorkoutDeletionByMutationId("del-source-1").executeAsOne()
+        assertEquals("default", transferredDeletion.profile_id)
+        assertEquals("owner-1", transferredDeletion.owner_user_id)
+        assertEquals(0, countRows("RoutineRecovery", "profile_id", source.id))
+    }
+
+    @Test
+    fun `mergeLinkedProfileIntoUnlinkedDefault_linksDefault_and_bindsUnboundWorkoutDeletionToOwner`() = runTest {
+        ready()
+        val source = repository.createProfile("LinkedSource", 2)
+        val queries = database.phoenixDatabaseQueries
+        assertNull(queries.getProfileById("default").executeAsOne().supabase_user_id)
+        queries.linkProfileToSupabase("owner-1", 10L, source.id)
+
+        queries.insertWorkoutDeletion(
+            mutationId = "del-unbound-source-1",
+            ownerUserId = null,
+            profileId = source.id,
+            scope = "WORKOUT",
+            portalSessionId = "portal-sess-unbound-1",
+            componentSessionId = null,
+            deletedAt = 100L,
+            source = "LOCAL",
+        )
+
+        assertTrue(repository.deleteProfile(source.id))
+
+        val defaultAfter = queries.getProfileById("default").executeAsOne()
+        assertEquals("owner-1", defaultAfter.supabase_user_id)
+
+        val transferredDeletion = queries.selectWorkoutDeletionByMutationId("del-unbound-source-1").executeAsOne()
+        assertEquals("default", transferredDeletion.profile_id)
+        assertEquals("owner-1", transferredDeletion.owner_user_id)
+
+        val pendingForOwner = queries.selectPendingWorkoutDeletionsForOwner("owner-1").executeAsList()
+        assertEquals(listOf("del-unbound-source-1"), pendingForOwner.map { it.mutation_id })
     }
 
     private suspend fun ready() {

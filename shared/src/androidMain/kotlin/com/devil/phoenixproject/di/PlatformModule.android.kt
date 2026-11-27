@@ -6,9 +6,11 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKeys
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.auth.OAuthLauncher
+import com.devil.phoenixproject.data.ble.BleScannerCoordinator
 import com.devil.phoenixproject.data.garmin.AndroidGarminCompanionTransport
 import com.devil.phoenixproject.data.garmin.GarminCompanionTransport
 import com.devil.phoenixproject.data.garmin.GarminControlPreferences
+
 import com.devil.phoenixproject.data.integration.HealthIntegration
 import com.devil.phoenixproject.data.integration.HealthWorkoutWriter
 import com.devil.phoenixproject.data.local.DriverFactory
@@ -80,7 +82,7 @@ actual val platformModule: Module = module {
     }
 
     single { OAuthLauncher(androidContext()) }
-    single<BleRepository> { KableBleRepository() }
+    single<BleRepository> { KableBleRepository(get<BleScannerCoordinator>()) }
     single<CsvExporter> { AndroidCsvExporter(androidContext()) }
     single<CsvImporter> { AndroidCsvImporter(androidContext(), get()) }
     single<BackupDestinationResolver> { AndroidBackupDestinationResolver(androidContext()) }
@@ -159,6 +161,7 @@ actual val platformModule: Module = module {
  * @throws SecurityException if EncryptedSharedPreferences cannot be created.
  *         This indicates the device cannot securely store authentication tokens.
  */
+@Suppress("DEPRECATION")
 private fun createEncryptedPreferences(context: Context, name: String): SharedPreferences = try {
     val masterKeyAlias = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
     EncryptedSharedPreferences.create(

@@ -357,13 +357,13 @@ class HistoryManagerTest {
             advanceUntilIdle()
 
             fakeWorkoutRepository.addSession(
-                WorkoutSession(id = "d0", timestamp = timestampForDate(today)),
+                WorkoutSession(id = "d0", timestamp = timestampForDate(today), totalReps = 10),
             )
             fakeWorkoutRepository.addSession(
-                WorkoutSession(id = "d1", timestamp = timestampForDate(today.minusDays(1))),
+                WorkoutSession(id = "d1", timestamp = timestampForDate(today.minusDays(1)), totalReps = 10),
             )
             fakeWorkoutRepository.addSession(
-                WorkoutSession(id = "d2", timestamp = timestampForDate(today.minusDays(2))),
+                WorkoutSession(id = "d2", timestamp = timestampForDate(today.minusDays(2)), totalReps = 10),
             )
             advanceUntilIdle()
 
@@ -393,10 +393,10 @@ class HistoryManagerTest {
             advanceUntilIdle()
 
             fakeWorkoutRepository.addSession(
-                WorkoutSession(id = "old-1", timestamp = timestampForDate(today.minusDays(3))),
+                WorkoutSession(id = "old-1", timestamp = timestampForDate(today.minusDays(3)), totalReps = 10),
             )
             fakeWorkoutRepository.addSession(
-                WorkoutSession(id = "old-2", timestamp = timestampForDate(today.minusDays(4))),
+                WorkoutSession(id = "old-2", timestamp = timestampForDate(today.minusDays(4)), totalReps = 10),
             )
             advanceUntilIdle()
 
@@ -444,6 +444,60 @@ class HistoryManagerTest {
 
             assertEquals(100, latestProgress)
             collectJob.cancel()
+        } finally {
+            managerScope.cancel()
+        }
+    }
+
+    @Test
+    fun `zeroRepSessionDoesNotExtendStreakOrRegressProgressPercentage`() = runTest {
+        val managerScope = CoroutineScope(coroutineContext + SupervisorJob())
+        try {
+            val manager =
+                HistoryManager(
+                    fakeWorkoutRepository,
+                    fakePersonalRecordRepository,
+                    fakeUserProfileRepository,
+                    managerScope,
+                )
+            val today = KmpLocalDate.today()
+            var latestStreak: Int? = Int.MIN_VALUE
+            var latestProgress: Int? = Int.MIN_VALUE
+            val streakJob = launch { manager.workoutStreak.collect { latestStreak = it } }
+            val progressJob = launch { manager.progressPercentage.collect { latestProgress = it } }
+            advanceUntilIdle()
+
+            fakeWorkoutRepository.addSession(
+                WorkoutSession(
+                    id = "day-before",
+                    timestamp = timestampForDate(today.minusDays(2)),
+                    weightPerCableKg = 10f,
+                    totalReps = 10,
+                ),
+            )
+            fakeWorkoutRepository.addSession(
+                WorkoutSession(
+                    id = "yesterday",
+                    timestamp = timestampForDate(today.minusDays(1)),
+                    weightPerCableKg = 20f,
+                    totalReps = 10,
+                ),
+            )
+            fakeWorkoutRepository.addSession(
+                WorkoutSession(
+                    id = "today-zero",
+                    timestamp = timestampForDate(today),
+                    weightPerCableKg = 0f,
+                    workingReps = 0,
+                    totalReps = 0,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertEquals(2, latestStreak)
+            assertEquals(100, latestProgress)
+            streakJob.cancel()
+            progressJob.cancel()
         } finally {
             managerScope.cancel()
         }

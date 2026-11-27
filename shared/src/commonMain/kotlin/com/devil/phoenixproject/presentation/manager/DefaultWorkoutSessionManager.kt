@@ -392,6 +392,9 @@ class DefaultWorkoutSessionManager(
             override fun beginRoutineCompletedRuntimeCleanup() = activeSessionEngine.beginRoutineCompletedRuntimeCleanup()
             override fun beginRoutineAbandonmentRuntimeCleanup() = activeSessionEngine.beginRoutineAbandonmentRuntimeCleanup()
             override fun rebindTerminalSuccessor(newExerciseIndex: Int): Boolean = activeSessionEngine.rebindTerminalSuccessor(newExerciseIndex)
+            override fun completeRoutineRun(backupTag: String) = activeSessionEngine.completeRoutineRun(backupTag = backupTag)
+            override fun invalidateSkippedExecutionLease(lease: ExecutionLease) = activeSessionEngine.invalidateSkippedExecutionLease(lease)
+            override fun clearRestTransitionForExerciseSkip() = activeSessionEngine.clearRestTransitionForExerciseSkip()
         }
     }
 
@@ -718,8 +721,8 @@ class DefaultWorkoutSessionManager(
                 // PR with the session's own timestamp like every other completion
                 // site, or the portal push key "$exerciseId:$timestamp" can never
                 // match it back. Backdating cannot drop the row from a delta push:
-                // upsertPR leaves updatedAt NULL and selectPRsModifiedSince matches
-                // "updatedAt IS NULL".
+                // updatePRFromLocalLift + insertPRIgnore leaves updatedAt NULL and
+                // selectPRsModifiedSince matches "updatedAt IS NULL".
                 timestamp = taggedSession.timestamp,
                 profileId = taggedSession.profileId,
                 cableCount = taggedSession.displayMultiplier,
@@ -1117,8 +1120,6 @@ class DefaultWorkoutSessionManager(
 
     fun stopAndReturnToSetReady() = activeSessionEngine.stopAndReturnToSetReady()
     fun stopAndSkipCurrentExercise() = activeSessionEngine.stopAndSkipCurrentExercise()
-    fun pauseWorkout() = activeSessionEngine.pauseWorkout()
-    fun resumeWorkout() = activeSessionEngine.resumeWorkout()
     // ===== Weight Adjustment — delegated to ActiveSessionEngine =====
 
     fun adjustWeight(newWeightKg: Float, sendToMachine: Boolean = true) = activeSessionEngine.adjustWeight(newWeightKg, sendToMachine)
@@ -1179,7 +1180,6 @@ class DefaultWorkoutSessionManager(
     fun extendRestTime(seconds: Int) = activeSessionEngine.extendRestTime(seconds)
     fun toggleRestPause() = activeSessionEngine.toggleRestPause()
     fun resetRestTimer() = activeSessionEngine.resetRestTimer()
-    fun startNextSet() = activeSessionEngine.startNextSet()
 
     // ===== Exercise Timer Controls — delegated to ActiveSessionEngine =====
 
@@ -1401,43 +1401,7 @@ class DefaultWorkoutSessionManager(
                     // If no more steps in the entire routine, show completion screen
                     if (nextStep == null) {
                         Logger.d { "proceedFromSummary: No more steps - showing routine complete" }
-                        // Issue #393: Set workoutState to Idle BEFORE showing routine complete.
-                        // Previously, showRoutineComplete() set routineFlowState=Complete while
-                        // workoutState was still SetSummary. This created a race window where:
-                        //   1. ActiveWorkoutScreen sees Complete → navigates to RoutineComplete
-                        //   2. EnhancedMainScreen sees SetSummary → force-navigates back to ActiveWorkout
-                        //   3. New ActiveWorkoutScreen sees Complete → navigates again
-                        // Result: multiple overlapping RoutineComplete screens (visible as garbled UI).
-                        // Setting Idle first ensures shouldResumeActiveWorkout() returns false before
-                        // the Complete navigation fires.
-                        // Issue #395: Write aggregate health workout before clearing routine state
-                        activeSessionEngine.writeRoutineHealthData()
-                        // Issue #525: Auto-backup completed routines once, after all per-set
-                        // WorkoutSession rows are persisted and before clearing routineSessionId.
-                        val completedRoutineSessionId = coordinator.currentRoutineSessionId
-                        if (completedRoutineSessionId != null &&
-                            preferencesManager.preferencesFlow.value.autoBackupEnabled &&
-                            dataBackupManager != null
-                        ) {
-                            scope.launch {
-                                dataBackupManager.exportRoutine(completedRoutineSessionId)
-                                    .onFailure { e ->
-                                        Logger.w(e) {
-                                            "Routine auto-backup failed for routine $completedRoutineSessionId"
-                                        }
-                                    }
-                            }
-                        }
-                        activeSessionEngine.supersedeConfigurationInputIntent()
-                        coordinator._workoutState.value = WorkoutState.Idle
-                        showRoutineComplete()
-                        // Clear routine session context so stale IDs don't leak into next routine
-                        activeSessionEngine.mutateConfigurationInputs {
-                            coordinator.currentRoutineSessionId = null
-                            coordinator.currentRoutineName = null
-                            coordinator.currentRoutineId = null
-                            coordinator._completedRoutineSetKeys.value = emptySet()
-                        }
+                        activeSessionEngine.completeRoutineRun(backupTag = "routine-complete-manual")
                         return@launch
                     }
 
@@ -1461,7 +1425,7 @@ class DefaultWorkoutSessionManager(
                                 weightPerCableKg = nextSetWeight,
                                 reps = nextSetReps ?: 0,
                                 programMode = nextExercise.programMode,
-                                echoLevel = nextExercise.echoLevel,
+                                echoLevel = nextExercise.getEchoLevelForSet(nextSetIdx),
                                 eccentricLoad = nextExercise.eccentricLoad,
                                 progressionRegressionKg = nextExercise.progressionKg,
                                 selectedExerciseId = nextExercise.exercise.id,
@@ -1761,34 +1725,7 @@ class DefaultWorkoutSessionManager(
             coordinator._currentSetIndex.value,
         )
         if (nextStep == null) {
-            // The run completed: the normal no-next-step planning.
-            activeSessionEngine.writeRoutineHealthData()
-            val completedRoutineSessionId = coordinator.currentRoutineSessionId
-            if (completedRoutineSessionId != null &&
-                preferencesManager.preferencesFlow.value.autoBackupEnabled &&
-                dataBackupManager != null
-            ) {
-                scope.launch {
-                    dataBackupManager.exportRoutine(completedRoutineSessionId)
-                        .onFailure { e ->
-                            Logger.w(e) { "Routine auto-backup failed for routine $completedRoutineSessionId" }
-                        }
-                }
-            }
-            if (activeSessionEngine.admitRoutineCompletion(
-                    com.devil.phoenixproject.data.integration.intervals.IntervalsFinishReason.NORMAL_FINISH,
-                )
-            ) {
-                activeSessionEngine.supersedeConfigurationInputIntent()
-                coordinator._workoutState.value = WorkoutState.Idle
-                showRoutineComplete()
-                activeSessionEngine.mutateConfigurationInputs {
-                    coordinator.currentRoutineSessionId = null
-                    coordinator.currentRoutineName = null
-                    coordinator.currentRoutineId = null
-                    coordinator._completedRoutineSetKeys.value = emptySet()
-                }
-            }
+            activeSessionEngine.completeRoutineRun(backupTag = "remote-set-complete")
             return RemoteSetControlTerminal.COMPLETE
         }
 

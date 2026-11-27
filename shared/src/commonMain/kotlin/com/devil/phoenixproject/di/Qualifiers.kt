@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.di
 
+import co.touchlab.kermit.Logger
 import com.russhwolf.settings.Settings
 import org.koin.core.qualifier.named
 
@@ -16,21 +17,16 @@ import org.koin.core.qualifier.named
  */
 val SecureSettingsQualifier = named("secureSettings")
 
-private const val RETIRED_INSTALLATION_ID_KEY = "intervals.installationId"
-private const val RETIRED_API_KEY_PREFIX = "intervals.apiKey."
-
-/**
- * One-way cleanup of retired v1.1.1 direct-export keys from secure storage.
- * Portal auth tokens (`portal_*`) are never touched.
- */
+/** Removes credentials left by the retired v1.1.1 direct Intervals export. */
 internal fun purgeRetiredDirectExportSecrets(settings: Settings) {
-    runCatching {
+    try {
         val retiredKeys = settings.keys.filter { key ->
-            key == RETIRED_INSTALLATION_ID_KEY || key.startsWith(RETIRED_API_KEY_PREFIX)
+            key == "intervals.installationId" || key.startsWith("intervals.apiKey.")
         }
-        for (key in retiredKeys) {
-            settings.remove(key)
-        }
+        retiredKeys.forEach(settings::remove)
+    } catch (_: Exception) {
+        // The secure binding retries on the next launch. Keep auth and startup usable.
+        Logger.w("SecureSettings") { "Retired Intervals credential cleanup will retry next launch" }
     }
 }
 

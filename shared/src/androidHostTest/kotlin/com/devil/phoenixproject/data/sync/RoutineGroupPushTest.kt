@@ -259,7 +259,7 @@ class RoutineGroupPushTest {
     // ===== The one-time repair push =====
 
     @Test
-    fun `the repair push re-sends a truncated group, caps the batch and skips held groups`() = runTest {
+    fun `the repair push re-sends a truncated group and caps the batch and skips held groups`() = runTest {
         // The portal is left as the old per-set push left it: one exercise per workout.
         // Timestamps run BACKWARDS from the present so the repair's newest-first walk
         // starts with group 1 and leaves the oldest groups for a later sync.

@@ -2,11 +2,18 @@ package com.devil.phoenixproject.data.repository
 
 import app.cash.turbine.test
 import com.devil.phoenixproject.database.PhoenixDatabase
+import com.devil.phoenixproject.domain.model.CharacterClass
+import com.devil.phoenixproject.domain.model.RpgProfile
 import com.devil.phoenixproject.testutil.createTestDatabase
+import com.devil.phoenixproject.testutil.createTestDriver
+import com.devil.phoenixproject.testutil.seedExercise
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
+import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
@@ -75,7 +82,7 @@ class SqlDelightGamificationRepositoryTest {
         val yesterday = LocalDate.fromEpochDays(today.toEpochDays() - 1)
         val dayBefore = LocalDate.fromEpochDays(today.toEpochDays() - 2)
         fun atLocal(date: LocalDate, hour: Int, minute: Int) =
-            LocalDateTime(date.year, date.monthNumber, date.dayOfMonth, hour, minute)
+            LocalDateTime(date.year, date.month, date.day, hour, minute)
                 .toInstant(zone)
                 .toEpochMilliseconds()
 
@@ -181,7 +188,7 @@ class SqlDelightGamificationRepositoryTest {
     }
 
     @Test
-    fun `peak power badges compare RepMetric watts, never raw MetricSample units`() = runTest {
+    fun `peak power badges compare RepMetric watts instead of raw MetricSample units`() = runTest {
         insertWorkoutSession(id = "session", totalReps = 10, weightPerCableKg = 50.0)
         insertRepMetric(sessionId = "session", peakPowerWatts = 600.0)
         insertMetricSample(sessionId = "session", power = 90_000.0) // kg x mm/s, not watts
@@ -328,6 +335,163 @@ class SqlDelightGamificationRepositoryTest {
         assertEquals(1 to 1, progress.getValue("workouts_1").currentProgress to progress.getValue("workouts_1").targetProgress)
     }
 
+    @Test
+    fun `updateStats_and_saveRpgProfile_preserveSyncMetadataAndIsolateCollidingHashCodes`() = runTest {
+        assertEquals("profile-Aa".hashCode(), "profile-BB".hashCode())
+        val driver = createTestDriver()
+        val isolatedDb = PhoenixDatabase(driver)
+        val isolatedRepo = SqlDelightGamificationRepository(isolatedDb)
+        val q = isolatedDb.phoenixDatabaseQueries
+
+        driver.execute(
+            null,
+            """
+            INSERT INTO GamificationStats(
+                id, totalWorkouts, totalReps, totalVolumeKg, longestStreak, currentStreak,
+                uniqueExercisesUsed, prsAchieved, lastWorkoutDate, streakStartDate,
+                lastUpdated, updatedAt, serverId, profile_id
+            ) VALUES (
+                77, 1, 5, 100, 1, 1,
+                1, 0, NULL, NULL,
+                1000, 5000, 'srv-1', 'profile-Aa'
+            )
+            """.trimIndent(),
+            0,
+        )
+        insertWorkoutSession(
+            id = "sess-aa",
+            totalReps = 10L,
+            weightPerCableKg = 20.0,
+            exerciseId = "bench",
+            timestamp = 10_000L,
+            profileId = "profile-Aa",
+            targetDb = isolatedDb,
+        )
+        insertWorkoutSession(
+            id = "sess-bb",
+            totalReps = 20L,
+            weightPerCableKg = 30.0,
+            exerciseId = "squat",
+            timestamp = 10_000L,
+            profileId = "profile-BB",
+            targetDb = isolatedDb,
+        )
+
+        isolatedRepo.updateStats("profile-Aa")
+        isolatedRepo.updateStats("profile-BB")
+
+        val statsAa = assertNotNull(q.selectGamificationStats("profile-Aa").executeAsOneOrNull())
+        val statsBb = assertNotNull(q.selectGamificationStats("profile-BB").executeAsOneOrNull())
+        assertEquals(77L, statsAa.id)
+        assertEquals("srv-1", statsAa.serverId)
+        assertEquals(5_000L, statsAa.updatedAt)
+        assertEquals(10L, statsAa.totalReps)
+        assertNotEquals(statsAa.id, statsBb.id)
+        assertEquals(20L, statsBb.totalReps)
+
+        isolatedRepo.saveRpgProfile(
+            RpgProfile(strength = 80, power = 60, stamina = 50, consistency = 70, mastery = 65, characterClass = CharacterClass.POWERLIFTER, lastComputed = 1000L),
+            profileId = "profile-Aa",
+        )
+        isolatedRepo.saveRpgProfile(
+            RpgProfile(strength = 20, power = 30, stamina = 40, consistency = 50, mastery = 60, characterClass = CharacterClass.IRONMAN, lastComputed = 2000L),
+            profileId = "profile-BB",
+        )
+
+        val rpgAa = assertNotNull(q.selectRpgAttributes("profile-Aa").executeAsOneOrNull())
+        val rpgBb = assertNotNull(q.selectRpgAttributes("profile-BB").executeAsOneOrNull())
+        assertNotEquals(rpgAa.id, rpgBb.id)
+        assertEquals(80L, rpgAa.strength)
+        assertEquals(20L, rpgBb.strength)
+    }
+
+    @Test
+    fun `soft-deleted PRs and sessions are excluded from gamification stats RPG inputs and badge progress`() = runTest {
+        database.seedExercise(id = "bench", name = "Bench", muscleGroup = "Chest")
+        database.seedExercise(id = "squat", name = "Squat", muscleGroup = "Legs")
+
+        val zone = TimeZone.currentSystemDefault()
+        // Pick a Saturday in 2026 (2026-06-06 is Saturday) and a Wednesday (2026-06-03).
+        fun localMs(day: Int, hour: Int = 12) =
+            LocalDateTime(2026, 6, day, hour, 0).toInstant(zone).toEpochMilliseconds()
+
+        // Active workout on Wednesday (Chest, OldSchool)
+        insertWorkoutSession(
+            id = "live-wed",
+            totalReps = 10,
+            weightPerCableKg = 40.0,
+            exerciseId = "bench",
+            routineSessionId = "live-routine",
+            timestamp = localMs(3),
+            heaviestLiftKg = 40.0,
+            workingAvgWeightKg = 40.0,
+        )
+        // Soft-deleted workout on Saturday (Legs, Echo, heavier/higher volume, routine)
+        insertWorkoutSession(
+            id = "del-sat",
+            totalReps = 20,
+            weightPerCableKg = 100.0,
+            exerciseId = "squat",
+            routineSessionId = "del-routine",
+            timestamp = localMs(6),
+            mode = "Echo",
+            heaviestLiftKg = 100.0,
+            workingAvgWeightKg = 100.0,
+        )
+        database.phoenixDatabaseQueries.softDeleteSession(999L, 999L, "del-sat")
+
+        // One active PR and one soft-deleted PR
+        database.phoenixDatabaseQueries.insertRecord(
+            exerciseId = "bench", exerciseName = "Bench", weight = 40.0, reps = 10L,
+            oneRepMax = 53.3, achievedAt = 1000L, workoutMode = "OldSchool",
+            prType = "MAX_WEIGHT", volume = 400.0, phase = "COMBINED",
+            profile_id = profileId, cable_count = 2L, uuid = "pr-live",
+        )
+        database.phoenixDatabaseQueries.insertRecord(
+            exerciseId = "squat", exerciseName = "Squat", weight = 100.0, reps = 5L,
+            oneRepMax = 112.5, achievedAt = 2000L, workoutMode = "OldSchool",
+            prType = "MAX_WEIGHT", volume = 500.0, phase = "COMBINED",
+            profile_id = profileId, cable_count = 2L, uuid = "pr-del",
+        )
+        val delPrId = database.phoenixDatabaseQueries
+            .selectPRIncludingDeleted("squat", "OldSchool", "MAX_WEIGHT", "COMBINED", profileId)
+            .executeAsOne().id
+        database.phoenixDatabaseQueries.softDeletePRById(999L, 999L, delPrId, profileId)
+
+        repository.updateStats(profileId)
+        val rpg = repository.getRpgInput(profileId)
+        assertEquals(1, rpg.personalRecords)
+        assertEquals(40.0, rpg.maxWeightLiftedKg)
+        assertEquals(40.0, rpg.avgWorkingWeightKg)
+        assertEquals(1, rpg.trainingDays)
+
+        val q = database.phoenixDatabaseQueries
+        assertEquals(1, q.countWorkoutsByMode(profileId).executeAsList().size)
+        assertEquals(listOf("OldSchool"), q.selectUniqueWorkoutModes(profileId).executeAsList())
+        assertEquals(listOf("Chest"), q.selectUniqueMuscleGroupsFromWorkouts(profileId).executeAsList())
+        assertEquals(0L, q.countWeekendWorkouts(profileId).executeAsOne())
+        assertEquals(1L, q.countCompletedRoutineSessions(profileId).executeAsOne())
+    }
+
+    @Test
+    fun `countTrainingDays and countWeekendWorkouts respect localtime`() = runTest {
+        val zone = TimeZone.currentSystemDefault()
+        // Find a Saturday in June 2026: 2026-06-06 is Saturday, 2026-06-07 is Sunday
+        val saturday = LocalDate(2026, 6, 6)
+        assertEquals(DayOfWeek.SATURDAY, saturday.dayOfWeek)
+        val satMorning = LocalDateTime(2026, 6, 6, 0, 5).toInstant(zone).toEpochMilliseconds()
+        val satNight = LocalDateTime(2026, 6, 6, 23, 55).toInstant(zone).toEpochMilliseconds()
+        val sunMorning = LocalDateTime(2026, 6, 7, 0, 5).toInstant(zone).toEpochMilliseconds()
+
+        insertWorkoutSession(id = "sat-1", totalReps = 5, weightPerCableKg = 20.0, timestamp = satMorning)
+        insertWorkoutSession(id = "sat-2", totalReps = 5, weightPerCableKg = 20.0, timestamp = satNight)
+        insertWorkoutSession(id = "sun-1", totalReps = 5, weightPerCableKg = 20.0, timestamp = sunMorning)
+
+        val q = database.phoenixDatabaseQueries
+        assertEquals(2L, q.countTrainingDays(profileId).executeAsOne())
+        assertEquals(3L, q.countWeekendWorkouts(profileId).executeAsOne())
+    }
+
     private suspend fun badgeProgress(badgeId: String, profileId: String): Pair<Int, Int> {
         val item = repository.getAllBadgesWithProgress(profileId).single { it.badge.id == badgeId }
         return item.currentProgress to item.targetProgress
@@ -367,6 +531,7 @@ class SqlDelightGamificationRepositoryTest {
             avgPowerWatts = peakPowerWatts / 2,
             updatedAt = null,
             serverId = null,
+            power_method = null,
         )
     }
 
@@ -384,11 +549,15 @@ class SqlDelightGamificationRepositoryTest {
         profileId: String = "default",
         totalVolumeKg: Double? = null,
         cableCount: Long? = null,
+        mode: String = "OldSchool",
+        heaviestLiftKg: Double? = null,
+        workingAvgWeightKg: Double? = null,
+        targetDb: PhoenixDatabase = database,
     ) {
-        database.phoenixDatabaseQueries.insertSession(
+        targetDb.phoenixDatabaseQueries.insertSession(
             id = id,
             timestamp = timestamp,
-            mode = "OldSchool",
+            mode = mode,
             targetReps = totalReps,
             weightPerCableKg = weightPerCableKg,
             progressionKg = 0.0,
@@ -416,12 +585,12 @@ class SqlDelightGamificationRepositoryTest {
             avgForceConcentricB = null,
             avgForceEccentricA = null,
             avgForceEccentricB = null,
-            heaviestLiftKg = null,
+            heaviestLiftKg = heaviestLiftKg,
             totalVolumeKg = totalVolumeKg,
             cableCount = cableCount,
             estimatedCalories = null,
             warmupAvgWeightKg = null,
-            workingAvgWeightKg = null,
+            workingAvgWeightKg = workingAvgWeightKg,
             burnoutAvgWeightKg = null,
             peakWeightKg = null,
             rpe = null,

@@ -58,7 +58,8 @@ fun ExerciseNavigator(
         ) {
             // Current exercise name
             Text(
-                text = exerciseNames.getOrNull(currentIndex) ?: "Exercise ${currentIndex + 1}",
+                text = exerciseNames.getOrNull(currentIndex)
+                    ?: stringResource(Res.string.exercise_numbered, currentIndex + 1),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
@@ -149,6 +150,16 @@ private fun ExerciseDot(index: Int, isCurrent: Boolean, isCompleted: Boolean, is
         label = "dotSize",
     )
 
+    val dotDescription = stringResource(
+        when {
+            isCurrent -> Res.string.exercise_dot_cd_current
+            isCompleted -> Res.string.exercise_dot_cd_completed
+            isSkipped -> Res.string.exercise_dot_cd_skipped
+            else -> Res.string.exercise_numbered
+        },
+        index + 1,
+    )
+
     // 48dp-tall touch cell; width follows visual dot size (workout-widgets-1, lens-accessibility-1)
     Box(
         modifier = Modifier
@@ -157,14 +168,7 @@ private fun ExerciseDot(index: Int, isCurrent: Boolean, isCompleted: Boolean, is
             .clickable(onClick = onClick)
             .semantics {
                 role = Role.Button
-                contentDescription = buildString {
-                    append("Exercise ${index + 1}")
-                    when {
-                        isCurrent -> append(", current")
-                        isCompleted -> append(", completed")
-                        isSkipped -> append(", skipped")
-                    }
-                }
+                contentDescription = dotDescription
             },
         contentAlignment = Alignment.Center,
     ) {

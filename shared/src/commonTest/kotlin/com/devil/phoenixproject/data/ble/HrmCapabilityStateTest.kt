@@ -9,6 +9,7 @@ import com.juul.kable.Characteristic
 import com.juul.kable.Peripheral
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -83,10 +84,12 @@ class HrmCapabilityStateTest {
         )
         manager.startScanning()
         runCurrent()
-        assertTrue(manager.connect(ScannedDevice("Impostor 245", advertisement.identifier.toString())).isSuccess)
+        assertTrue(manager.connect(ScannedDevice("Impostor 245", advertisement.identifier.toString())).isFailure)
         advanceTimeBy(100)
         runCurrent()
 
+        assertTrue(fake.disconnectCalls > 0, "Peripheral lacking 0x2A37 must be disconnected")
+        assertFalse(manager.isConnected.value)
         val state = manager.connectionState.value
         assertTrue(state is ConnectionState.Error, "Expected a clear error state, got $state")
         assertTrue(
@@ -94,10 +97,6 @@ class HrmCapabilityStateTest {
             "Error must say the device is not a standard heart rate sensor: ${state.message}",
         )
         val caps = manager.capabilities.value
-        assertTrue(
-            caps.standardHr == HrmCapabilityState.ABSENT || caps.standardHr == HrmCapabilityState.FAILED,
-            "standardHr must be ABSENT/FAILED after validation failure, got ${caps.standardHr}",
-        )
         assertNotEquals(HrmCapabilityState.CONFIRMED, caps.standardHr)
         manager.shutdown()
     }

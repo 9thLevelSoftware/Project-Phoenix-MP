@@ -43,12 +43,21 @@ fun ResumeRoutineDialog(
                 Text(stringResource(Res.string.resume_workout_saved))
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "Exercise ${progressInfo.currentExercise} of ${progressInfo.totalExercises}",
+                    stringResource(
+                        Res.string.resume_exercise_of_total,
+                        progressInfo.currentExercise,
+                        progressInfo.totalExercises,
+                    ),
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
                 )
                 Text(
-                    "${progressInfo.exerciseName} - Set ${progressInfo.currentSet} of ${progressInfo.totalSets}",
+                    stringResource(
+                        Res.string.resume_exercise_set_progress,
+                        progressInfo.exerciseName,
+                        progressInfo.currentSet,
+                        progressInfo.totalSets,
+                    ),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

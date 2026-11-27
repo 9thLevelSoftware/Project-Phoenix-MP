@@ -31,6 +31,9 @@ import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
 import com.devil.phoenixproject.util.KmpUtils
+import org.jetbrains.compose.resources.stringResource
+import projectphoenix.shared.generated.resources.*
+import projectphoenix.shared.generated.resources.Res
 
 @Composable
 fun ProgressionLineChart(
@@ -71,14 +74,17 @@ fun ProgressionLineChart(
                         color = lineColor,
                     )
                     Text(
-                        text = "${KmpUtils.formatTimestamp(onlyPoint.first, "MMM d")} • Complete 1 more session for a trend line",
+                        text = stringResource(
+                            Res.string.chart_one_point_hint,
+                            KmpUtils.formatTimestamp(onlyPoint.first, "MMM d"),
+                        ),
                         style = MaterialTheme.typography.bodySmall,
                         color = labelColor,
                         textAlign = TextAlign.Center,
                     )
                 } else {
                     Text(
-                        text = "Complete at least 2 sessions to view progression",
+                        text = stringResource(Res.string.chart_min_two_sessions),
                         style = MaterialTheme.typography.bodyMedium,
                         color = labelColor,
                         textAlign = TextAlign.Center,

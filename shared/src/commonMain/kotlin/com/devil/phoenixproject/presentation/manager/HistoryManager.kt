@@ -180,7 +180,7 @@ class HistoryManager(
      * Calculate current workout streak (consecutive days with workouts).
      * Returns null if no workouts or streak is broken.
      */
-    val workoutStreak: StateFlow<Int?> = allWorkoutSessions.map { sessions ->
+    val workoutStreak: StateFlow<Int?> = historyVisibleSessions.map { sessions ->
         if (sessions.isEmpty()) {
             return@map null
         }
@@ -212,7 +212,7 @@ class HistoryManager(
         streak
     }.stateIn(scope, SharingStarted.WhileSubscribed(5000), null)
 
-    val progressPercentage: StateFlow<Int?> = allWorkoutSessions.map { sessions ->
+    val progressPercentage: StateFlow<Int?> = historyVisibleSessions.map { sessions ->
         if (sessions.size < 2) return@map null
         val latest = sessions[0]
         val previous = sessions[1]

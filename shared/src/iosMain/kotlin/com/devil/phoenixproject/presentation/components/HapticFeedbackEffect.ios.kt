@@ -83,11 +83,164 @@ actual fun HapticFeedbackEffect(hapticEvents: SharedFlow<HapticEvent>) {
     }
 }
 
+internal val IOS_EVENT_SOUND_FILES: Map<HapticEvent, String> = mapOf(
+    HapticEvent.REP_COMPLETED to "rep_complete_strong", // Issue #490: distinct regular rep cue
+    HapticEvent.FINAL_REP to "boopbeepbeep", // Issue #100: Distinct final rep sound
+    HapticEvent.WARMUP_COMPLETE to "beepboop",
+    HapticEvent.WORKOUT_COMPLETE to "boopbeepbeep",
+    HapticEvent.WORKOUT_START to "chirpchirp",
+    HapticEvent.WORKOUT_END to "chirpchirp",
+    HapticEvent.REST_ENDING to "restover",
+    HapticEvent.DISCO_MODE_UNLOCKED to "discomode",
+    // Issue #611: Dominatrix easter-egg unlock SFX
+    HapticEvent.DOMINATRIX_MODE_UNLOCKED to "dominatrix_unlock",
+    // Issue #100: Warmup-to-working transition (ascending tone)
+    HapticEvent.WARMUP_TO_WORKING to "beepboop",
+    // Issue #1356: Just Lift/Echo auto-start readiness cue (distinct asset, not chirpchirp)
+    HapticEvent.AUTO_START_READY to "auto_start_ready",
+    // Issue #313: Velocity loss threshold alert (attention-getting)
+    HapticEvent.VELOCITY_THRESHOLD_REACHED to "boopbeepbeep",
+    // ERROR, BADGE_EARNED, PERSONAL_RECORD, REP_COUNT_ANNOUNCED, COUNTDOWN_TICK handled separately
+)
+
+internal val IOS_BADGE_SOUND_FILES: List<String> = listOf(
+    "absolute_domination",
+    "absolute_unit",
+    "another_milestone_crushed",
+    "beast_mode",
+    "insane_performance",
+    "maxed_out",
+    "new_peak_achieved",
+    "new_record_secured",
+    "no_ones_stopping_you_now",
+    "power",
+    "pr",
+    "pressure_create_greatness",
+    "record",
+    "shattered",
+    "strenght_unlocked",
+    "that_bar_never_stood_a_chance",
+    "that_was_a_demolition",
+    "that_was_god_mode",
+    "that_was_monster_level",
+    "that_was_next_tier_strenght",
+    "that_was_pure_savagery",
+    "the_grind_continues",
+    "the_grind_is_real",
+    "this_is_what_champions_are_made",
+    "unchained_power",
+    "unstoppable",
+    "victory",
+    "you_crushed_that",
+    "you_dominated_that_set",
+    "you_just_broke_your_limits",
+    "you_just_destroyed_that_weight",
+    "you_just_levelled_up",
+    "you_went_full_throttle",
+)
+
+internal val IOS_PR_SOUND_FILES: List<String> = listOf(
+    "new_personal_record",
+    "new_personal_record_2",
+)
+
+internal data class IosNumberedPoolSpec(
+    val prefix: String,
+    val count: Int,
+    val label: String,
+)
+
+internal val IOS_ENCOURAGEMENT_POOL_SPECS: List<IosNumberedPoolSpec> = listOf(
+    IosNumberedPoolSpec("encouragement", 15, "encouragement neutral sounds"),
+    IosNumberedPoolSpec("vulgar_mild", 12, "vulgar mild sounds"),
+    IosNumberedPoolSpec("vulgar_strong", 12, "vulgar strong sounds"),
+    IosNumberedPoolSpec("dominatrix", 12, "dominatrix sounds"),
+)
+
+internal fun <T> List<T>.randomPoolEntry(): T =
+    this[kotlin.random.Random.nextInt(size)]
+
+internal fun <P : Any> loadNamedSoundPool(
+    fileNames: List<String>,
+    destination: MutableList<P?>,
+    label: String,
+    load: (String) -> P?,
+) {
+    fileNames.forEach { fileName ->
+        load(fileName)?.let { destination.add(it) }
+    }
+    log.d { "Loaded ${destination.size} $label" }
+}
+
+internal fun <P : Any> loadNumberedSoundPool(
+    prefix: String,
+    count: Int,
+    destination: MutableList<P?>,
+    label: String,
+    load: (String) -> P?,
+) {
+    for (i in 1..count) {
+        load("${prefix}_${i.toString().padStart(2, '0')}")?.let { destination.add(it) }
+    }
+    log.d { "Loaded ${destination.size} $label" }
+}
+
+internal fun <P : Any> loadRepCountSoundPool(
+    destination: MutableList<P?>,
+    load: (String) -> P?,
+) {
+    for (i in 1..25) {
+        val fileName = "rep_${i.toString().padStart(2, '0')}"
+        val player = load(fileName)
+        destination.add(player)
+        if (player == null) {
+            log.w { "Failed to load rep count sound: $fileName" }
+        }
+    }
+    val loadedCount = destination.count { it != null }
+    log.d { "Loaded $loadedCount/25 rep count sounds" }
+}
+
+internal fun <P : Any> selectIosSoundPlayer(
+    event: HapticEvent,
+    eventPlayers: Map<HapticEvent, P?>,
+    badgePlayers: List<P?>,
+    prPlayers: List<P?>,
+    repCountPlayers: List<P?>,
+    countdownTickPlayer: P?,
+    neutralPlayers: List<P?>,
+    mildPlayers: List<P?>,
+    strongPlayers: List<P?>,
+    dominatrixPlayers: List<P?>,
+): P? = when (event) {
+    is HapticEvent.ERROR -> null
+    is HapticEvent.BADGE_EARNED -> if (badgePlayers.isNotEmpty()) badgePlayers.randomPoolEntry() else null
+    is HapticEvent.PERSONAL_RECORD -> if (prPlayers.isNotEmpty()) prPlayers.randomPoolEntry() else null
+    is HapticEvent.REP_COUNT_ANNOUNCED -> {
+        val index = event.repNumber - 1
+        if (index in repCountPlayers.indices) repCountPlayers[index] else null
+    }
+    is HapticEvent.COUNTDOWN_TICK -> countdownTickPlayer
+    is HapticEvent.VERBAL_ENCOURAGEMENT -> when {
+        !event.vulgarMode -> if (neutralPlayers.isNotEmpty()) neutralPlayers.randomPoolEntry() else null
+        event.dominatrixMode && dominatrixPlayers.isNotEmpty() -> dominatrixPlayers.randomPoolEntry()
+        event.dominatrixMode -> null
+        event.vulgarTier == VulgarTier.MILD && mildPlayers.isNotEmpty() -> mildPlayers.randomPoolEntry()
+        event.vulgarTier == VulgarTier.STRONG && strongPlayers.isNotEmpty() -> strongPlayers.randomPoolEntry()
+        event.vulgarTier == VulgarTier.MIX -> {
+            val combined = mildPlayers + strongPlayers
+            if (combined.isNotEmpty()) combined.randomPoolEntry() else null
+        }
+        else -> if (neutralPlayers.isNotEmpty()) neutralPlayers.randomPoolEntry() else null
+    }
+    else -> eventPlayers[event]
+}
+
 /**
  * Manages sound playback for iOS using AVAudioPlayer.
  * Loads sounds from the app bundle and plays them for workout events.
  */
-private class IosSoundManager {
+internal class IosSoundManager {
     private val players = mutableMapOf<HapticEvent, AVAudioPlayer?>()
     private val badgeSoundPlayers = mutableListOf<AVAudioPlayer?>()
     private val prSoundPlayers = mutableListOf<AVAudioPlayer?>()
@@ -151,14 +304,19 @@ private class IosSoundManager {
 
     private fun loadAllSounds() {
         loadSounds()
-        loadBadgeSounds()
-        loadPRSounds()
-        loadRepCountSounds()
+        loadNamedSoundPool(IOS_BADGE_SOUND_FILES, badgeSoundPlayers, "badge celebration sounds", ::loadSound)
+        loadNamedSoundPool(IOS_PR_SOUND_FILES, prSoundPlayers, "PR celebration sounds", ::loadSound)
+        loadRepCountSoundPool(repCountSoundPlayers, ::loadSound)
         // Issue #611: verbal encouragement pools (PR #612 Sounds/ drop-in names).
-        loadEncouragementSounds("encouragement", 15, encouragementNeutralSoundPlayers, "encouragement neutral sounds")
-        loadEncouragementSounds("vulgar_mild", 12, encouragementMildSoundPlayers, "vulgar mild sounds")
-        loadEncouragementSounds("vulgar_strong", 12, encouragementStrongSoundPlayers, "vulgar strong sounds")
-        loadEncouragementSounds("dominatrix", 12, encouragementDominatrixSoundPlayers, "dominatrix sounds")
+        val targets = listOf(
+            encouragementNeutralSoundPlayers,
+            encouragementMildSoundPlayers,
+            encouragementStrongSoundPlayers,
+            encouragementDominatrixSoundPlayers,
+        )
+        IOS_ENCOURAGEMENT_POOL_SPECS.zip(targets).forEach { (spec, destination) ->
+            loadNumberedSoundPool(spec.prefix, spec.count, destination, spec.label, ::loadSound)
+        }
         IosAudioDiagnostics.record(AUDIO_DIAGNOSTIC_TAG, "players_loaded") {
             "${playerCountsSummary()} ${IosAudioDiagnostics.sessionDetails()}"
         }
@@ -348,127 +506,12 @@ private class IosSoundManager {
     }
 
     private fun loadSounds() {
-        // Map events to sound file names (without extension)
-        // Note: Using sealed class data objects as map keys (they have proper equals/hashCode)
-        // Issue #100: Sound files converted from .ogg → .caf via iosApp/convert_sounds.sh
-        val soundFiles: Map<HapticEvent, String> = mapOf(
-            HapticEvent.REP_COMPLETED to "rep_complete_strong", // Issue #490: distinct regular rep cue
-            HapticEvent.FINAL_REP to "boopbeepbeep", // Issue #100: Distinct final rep sound
-            HapticEvent.WARMUP_COMPLETE to "beepboop",
-            HapticEvent.WORKOUT_COMPLETE to "boopbeepbeep",
-            HapticEvent.WORKOUT_START to "chirpchirp",
-            HapticEvent.WORKOUT_END to "chirpchirp",
-            HapticEvent.REST_ENDING to "restover",
-            HapticEvent.DISCO_MODE_UNLOCKED to "discomode",
-            // Issue #611: Dominatrix easter-egg unlock SFX
-            HapticEvent.DOMINATRIX_MODE_UNLOCKED to "dominatrix_unlock",
-            // Issue #100: Warmup-to-working transition (ascending tone)
-            HapticEvent.WARMUP_TO_WORKING to "beepboop",
-            // Issue #1356: Just Lift/Echo auto-start readiness cue (distinct asset, not chirpchirp)
-            HapticEvent.AUTO_START_READY to "auto_start_ready",
-            // Issue #313: Velocity loss threshold alert (attention-getting)
-            HapticEvent.VELOCITY_THRESHOLD_REACHED to "boopbeepbeep",
-            // ERROR, BADGE_EARNED, PERSONAL_RECORD, REP_COUNT_ANNOUNCED, COUNTDOWN_TICK handled separately
-        )
-
-        soundFiles.forEach { (event, fileName) ->
+        IOS_EVENT_SOUND_FILES.forEach { (event, fileName) ->
             players[event] = loadSound(fileName)
         }
 
         // Issue #100: Load countdown tick sound (reuses beep)
         countdownTickPlayer = loadSound("beep")
-    }
-
-    private fun loadBadgeSounds() {
-        // Badge celebration sounds (excludes PR-specific sounds)
-        val badgeSoundFiles = listOf(
-            "absolute_domination",
-            "absolute_unit",
-            "another_milestone_crushed",
-            "beast_mode",
-            "insane_performance",
-            "maxed_out",
-            "new_peak_achieved",
-            "new_record_secured",
-            "no_ones_stopping_you_now",
-            "power",
-            "pr",
-            "pressure_create_greatness",
-            "record",
-            "shattered",
-            "strenght_unlocked",
-            "that_bar_never_stood_a_chance",
-            "that_was_a_demolition",
-            "that_was_god_mode",
-            "that_was_monster_level",
-            "that_was_next_tier_strenght",
-            "that_was_pure_savagery",
-            "the_grind_continues",
-            "the_grind_is_real",
-            "this_is_what_champions_are_made",
-            "unchained_power",
-            "unstoppable",
-            "victory",
-            "you_crushed_that",
-            "you_dominated_that_set",
-            "you_just_broke_your_limits",
-            "you_just_destroyed_that_weight",
-            "you_just_levelled_up",
-            "you_went_full_throttle",
-        )
-
-        loadNamedSounds(badgeSoundFiles, badgeSoundPlayers, "badge celebration sounds")
-    }
-
-    private fun loadPRSounds() {
-        // PR-specific sounds
-        val prSoundFiles = listOf(
-            "new_personal_record",
-            "new_personal_record_2",
-        )
-
-        loadNamedSounds(prSoundFiles, prSoundPlayers, "PR celebration sounds")
-    }
-
-    // Named celebration clips. Missing files are skipped, same as the numbered pools.
-    private fun loadNamedSounds(
-        fileNames: List<String>,
-        destination: MutableList<AVAudioPlayer?>,
-        label: String,
-    ) {
-        fileNames.forEach { fileName ->
-            loadSound(fileName)?.let { destination.add(it) }
-        }
-        log.d { "Loaded ${destination.size} $label" }
-    }
-
-    private fun loadRepCountSounds() {
-        // Load rep count sounds rep_01 through rep_25
-        // Files are named rep_01, rep_02, ..., rep_25
-        for (i in 1..25) {
-            val fileName = "rep_${i.toString().padStart(2, '0')}"
-            val player = loadSound(fileName)
-            repCountSoundPlayers.add(player)
-            if (player == null) {
-                log.w { "Failed to load rep count sound: $fileName" }
-            }
-        }
-        val loadedCount = repCountSoundPlayers.count { it != null }
-        log.d { "Loaded $loadedCount/25 rep count sounds" }
-    }
-
-    // Issue #611: numbered verbal-encouragement pool. Bare filenames match PR #612's
-    // `Sounds/` drop-in contract (no extension; loadSound() tries .caf/.m4a/.wav/.mp3).
-    private fun loadEncouragementSounds(
-        prefix: String,
-        count: Int,
-        destination: MutableList<AVAudioPlayer?>,
-        label: String,
-    ) {
-        for (i in 1..count) {
-            loadSound("${prefix}_${i.toString().padStart(2, '0')}")?.let { destination.add(it) }
-        }
-        log.d { "Loaded ${destination.size} $label" }
     }
 
     private fun loadSound(fileName: String): AVAudioPlayer? {
@@ -494,14 +537,6 @@ private class IosSoundManager {
         return null
     }
 
-    /**
-     * Uniform pick from a non-empty sound pool. Callers keep their own emptiness
-     * checks so an empty mild or strong pool still falls through to neutral, and
-     * an empty dominatrix pool stays silent.
-     */
-    private fun <T> List<T>.randomPoolEntry(): T =
-        this[kotlin.random.Random.nextInt(size)]
-
     fun playSound(event: HapticEvent) {
         // ERROR event has no sound
         if (event is HapticEvent.ERROR) {
@@ -517,7 +552,20 @@ private class IosSoundManager {
             // is not active a cue only arms recovery for the next foreground.
             val outcome = recoveryPolicy.playCue<AVAudioPlayer>(
                 appActive = { isAppActive() },
-                selectPlayer = { selectPlayer(event) },
+                selectPlayer = {
+                    selectIosSoundPlayer(
+                        event = event,
+                        eventPlayers = players,
+                        badgePlayers = badgeSoundPlayers,
+                        prPlayers = prSoundPlayers,
+                        repCountPlayers = repCountSoundPlayers,
+                        countdownTickPlayer = countdownTickPlayer,
+                        neutralPlayers = encouragementNeutralSoundPlayers,
+                        mildPlayers = encouragementMildSoundPlayers,
+                        strongPlayers = encouragementStrongSoundPlayers,
+                        dominatrixPlayers = encouragementDominatrixSoundPlayers,
+                    )
+                },
                 play = { player, isRetry ->
                     // Issue #522: Defensively re-prepare the chosen player. The
                     // lifecycle observers and the recovery policy own session
@@ -551,72 +599,6 @@ private class IosSoundManager {
         } catch (e: Exception) {
             IosAudioDiagnostics.record(AUDIO_DIAGNOSTIC_TAG, "player_exception", warning = true) { "cue=${event::class.simpleName}" }
             log.w { "Sound playback failed for $event: ${e.message}" }
-        }
-    }
-
-    private fun selectPlayer(event: HapticEvent): AVAudioPlayer? {
-        return when (event) {
-            is HapticEvent.BADGE_EARNED -> {
-                if (badgeSoundPlayers.isNotEmpty()) {
-                    badgeSoundPlayers.randomPoolEntry()
-                } else {
-                    null
-                }
-            }
-
-            is HapticEvent.PERSONAL_RECORD -> {
-                if (prSoundPlayers.isNotEmpty()) {
-                    prSoundPlayers.randomPoolEntry()
-                } else {
-                    null
-                }
-            }
-
-            is HapticEvent.REP_COUNT_ANNOUNCED -> {
-                // Play the numbered rep count sound (index is repNumber - 1)
-                val index = event.repNumber - 1
-                if (index in repCountSoundPlayers.indices) {
-                    repCountSoundPlayers[index]
-                } else {
-                    null
-                }
-            }
-
-            is HapticEvent.COUNTDOWN_TICK -> countdownTickPlayer
-
-            // Issue #611: Verbal encouragement pool routing. Mirrors Android cueForEvent.
-            is HapticEvent.VERBAL_ENCOURAGEMENT -> {
-                when {
-                    // When vulgar mode is off, always use neutral pool
-                    !event.vulgarMode -> if (encouragementNeutralSoundPlayers.isNotEmpty()) {
-                        encouragementNeutralSoundPlayers.randomPoolEntry()
-                    } else {
-                        null
-                    }
-                    event.dominatrixMode && encouragementDominatrixSoundPlayers.isNotEmpty() ->
-                        encouragementDominatrixSoundPlayers.randomPoolEntry()
-                    event.dominatrixMode -> null // dominatrix pool empty: silent no-op, don't fall through to vulgar
-                    event.vulgarTier == VulgarTier.MILD && encouragementMildSoundPlayers.isNotEmpty() ->
-                        encouragementMildSoundPlayers.randomPoolEntry()
-                    event.vulgarTier == VulgarTier.STRONG && encouragementStrongSoundPlayers.isNotEmpty() ->
-                        encouragementStrongSoundPlayers.randomPoolEntry()
-                    event.vulgarTier == VulgarTier.MIX -> {
-                        val combined = encouragementMildSoundPlayers + encouragementStrongSoundPlayers
-                        if (combined.isNotEmpty()) {
-                            combined.randomPoolEntry()
-                        } else {
-                            null
-                        }
-                    }
-                    else -> if (encouragementNeutralSoundPlayers.isNotEmpty()) {
-                        encouragementNeutralSoundPlayers.randomPoolEntry()
-                    } else {
-                        null
-                    }
-                }
-            }
-
-            else -> players[event]
         }
     }
 

@@ -7,12 +7,16 @@ import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.preferences.RecentJustLiftExerciseStore
 import com.devil.phoenixproject.data.preferences.InMemoryRecentJustLiftExerciseStore
 import com.devil.phoenixproject.data.repository.*
+import com.devil.phoenixproject.data.sync.SyncManager
+import com.devil.phoenixproject.data.sync.SyncState
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
+import com.devil.phoenixproject.di.SecureSettingsQualifier
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.domain.usecase.*
 import com.devil.phoenixproject.presentation.manager.*
 import com.devil.phoenixproject.testutil.*
 import com.devil.phoenixproject.util.DataBackupManager
+import com.russhwolf.settings.Settings
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.*
@@ -75,6 +79,45 @@ class TvCoreCompositionTest {
             assertEquals(1, fixture.workouts.allSessions().size)
             assertEquals(1, target.syncCallCount, "TV production factory must not null the engine's completion trigger")
             assertEquals(before, fixture.profiles.activeProfileContext.value, "TV must not persist manual-start preferences")
+        } finally {
+            main.viewModelScope.cancel()
+            fixture.close()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun offlineTvCompositionNeverResolvesSyncManagerOrSecureSettings() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        var secureSettingsResolved = false
+        var syncManagerResolved = false
+        val fixture = TvCoreFixture(backgroundScope, offlineSyncTriggerManager())
+        fixture.koin.koin.loadModules(
+            listOf(
+                module {
+                    single<Settings>(SecureSettingsQualifier) {
+                        secureSettingsResolved = true
+                        error("SecureSettingsQualifier must not be resolved when cloud sync is disabled")
+                    }
+                    single<SyncManager> {
+                        syncManagerResolved = true
+                        error("SyncManager must not be resolved when cloud sync is disabled")
+                    }
+                },
+            ),
+        )
+        val offlineTrigger = offlineSyncTriggerManager()
+        val main = createTvMainViewModel(fixture.koin.koin, backgroundScope, syncTrigger = offlineTrigger)
+        try {
+            offlineTrigger.onAppForeground()
+            offlineTrigger.onWorkoutCompleted()
+            runCurrent()
+            assertFalse(secureSettingsResolved, "Offline TV must never resolve Keychain/secure settings")
+            assertFalse(syncManagerResolved, "Offline TV must never instantiate SyncManager")
+            assertFalse(offlineTrigger.hasPersistentError.value)
+            assertEquals(SyncState.NotAuthenticated, CloudUnavailableSyncTarget.syncState.value)
+            assertFalse(CloudUnavailableSyncTarget.isAuthenticated.value)
+            assertTrue(CloudUnavailableSyncTarget.sync().isFailure)
         } finally {
             main.viewModelScope.cancel()
             fixture.close()

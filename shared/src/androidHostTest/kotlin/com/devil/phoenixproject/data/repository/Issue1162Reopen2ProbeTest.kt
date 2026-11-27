@@ -269,10 +269,10 @@ class Issue1162Reopen2ProbeTest {
     fun `file backed database reopen keeps maintenance idempotent`() = runBlocking {
         val file = File.createTempFile("issue1162-reopen2", ".db")
         try {
-            val driver = JdbcSqliteDriver("jdbc:sqlite:${file.absolutePath}")
-            // File-backed connections pool; create the schema directly instead of
-            // createTestSchema (which asserts a per-connection FK pragma read-back).
+            val fkProperties = java.util.Properties().apply { setProperty("foreign_keys", "true") }
+            val driver = JdbcSqliteDriver("jdbc:sqlite:${file.absolutePath}", fkProperties)
             PhoenixDatabase.Schema.create(driver)
+            driver.execute(null, "PRAGMA foreign_keys = ON", 0)
             val database = PhoenixDatabase(driver)
             database.seedExercise()
             seedRoutine(database, lowerUuid)
@@ -283,7 +283,8 @@ class Issue1162Reopen2ProbeTest {
 
             // Real close/reopen of a file-backed database: the second maintenance
             // pass must not touch anything again.
-            val reopenDriver = JdbcSqliteDriver("jdbc:sqlite:${file.absolutePath}")
+            val reopenDriver = JdbcSqliteDriver("jdbc:sqlite:${file.absolutePath}", fkProperties)
+            reopenDriver.execute(null, "PRAGMA foreign_keys = ON", 0)
             val reopened = PhoenixDatabase(reopenDriver)
             val result = newWorkoutRepository(reopened).runRoutineIdentityMaintenance("active-profile")
             assertEquals(0, result.aliasesRemoved, "reopen maintenance must be idempotent")

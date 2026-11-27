@@ -100,8 +100,12 @@ import com.devil.phoenixproject.util.DataBackupManager
 import kotlin.coroutines.resume
 import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -550,6 +554,7 @@ class MainViewModel(
     private val profileRecoveryActivityTracker: ProfileRecoveryActivityTracker? = null,
     private val recentJustLiftExerciseStore: RecentJustLiftExerciseStore? = null,
     val hrmBleManager: HrmBleManager? = null,
+    private val biomechanicsDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : ViewModel() {
 
     // Shared haptic events flow - created here, passed to both GamificationManager and WorkoutSessionManager
@@ -740,6 +745,7 @@ class MainViewModel(
         profileRecoveryActivityTracker = profileRecoveryActivityTracker,
         recentJustLiftExerciseStore = recentJustLiftExerciseStore,
         hrmBleManager = hrmBleManager,
+        biomechanicsDispatcher = biomechanicsDispatcher,
     )
 
     // === Phase 2a: BleConnectionManager (extracted from this class) ===
@@ -1060,8 +1066,6 @@ class MainViewModel(
 
     fun stopAndReturnToSetReady() = workoutSessionManager.stopAndReturnToSetReady()
     fun stopAndSkipCurrentExercise() = workoutSessionManager.stopAndSkipCurrentExercise()
-    fun pauseWorkout() = workoutSessionManager.pauseWorkout()
-    fun resumeWorkout() = workoutSessionManager.resumeWorkout()
     fun skipCountdown() = workoutSessionManager.skipCountdown()
     fun resetForNewWorkout() = workoutSessionManager.resetForNewWorkout()
     fun proceedFromSummary() = workoutSessionManager.proceedFromSummary()
@@ -1092,7 +1096,6 @@ class MainViewModel(
     // Phase 35C: Variable warm-up set state
     val currentWarmupSetIndex: StateFlow<Int> get() = workoutSessionManager.coordinator.currentWarmupSetIndex
     val weightAdjustmentRecommendation get() = workoutSessionManager.coordinator.weightAdjustmentRecommendation
-    fun startNextSet() = workoutSessionManager.startNextSet()
     fun logRpeForCurrentSet(rpe: Int) = workoutSessionManager.logRpeForCurrentSet(rpe)
 
     // ===== Routine Management Delegation =====
@@ -1456,44 +1459,49 @@ class MainViewModel(
 
         // Issue: BLE resource leak - Disconnect BLE when ViewModel is cleared
         // to prevent battery drain and orphaned connections.
-        // Use NonCancellable context since viewModelScope may be cancelled during onCleared.
-        // Without a lease nothing here suspends before cleanup(), so on Main.immediate the
-        // no-lease path still runs cleanup() synchronously inside onCleared, as it always did.
-        // With a lease this body can outlive the ViewModel by up to the GATT timeout.
-        viewModelScope.launch(kotlinx.coroutines.NonCancellable) {
-            if (holdsMachineLease) {
-                // Raw BLE RESET only: the engine's teardown path would resolve the #782 arm
-                // row, and this unconfirmed exit must keep it so the relaunch warning fires.
-                try {
-                    val result = withTimeoutOrNull(BleConstants.GATT_OPERATION_TIMEOUT_MS) {
-                        bleRepository.stopWorkout()
+        // super.onCleared() already cancelled viewModelScope, so launch cleanup on a dedicated
+        // teardown scope with Dispatchers.Main.immediate. Without a lease nothing suspends before
+        // cleanup(), so the no-lease path still runs synchronously inside onCleared; with a lease
+        // this body can outlive the ViewModel by up to the GATT timeout and then cancels itself.
+        val teardownScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        teardownScope.launch {
+            try {
+                if (holdsMachineLease) {
+                    // Raw BLE RESET only: the engine's teardown path would resolve the #782 arm
+                    // row, and this unconfirmed exit must keep it so the relaunch warning fires.
+                    try {
+                        val result = withTimeoutOrNull(BleConstants.GATT_OPERATION_TIMEOUT_MS) {
+                            bleRepository.stopWorkout()
+                        }
+                        if (result?.isSuccess == true) {
+                            Logger.i { "RESET before ViewModel teardown confirmed" }
+                        } else {
+                            // The machine may still be resisting: this is the line a field log is read for.
+                            Logger.w { "RESET before ViewModel teardown NOT confirmed: ${result ?: "timed out"}" }
+                        }
+                    } catch (e: Exception) {
+                        // Cancellation is absorbed on purpose: rethrowing would skip cleanup() and
+                        // leave the radio connected.
+                        Logger.e(e) { "RESET before ViewModel teardown failed, machine may still be loaded" }
                     }
-                    if (result?.isSuccess == true) {
-                        Logger.i { "RESET before ViewModel teardown confirmed" }
-                    } else {
-                        // The machine may still be resisting: this is the line a field log is read for.
-                        Logger.w { "RESET before ViewModel teardown NOT confirmed: ${result ?: "timed out"}" }
-                    }
-                } catch (e: Exception) {
-                    // Cancellation is absorbed on purpose (no rethrowIfCancellation here): the body is
-                    // NonCancellable, and rethrowing would skip cleanup() and leave the radio connected.
-                    Logger.e(e) { "RESET before ViewModel teardown failed, machine may still be loaded" }
                 }
+                workoutSessionManager.cleanup()
+                try {
+                    bleRepository.disconnect()
+                    Logger.i { "BLE disconnected during ViewModel cleanup" }
+                } catch (e: Exception) {
+                    Logger.e { "Failed to disconnect BLE during cleanup: ${e.message}" }
+                }
+                try {
+                    hrmBleManager?.disconnect()
+                    Logger.i { "Polar BLE disconnected during ViewModel cleanup" }
+                } catch (e: Exception) {
+                    Logger.e { "Failed to disconnect Polar BLE during cleanup: ${e.message}" }
+                }
+                Logger.i { "MainViewModel cleared, all jobs cancelled" }
+            } finally {
+                teardownScope.cancel()
             }
-            workoutSessionManager.cleanup()
-            try {
-                bleRepository.disconnect()
-                Logger.i { "BLE disconnected during ViewModel cleanup" }
-            } catch (e: Exception) {
-                Logger.e { "Failed to disconnect BLE during cleanup: ${e.message}" }
-            }
-            try {
-                hrmBleManager?.disconnect()
-                Logger.i { "Polar BLE disconnected during ViewModel cleanup" }
-            } catch (e: Exception) {
-                Logger.e { "Failed to disconnect Polar BLE during cleanup: ${e.message}" }
-            }
-            Logger.i { "MainViewModel cleared, all jobs cancelled" }
         }
     }
 }

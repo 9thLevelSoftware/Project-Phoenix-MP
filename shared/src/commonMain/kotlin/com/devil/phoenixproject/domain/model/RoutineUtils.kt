@@ -19,9 +19,19 @@ fun normalizeRoutine(routine: Routine, preserveIntraSupersetOrder: Boolean = fal
     // When exercises are added to a superset they get appended to the end
     // of the flat list. getNextStep() Phase C assumes superset members are
     // contiguous, so we must group them before reindexing.
+    val validSupersetIds = routine.supersets.mapTo(mutableSetOf()) { it.id }
     val reorderedExercises = routine.getItems().flatMap { item ->
         when (item) {
-            is RoutineItem.Single -> listOf(item.exercise)
+            is RoutineItem.Single -> {
+                val ex = item.exercise
+                listOf(
+                    if (ex.supersetId != null && ex.supersetId !in validSupersetIds) {
+                        ex.copy(supersetId = null, orderInSuperset = 0)
+                    } else {
+                        ex
+                    },
+                )
+            }
 
             is RoutineItem.SupersetItem ->
                 item.superset.exercises.sortedBy { it.orderInSuperset }

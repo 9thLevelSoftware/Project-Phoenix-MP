@@ -15,6 +15,7 @@ import com.devil.phoenixproject.data.integration.HealthBodyWeightSyncManager
 import com.devil.phoenixproject.data.integration.HealthBodyWeightSyncResult
 import com.devil.phoenixproject.data.integration.HealthIntegration
 import com.devil.phoenixproject.data.integration.IntegrationManager
+import com.devil.phoenixproject.data.repository.ActiveProfileContext
 import com.devil.phoenixproject.data.repository.SubscriptionStatus
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
@@ -33,6 +34,8 @@ import com.devil.phoenixproject.domain.model.IntegrationSyncResult
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.isIosPlatform
+import com.devil.phoenixproject.util.UnitConverter
+import com.devil.phoenixproject.util.rethrowIfCancellation
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -46,6 +49,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 private val log = Logger.withTag("IntegrationsViewModel")
@@ -134,7 +138,7 @@ class IntegrationsViewModel(
             activeProfileId.flatMapLatest { profileId ->
                 externalActivityRepo.getAll(profileId = profileId)
             }.collect { activities ->
-                _uiState.value = _uiState.value.copy(externalActivities = activities)
+                _uiState.update { it.copy(externalActivities = activities) }
             }
         }
 
@@ -144,7 +148,7 @@ class IntegrationsViewModel(
                 externalActivityRepo.getAllIntegrationStatuses(profileId = profileId)
             }.collect { statuses ->
                 val statusMap = statuses.associateBy { it.provider }
-                _uiState.value = _uiState.value.copy(integrationStatuses = statusMap)
+                _uiState.update { it.copy(integrationStatuses = statusMap) }
             }
         }
 
@@ -152,7 +156,7 @@ class IntegrationsViewModel(
             activeProfileId.flatMapLatest { profileId ->
                 externalRoutineRepo.observeRoutines(profileId = profileId)
             }.collect { routines ->
-                _uiState.value = _uiState.value.copy(externalRoutines = routines)
+                _uiState.update { it.copy(externalRoutines = routines) }
             }
         }
 
@@ -160,7 +164,7 @@ class IntegrationsViewModel(
             activeProfileId.flatMapLatest { profileId ->
                 externalRoutineRepo.observeFolders(profileId = profileId)
             }.collect { folders ->
-                _uiState.value = _uiState.value.copy(externalRoutineFolders = folders)
+                _uiState.update { it.copy(externalRoutineFolders = folders) }
             }
         }
 
@@ -168,7 +172,7 @@ class IntegrationsViewModel(
             activeProfileId.flatMapLatest { profileId ->
                 externalProgramRepo.observePrograms(profileId = profileId)
             }.collect { programs ->
-                _uiState.value = _uiState.value.copy(externalPrograms = programs)
+                _uiState.update { it.copy(externalPrograms = programs) }
             }
         }
 
@@ -176,7 +180,7 @@ class IntegrationsViewModel(
             activeProfileId.flatMapLatest { profileId ->
                 externalProgramRepo.observeCurrentProgram(profileId = profileId, provider = IntegrationProvider.LIFTOSAUR)
             }.collect { program ->
-                _uiState.value = _uiState.value.copy(activeProgram = program)
+                _uiState.update { it.copy(activeProgram = program) }
             }
         }
 
@@ -184,7 +188,7 @@ class IntegrationsViewModel(
             activeProfileId.flatMapLatest { profileId ->
                 externalProgramRepo.observeProgramStats(profileId = profileId)
             }.collect { stats ->
-                _uiState.value = _uiState.value.copy(externalProgramStatsByProgramId = stats)
+                _uiState.update { it.copy(externalProgramStatsByProgramId = stats) }
             }
         }
 
@@ -192,15 +196,18 @@ class IntegrationsViewModel(
             activeProfileId.flatMapLatest { profileId ->
                 externalMeasurementRepo.observeMeasurements(profileId = profileId)
             }.collect { measurements ->
-                _uiState.value = _uiState.value.copy(
-                    externalMeasurements = measurements,
-                    latestHealthBodyWeight = measurements
-                        .filter { measurement ->
-                            measurement.measurementType == HealthBodyWeightSyncManager.MEASUREMENT_TYPE_WEIGHT &&
-                                measurement.provider in setOf(IntegrationProvider.APPLE_HEALTH, IntegrationProvider.GOOGLE_HEALTH)
-                        }
-                        .maxByOrNull { it.measuredAt },
-                )
+                val latestWeight = measurements
+                    .filter { measurement ->
+                        measurement.measurementType == HealthBodyWeightSyncManager.MEASUREMENT_TYPE_WEIGHT &&
+                            measurement.provider in setOf(IntegrationProvider.APPLE_HEALTH, IntegrationProvider.GOOGLE_HEALTH)
+                    }
+                    .maxByOrNull { it.measuredAt }
+                _uiState.update {
+                    it.copy(
+                        externalMeasurements = measurements,
+                        latestHealthBodyWeight = latestWeight,
+                    )
+                }
             }
         }
 
@@ -208,7 +215,7 @@ class IntegrationsViewModel(
             activeProfileId.flatMapLatest { profileId ->
                 externalTemplateRepo.observeTemplateCounts(profileId = profileId)
             }.collect { counts ->
-                _uiState.value = _uiState.value.copy(externalExerciseTemplateCountByProvider = counts)
+                _uiState.update { it.copy(externalExerciseTemplateCountByProvider = counts) }
             }
         }
     }
@@ -221,27 +228,30 @@ class IntegrationsViewModel(
      */
     fun exportCsv(weightUnit: WeightUnit) {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isExporting = true, errorMessage = null)
+            _uiState.update { it.copy(isExporting = true, errorMessage = null, successMessage = null) }
             try {
                 val sessions = workoutRepository.getAllSessions(activeProfileId.value).first()
                 val csv = com.devil.phoenixproject.data.integration.CsvExporter.generateStrongCsv(sessions, weightUnit)
-                _uiState.value = _uiState.value.copy(
-                    csvContent = csv,
-                    successMessage = "Exported ${sessions.size} session(s) to CSV",
-                )
+                _uiState.update {
+                    it.copy(
+                        csvContent = csv,
+                        successMessage = "Exported ${sessions.size} session(s) to CSV",
+                    )
+                }
                 log.d { "CSV export complete: ${sessions.size} sessions" }
             } catch (e: Exception) {
+                e.rethrowIfCancellation()
                 log.e(e) { "CSV export failed" }
-                _uiState.value = _uiState.value.copy(errorMessage = "Export failed: ${e.message}")
+                _uiState.update { it.copy(errorMessage = "Export failed: ${e.message}") }
             } finally {
-                _uiState.value = _uiState.value.copy(isExporting = false)
+                _uiState.update { it.copy(isExporting = false) }
             }
         }
     }
 
     /** Clear the generated CSV content from state (e.g. after the share sheet is dismissed). */
     fun clearCsvContent() {
-        _uiState.value = _uiState.value.copy(csvContent = null)
+        _uiState.update { it.copy(csvContent = null) }
     }
 
     // ─── CSV Import ───────────────────────────────────────────────────────────
@@ -254,18 +264,19 @@ class IntegrationsViewModel(
         content: String,
     ) {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isImporting = true, errorMessage = null)
+            _uiState.update { it.copy(isImporting = true, errorMessage = null, successMessage = null) }
             try {
                 val preview = CsvImporter.parse(content, activeProfileId.value, isPaidUser.value)
-                _uiState.value = _uiState.value.copy(importPreview = preview)
+                _uiState.update { it.copy(importPreview = preview) }
                 if (preview.errors.isNotEmpty()) {
                     log.w { "CSV preview has ${preview.errors.size} error(s): ${preview.errors.first()}" }
                 }
             } catch (e: Exception) {
+                e.rethrowIfCancellation()
                 log.e(e) { "CSV preview failed" }
-                _uiState.value = _uiState.value.copy(errorMessage = "Import parse failed: ${e.message}")
+                _uiState.update { it.copy(errorMessage = "Import parse failed: ${e.message}") }
             } finally {
-                _uiState.value = _uiState.value.copy(isImporting = false)
+                _uiState.update { it.copy(isImporting = false) }
             }
         }
     }
@@ -277,26 +288,29 @@ class IntegrationsViewModel(
     fun confirmImport() {
         val preview = _uiState.value.importPreview ?: return
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isImporting = true, errorMessage = null)
+            _uiState.update { it.copy(isImporting = true, errorMessage = null, successMessage = null) }
             try {
                 externalActivityRepo.upsertActivities(preview.activities)
-                _uiState.value = _uiState.value.copy(
-                    importPreview = null,
-                    successMessage = "Imported ${preview.activities.size} workout(s)",
-                )
+                _uiState.update {
+                    it.copy(
+                        importPreview = null,
+                        successMessage = "Imported ${preview.activities.size} workout(s)",
+                    )
+                }
                 log.i { "CSV import committed: ${preview.activities.size} activities" }
             } catch (e: Exception) {
+                e.rethrowIfCancellation()
                 log.e(e) { "CSV import commit failed" }
-                _uiState.value = _uiState.value.copy(errorMessage = "Import failed: ${e.message}")
+                _uiState.update { it.copy(errorMessage = "Import failed: ${e.message}") }
             } finally {
-                _uiState.value = _uiState.value.copy(isImporting = false)
+                _uiState.update { it.copy(isImporting = false) }
             }
         }
     }
 
     /** Discard the current import preview without writing to the database. */
     fun cancelImport() {
-        _uiState.value = _uiState.value.copy(importPreview = null)
+        _uiState.update { it.copy(importPreview = null) }
     }
 
     // ─── Provider Lifecycle ───────────────────────────────────────────────────
@@ -323,6 +337,7 @@ class IntegrationsViewModel(
                         log.w { "Connect to ${provider.key} failed: ${error.message}" }
                     }
             } catch (e: Exception) {
+                e.rethrowIfCancellation()
                 log.e(e) { "Unexpected error connecting ${provider.key}" }
                 emitSnackbar("Connect failed: ${e.message}")
             } finally {
@@ -350,6 +365,7 @@ class IntegrationsViewModel(
                         log.w { "Sync ${provider.key} failed: ${error.message}" }
                     }
             } catch (e: Exception) {
+                e.rethrowIfCancellation()
                 log.e(e) { "Unexpected error syncing ${provider.key}" }
                 emitSnackbar("Sync failed: ${e.message}")
             } finally {
@@ -375,6 +391,7 @@ class IntegrationsViewModel(
                         log.w { "Disconnect ${provider.key} failed: ${error.message}" }
                     }
             } catch (e: Exception) {
+                e.rethrowIfCancellation()
                 log.e(e) { "Unexpected error disconnecting ${provider.key}" }
                 emitSnackbar("Disconnect failed: ${e.message}")
             } finally {
@@ -400,7 +417,7 @@ class IntegrationsViewModel(
         viewModelScope.launch {
             val profileId = activeProfileId.value
             val provider = platformHealthProvider()
-            _uiState.value = _uiState.value.copy(errorMessage = null)
+            _uiState.update { it.copy(errorMessage = null, successMessage = null) }
             try {
                 if (!enable) {
                     externalActivityRepo.updateIntegrationStatus(
@@ -408,18 +425,18 @@ class IntegrationsViewModel(
                         status = com.devil.phoenixproject.domain.model.ConnectionStatus.DISCONNECTED,
                         profileId = profileId,
                     )
-                    _uiState.value = _uiState.value.copy(
-                        successMessage = "Health integration disabled",
-                    )
+                    _uiState.update {
+                        it.copy(successMessage = "Health integration disabled")
+                    }
                     log.i { "Health integration disabled for ${provider.key}" }
                     return@launch
                 }
 
                 val available = healthIntegration.isAvailable()
                 if (!available) {
-                    _uiState.value = _uiState.value.copy(
-                        errorMessage = "Health app is not available on this device",
-                    )
+                    _uiState.update {
+                        it.copy(errorMessage = "Health app is not available on this device")
+                    }
                     return@launch
                 }
 
@@ -439,7 +456,7 @@ class IntegrationsViewModel(
                 throw e
             } catch (e: Exception) {
                 log.e(e) { "Unexpected error toggling health integration" }
-                _uiState.value = _uiState.value.copy(errorMessage = "Health toggle failed: ${e.message}")
+                _uiState.update { it.copy(errorMessage = "Health toggle failed: ${e.message}") }
             }
         }
     }
@@ -470,9 +487,12 @@ class IntegrationsViewModel(
                     !hasBodyWeightReadPermission -> "Body weight read permission is still missing"
                     else -> "Health permissions are still missing"
                 }
-                _uiState.value = _uiState.value.copy(
-                    errorMessage = "$missingMessage. Enable Project Phoenix in Health Connect settings, then retry.",
-                )
+                _uiState.update {
+                    it.copy(
+                        errorMessage = "$missingMessage. Enable Project Phoenix in Health Connect settings, then retry.",
+                        successMessage = null,
+                    )
+                }
             }
         }
     }
@@ -494,9 +514,11 @@ class IntegrationsViewModel(
                             profileId = profileId,
                             lastSyncAt = currentTimeMillis(),
                         )
-                        _uiState.value = _uiState.value.copy(
-                            successMessage = "Synced ${result.writtenWorkouts} previous health workout(s)",
-                        )
+                        _uiState.update {
+                            it.copy(
+                                successMessage = "Synced ${result.writtenWorkouts} previous health workout(s)",
+                            )
+                        }
                         log.i {
                             "Health backfill complete for ${provider.key}: " +
                                 "eligible=${result.eligibleWorkouts}, written=${result.writtenWorkouts}, skipped=${result.skippedWorkouts}"
@@ -509,12 +531,13 @@ class IntegrationsViewModel(
                             profileId = profileId,
                             errorMessage = error.message,
                         )
-                        _uiState.value = _uiState.value.copy(
-                            errorMessage = "Health sync failed: ${error.message}",
-                        )
+                        _uiState.update {
+                            it.copy(errorMessage = "Health sync failed: ${error.message}")
+                        }
                         log.w(error) { "Health backfill failed for ${provider.key}" }
                     }
             } catch (e: Exception) {
+                e.rethrowIfCancellation()
                 log.e(e) { "Unexpected error syncing previous health workouts" }
                 externalActivityRepo.updateIntegrationStatus(
                     provider = provider,
@@ -522,7 +545,7 @@ class IntegrationsViewModel(
                     profileId = profileId,
                     errorMessage = e.message,
                 )
-                _uiState.value = _uiState.value.copy(errorMessage = "Health sync failed: ${e.message}")
+                _uiState.update { it.copy(errorMessage = "Health sync failed: ${e.message}") }
             } finally {
                 setOperationLoading(provider, "health_backfill", false)
             }
@@ -533,30 +556,32 @@ class IntegrationsViewModel(
 
     /** Clear both error and success messages. */
     fun clearMessages() {
-        _uiState.value = _uiState.value.copy(errorMessage = null, successMessage = null)
+        _uiState.update { it.copy(errorMessage = null, successMessage = null) }
     }
 
     private suspend fun emitSnackbar(message: String) {
         _uiEvents.emit(IntegrationUiEvent.Snackbar(message))
-        _uiState.value = _uiState.value.copy(errorMessage = null, successMessage = null)
     }
 
     private fun setOperationLoading(provider: IntegrationProvider, operation: String, loading: Boolean) {
         val key = "${provider.key}:$operation"
-        val current = _uiState.value.operationLoading
-        val next = if (loading) current + key else current - key
-        _uiState.value = _uiState.value.copy(
-            operationLoading = next,
-            errorMessage = null,
-        )
+        _uiState.update { state ->
+            val next = if (loading) state.operationLoading + key else state.operationLoading - key
+            if (loading) {
+                state.copy(operationLoading = next, errorMessage = null, successMessage = null)
+            } else {
+                state.copy(operationLoading = next)
+            }
+        }
     }
 
     private fun applySyncResult(result: IntegrationSyncResult) {
-        val currentEntitlements = _uiState.value.entitlementStateByProvider.toMutableMap()
-        result.entitlementState?.let { currentEntitlements[result.provider] = it }
-        _uiState.value = _uiState.value.copy(
-            entitlementStateByProvider = currentEntitlements,
-        )
+        val entitlement = result.entitlementState ?: return
+        _uiState.update { state ->
+            state.copy(
+                entitlementStateByProvider = state.entitlementStateByProvider + (result.provider to entitlement),
+            )
+        }
     }
 
     private fun IntegrationSyncProgress.summaryLabel(): String {
@@ -598,9 +623,12 @@ class IntegrationsViewModel(
                 profileId = profileId,
                 errorMessage = missingMessage,
             )
-            _uiState.value = _uiState.value.copy(
-                errorMessage = "Health permissions were not granted. $missingMessage. Enable Project Phoenix in Health Connect settings, then return and retry.",
-            )
+            _uiState.update {
+                it.copy(
+                    errorMessage = "Health permissions were not granted. $missingMessage. Enable Project Phoenix in Health Connect settings, then return and retry.",
+                    successMessage = null,
+                )
+            }
             if (!isIosPlatform) {
                 emitSnackbar("Opening Health Connect settings so you can re-enable Project Phoenix")
                 _uiEvents.emit(IntegrationUiEvent.OpenHealthPermissionSettings)
@@ -622,16 +650,26 @@ class IntegrationsViewModel(
             profileId = profileId,
         )
         val bodyWeightSyncMessage = syncHealthBodyWeightAfterConnect()
-        _uiState.value = _uiState.value.copy(
-            successMessage = bodyWeightSyncMessage,
-        )
+        _uiState.update {
+            it.copy(
+                errorMessage = null,
+                successMessage = bodyWeightSyncMessage,
+            )
+        }
         log.i { "Health integration enabled for ${provider.key}" }
     }
 
     private suspend fun syncHealthBodyWeightAfterConnect(): String {
         return when (val result = healthBodyWeightSyncManager.syncLatestFromConnectedPlatform()) {
             is HealthBodyWeightSyncResult.Synced -> {
-                "Health integration enabled; body weight updated to ${result.sample.weightKg} kg"
+                val weightUnit = (userProfileRepository.activeProfileContext.value as? ActiveProfileContext.Ready)
+                    ?.preferences?.core?.value?.weightUnit
+                    ?: WeightUnit.KG
+                val formattedWeight = UnitConverter.formatWeight(
+                    kg = result.sample.weightKg,
+                    useLb = weightUnit == WeightUnit.LB,
+                )
+                "Health integration enabled; body weight updated to $formattedWeight"
             }
 
             HealthBodyWeightSyncResult.NoEligibleSample -> {

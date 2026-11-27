@@ -1,6 +1,6 @@
 package com.devil.phoenixproject.presentation.screen
 
-import java.io.File
+import com.devil.phoenixproject.testutil.readProjectFile
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -12,16 +12,10 @@ import kotlin.test.assertTrue
  * let a switch split one workout across two profiles.
  */
 class ProfileSwitchSessionGuardSourceTest {
-    private val root: File by lazy {
-        var dir = File(System.getProperty("user.dir") ?: ".")
-        while (!File(dir, "shared/src/phoneMain").exists()) {
-            dir = dir.parentFile ?: break
-        }
-        dir
+    private fun read(path: String): String {
+        val relative = "shared/src/phoneMain/kotlin/com/devil/phoenixproject/presentation/$path"
+        return requireNotNull(readProjectFile(relative)) { "Missing $relative" }
     }
-
-    private fun read(path: String) =
-        File(root, "shared/src/phoneMain/kotlin/com/devil/phoenixproject/presentation/$path").readText()
 
     private val source: String by lazy { read("screen/EnhancedMainScreen.kt") }
 

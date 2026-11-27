@@ -58,6 +58,17 @@ class ResolveCurrentOneRepMaxUseCaseTest {
     }
 
     @Test
+    fun `legacy assessments retain combined total basis across single dual and unknown cables`() = runTest {
+        seedAssessment(totalKg = 40f, exerciseId = "single-curl")
+        seedAssessment(totalKg = 80f, exerciseId = "bench")
+        seedAssessment(totalKg = 40f, exerciseId = "either-press")
+
+        assertEquals(20f, resolver("single-curl", "athlete-a")?.perCableKg)
+        assertEquals(40f, resolver("bench", "athlete-a")?.perCableKg)
+        assertEquals(20f, resolver("either-press", "athlete-a")?.perCableKg)
+    }
+
+    @Test
     fun `invalid assessment override falls through to its valid estimate`() = runTest {
         seedAssessment(totalKg = 120f, overrideKg = Float.NaN)
 

@@ -118,7 +118,8 @@ class FakeWorkoutRepository : WorkoutRepository {
 
     // ========== WorkoutRepository interface implementation ==========
 
-    override fun getAllSessions(profileId: String): Flow<List<WorkoutSession>> = _sessionsFlow
+    override fun getAllSessions(profileId: String): Flow<List<WorkoutSession>> =
+        _sessionsFlow.map { list -> list.filter { it.profileId == profileId } }
 
     // Issue #591: filter zero-rep / soft-deleted rows from Analytics view.
     // The Fake mirrors the SQL eligibility guard
@@ -177,7 +178,8 @@ class FakeWorkoutRepository : WorkoutRepository {
             ?.exerciseId
     }
 
-    override suspend fun getSessionCountForExercise(exerciseId: String, profileId: String): Long = sessions.values.count { it.exerciseId == exerciseId }.toLong()
+    override suspend fun getSessionCountForExercise(exerciseId: String, profileId: String): Long =
+        sessions.values.count { it.profileId == profileId && it.exerciseId == exerciseId }.toLong()
 
     override suspend fun saveSession(session: WorkoutSession) {
         saveSessionAttempts += session
@@ -291,12 +293,11 @@ class FakeWorkoutRepository : WorkoutRepository {
         updateSessionsFlow()
     }
 
-    override fun getRecentSessions(profileId: String, limit: Int): Flow<List<WorkoutSession>> = _sessionsFlow.map { it.take(limit) }
+    override fun getRecentSessions(profileId: String, limit: Int): Flow<List<WorkoutSession>> =
+        _sessionsFlow.map { list -> list.filter { it.profileId == profileId }.take(limit) }
 
-    // Mirrors the engine's previous in-memory lookup over getAllSessions (this fake's
-    // getAllSessions is not profile-filtered either).
     override suspend fun getLastWeightForExercise(profileId: String, exerciseId: String): Float? = _sessionsFlow.value
-        .filter { it.exerciseId == exerciseId }
+        .filter { it.profileId == profileId && it.exerciseId == exerciseId }
         .maxByOrNull { it.timestamp }
         ?.weightPerCableKg
 
@@ -317,7 +318,8 @@ class FakeWorkoutRepository : WorkoutRepository {
         .filter { it.profileId == profileId && (it.workingReps > 0 || it.totalReps > 0) }
         .sortedBy { it.timestamp }
 
-    override fun getAllRoutines(profileId: String): Flow<List<Routine>> = _routinesFlow
+    override fun getAllRoutines(profileId: String): Flow<List<Routine>> =
+        _routinesFlow.map { list -> list.filter { it.profileId == profileId } }
 
     override suspend fun saveRoutine(routine: Routine) {
         routines[routine.id] = routine
@@ -365,9 +367,11 @@ class FakeWorkoutRepository : WorkoutRepository {
 
     override suspend fun getAverageSetDurationMs(exerciseId: String, profileId: String): Long? = null
 
-    override suspend fun getRecentSessionsSync(profileId: String, limit: Int): List<WorkoutSession> = sessions.values.sortedByDescending {
-        it.timestamp
-    }.take(limit)
+    override suspend fun getRecentSessionsSync(profileId: String, limit: Int): List<WorkoutSession> =
+        sessions.values
+            .filter { it.profileId == profileId }
+            .sortedByDescending { it.timestamp }
+            .take(limit)
 
     override suspend fun getVelocityPointsForExercise(
         exerciseId: String,

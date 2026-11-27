@@ -99,30 +99,8 @@ import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import com.devil.phoenixproject.util.CommandLimits
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
+import projectphoenix.shared.generated.resources.*
 import projectphoenix.shared.generated.resources.Res
-import projectphoenix.shared.generated.resources.action_skip
-import projectphoenix.shared.generated.resources.action_tag
-import projectphoenix.shared.generated.resources.add_exercise
-import projectphoenix.shared.generated.resources.add_to_workout
-import projectphoenix.shared.generated.resources.bodyweight_effective_load
-import projectphoenix.shared.generated.resources.bodyweight_effective_load_includes
-import projectphoenix.shared.generated.resources.bodyweight_effective_load_more
-import projectphoenix.shared.generated.resources.bodyweight_no_weight_volume
-import projectphoenix.shared.generated.resources.bodyweight_reps_completed
-import projectphoenix.shared.generated.resources.bodyweight_reps_title
-import projectphoenix.shared.generated.resources.bodyweight_set_progress
-import projectphoenix.shared.generated.resources.bodyweight_variant
-import projectphoenix.shared.generated.resources.bodyweight_variant_percent
-import projectphoenix.shared.generated.resources.bodyweight_volume
-import projectphoenix.shared.generated.resources.cd_connection_lost
-import projectphoenix.shared.generated.resources.cd_start_new_workout
-import projectphoenix.shared.generated.resources.cd_workout_completed
-import projectphoenix.shared.generated.resources.cd_workout_error
-import projectphoenix.shared.generated.resources.reconnect
-import projectphoenix.shared.generated.resources.save_set
-import projectphoenix.shared.generated.resources.tag_lift_message
-import projectphoenix.shared.generated.resources.tag_lift_title
-import projectphoenix.shared.generated.resources.workout_teardown_finishing
 
 /**
  * Active-workout surface. Production and previews both pass [WorkoutUiState] and [WorkoutActions].
@@ -414,7 +392,7 @@ fun WorkoutTab(
                     val buttonLabel = run {
                         val routine = loadedRoutine
                         if (routine == null) {
-                            "Done" // Just Lift / Single Exercise
+                            stringResource(Res.string.assessment_done) // Just Lift / Single Exercise
                         } else {
                             val currentExercise = routine.exercises.getOrNull(currentExerciseIndex)
                             val isLastSetOfExercise = currentExercise != null &&
@@ -425,9 +403,9 @@ fun WorkoutTab(
                                 // (state.isTerminalRoutineSummary = getNextStep == null / cached
                                 // successor == null), not list position — a routine ending in a
                                 // superset is terminal before its last flat-list entry.
-                                isLastSetOfExercise && state.isTerminalRoutineSummary -> "Complete Routine"
-                                isLastSetOfExercise -> "Next Exercise"
-                                else -> "Next Set"
+                                isLastSetOfExercise && state.isTerminalRoutineSummary -> stringResource(Res.string.workout_complete_routine)
+                                isLastSetOfExercise -> stringResource(Res.string.workout_next_exercise_title)
+                                else -> stringResource(Res.string.workout_next_set)
                             }
                         }
                     }
@@ -856,7 +834,7 @@ private fun ErrorCard(message: String) {
                 modifier = Modifier.size(48.dp),
             )
             Text(
-                "Workout Failed to Start",
+                stringResource(Res.string.workout_failed_to_start),
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onErrorContainer,
                 fontWeight = FontWeight.Bold,
@@ -870,7 +848,7 @@ private fun ErrorCard(message: String) {
             )
             Spacer(modifier = Modifier.height(Spacing.small))
             Text(
-                "Returning to previous screen...",
+                stringResource(Res.string.workout_returning_previous),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f),
                 textAlign = TextAlign.Center,
@@ -906,13 +884,13 @@ private fun WorkoutPausedCard(onScan: () -> Unit, repCount: RepCount) {
                 modifier = Modifier.size(48.dp),
             )
             Text(
-                "Workout Paused",
+                stringResource(Res.string.workout_paused_title),
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onTertiaryContainer,
                 fontWeight = FontWeight.Bold,
             )
             Text(
-                "Connection to trainer lost",
+                stringResource(Res.string.workout_connection_lost_title),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onTertiaryContainer,
                 textAlign = TextAlign.Center,
@@ -921,9 +899,9 @@ private fun WorkoutPausedCard(onScan: () -> Unit, repCount: RepCount) {
 
             // Show workout progress info
             val progressText = when {
-                repCount.workingReps > 0 -> "Progress: ${repCount.workingReps} reps completed"
-                repCount.warmupReps > 0 -> "Progress: ${repCount.warmupReps} warmup reps"
-                else -> "Workout was in progress"
+                repCount.workingReps > 0 -> stringResource(Res.string.workout_progress_working_reps, repCount.workingReps)
+                repCount.warmupReps > 0 -> stringResource(Res.string.workout_progress_warmup_reps, repCount.warmupReps)
+                else -> stringResource(Res.string.workout_progress_in_progress)
             }
             Text(
                 progressText,
@@ -932,7 +910,7 @@ private fun WorkoutPausedCard(onScan: () -> Unit, repCount: RepCount) {
                 textAlign = TextAlign.Center,
             )
             Text(
-                "Reconnect to continue your session",
+                stringResource(Res.string.workout_reconnect_continue),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.7f),
                 textAlign = TextAlign.Center,
@@ -1007,7 +985,7 @@ private fun CompletedCard(
                 )
             }
             Text(
-                "Workout Completed!",
+                stringResource(Res.string.workout_completed_title),
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.primary,
                 fontWeight = FontWeight.Bold,
@@ -1036,7 +1014,7 @@ private fun CompletedCard(
                 ) {
                     Column(modifier = Modifier.padding(Spacing.medium)) {
                         Text(
-                            "Next Exercise",
+                            stringResource(Res.string.workout_next_exercise_title),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = phoenixStructuralContentColor(MaterialTheme.colorScheme),
@@ -1083,7 +1061,7 @@ private fun CompletedCard(
                         if (nextExerciseStartGate.label == StartGateLabel.FINISHING_PREVIOUS_WORKOUT) {
                             stringResource(Res.string.workout_teardown_finishing)
                         } else {
-                            "Start Next Exercise"
+                            stringResource(Res.string.workout_start_next_exercise)
                         },
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
@@ -1109,7 +1087,7 @@ private fun CompletedCard(
                         if (startGate.label == StartGateLabel.FINISHING_PREVIOUS_WORKOUT) {
                             stringResource(Res.string.workout_teardown_finishing)
                         } else {
-                            "Start New Workout"
+                            stringResource(Res.string.workout_start_new)
                         },
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,

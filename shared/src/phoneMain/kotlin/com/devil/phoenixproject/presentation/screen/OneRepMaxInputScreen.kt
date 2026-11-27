@@ -53,7 +53,7 @@ fun OneRepMaxInputScreen(
     onCancel: () -> Unit,
 ) {
     // Unit label based on user preference
-    val unitLabel = if (weightUnit == WeightUnit.LB) "lbs" else "kg"
+    val unitLabel = stringResource(if (weightUnit == WeightUnit.LB) Res.string.label_lbs else Res.string.label_kg)
     // State: Map of exercise name to text input value (displayed in user's preferred unit)
     val inputValues = remember(existingOneRepMaxValues, exerciseByName, weightUnit) {
         mutableStateMapOf<String, String>().apply {
@@ -112,7 +112,7 @@ fun OneRepMaxInputScreen(
             ) {
             // Title
             Text(
-                text = "Enter Your 1RM Values",
+                text = stringResource(Res.string.orm_input_title),
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground,
@@ -129,13 +129,13 @@ fun OneRepMaxInputScreen(
                 verticalArrangement = Arrangement.spacedBy(Spacing.small),
             ) {
                 Text(
-                    text = "Enter your one rep max (or recent heavy single) for each lift. These values are used to calculate your working weights.",
+                    text = stringResource(Res.string.orm_input_subtitle_1),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
                 Text(
-                    text = "You can skip exercises and add their 1RM values later in the Exercise Library.",
+                    text = stringResource(Res.string.orm_input_subtitle_2),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -191,13 +191,13 @@ fun OneRepMaxInputScreen(
                     verticalArrangement = Arrangement.spacedBy(Spacing.extraSmall),
                 ) {
                     Text(
-                        text = "What is a 1RM?",
+                        text = stringResource(Res.string.orm_input_what_is_title),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
                     Text(
-                        text = "Your one rep max is the maximum weight you can lift for a single repetition with proper form. If you don't know your exact 1RM, use a recent heavy single or estimate based on your typical working weights.",
+                        text = stringResource(Res.string.orm_input_what_is_body),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
@@ -249,7 +249,7 @@ fun OneRepMaxInputScreen(
                         )
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            "Skip for now",
+                            stringResource(Res.string.orm_input_skip_for_now),
                             style = MaterialTheme.typography.labelLarge,
                         )
                     }
@@ -298,7 +298,7 @@ fun OneRepMaxInputScreen(
                             shape = MaterialTheme.shapes.medium,
                         ) {
                             Text(
-                                "Continue",
+                                stringResource(Res.string.rest_continue),
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold,
                                 maxLines = 2,

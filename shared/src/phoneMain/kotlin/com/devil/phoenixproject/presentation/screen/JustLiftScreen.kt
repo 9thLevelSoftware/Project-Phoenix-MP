@@ -122,26 +122,8 @@ import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import com.devil.phoenixproject.util.CommandLimits
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
+import projectphoenix.shared.generated.resources.*
 import projectphoenix.shared.generated.resources.Res
-import projectphoenix.shared.generated.resources.cd_close_workout
-import projectphoenix.shared.generated.resources.config_mode_tut_beast_desc
-import projectphoenix.shared.generated.resources.config_mode_tut_desc
-import projectphoenix.shared.generated.resources.eccentric_load
-import projectphoenix.shared.generated.resources.eccentric_load_helper
-import projectphoenix.shared.generated.resources.echo_level
-import projectphoenix.shared.generated.resources.just_lift_tut_beast
-import projectphoenix.shared.generated.resources.just_lift_tut_standard
-import projectphoenix.shared.generated.resources.label_live
-import projectphoenix.shared.generated.resources.mode_echo
-import projectphoenix.shared.generated.resources.mode_old_school
-import projectphoenix.shared.generated.resources.mode_pump
-import projectphoenix.shared.generated.resources.mode_tut
-import projectphoenix.shared.generated.resources.autostart_connect_prompt
-import projectphoenix.shared.generated.resources.autostart_grab_handles
-import projectphoenix.shared.generated.resources.autostart_ready
-import projectphoenix.shared.generated.resources.rep_count_timing
-import projectphoenix.shared.generated.resources.rep_count_timing_bottom
-import projectphoenix.shared.generated.resources.rep_count_timing_top
 
 /**
  * Just Lift screen - quick workout configuration.
@@ -157,8 +139,6 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel) {
     val autoStopState by viewModel.autoStopState.collectAsState()
     val weightUnit by viewModel.weightUnit.collectAsState()
     val userPreferences by viewModel.userPreferences.collectAsState()
-
-    val connectionError by viewModel.connectionError.collectAsState()
 
     var selectedMode by remember { mutableStateOf(workoutParameters.programMode.toWorkoutMode(workoutParameters.echoLevel)) }
     // Initialize to match the picker's default: 1 lb = 0.453592 kg
@@ -390,7 +370,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel) {
                     }
 
                     Text(
-                        "Workout Mode",
+                        stringResource(Res.string.exercise_edit_workout_mode),
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
@@ -479,11 +459,11 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel) {
 
                     Text(
                         when (selectedMode) {
-                            is WorkoutMode.OldSchool -> "Constant resistance throughout the movement"
-                            is WorkoutMode.Pump -> "Resistance increases the faster you go"
+                            is WorkoutMode.OldSchool -> stringResource(Res.string.just_lift_mode_old_school_desc)
+                            is WorkoutMode.Pump -> stringResource(Res.string.just_lift_mode_pump_desc)
                             is WorkoutMode.TUTBeast -> stringResource(Res.string.config_mode_tut_beast_desc)
                             is WorkoutMode.TUT -> stringResource(Res.string.config_mode_tut_desc)
-                            is WorkoutMode.Echo -> "Adaptive resistance with echo feedback"
+                            is WorkoutMode.Echo -> stringResource(Res.string.just_lift_mode_echo_desc)
                             else -> selectedMode.displayName
                         },
                         style = MaterialTheme.typography.bodySmall,
@@ -549,7 +529,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel) {
                                 },
                                 range = 1f..maxWeight,
                                 step = weightStep,
-                                label = "Weight per Cable",
+                                label = stringResource(Res.string.exercise_edit_weight_per_cable),
                                 suffix = weightSuffix,
                                 compactWheel = true,
                                 modifier = Modifier
@@ -564,7 +544,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel) {
                             unit = weightUnit,
                         )
                         Text(
-                            text = "Total: $totalText $weightSuffix",
+                            text = stringResource(Res.string.just_lift_total_weight, totalText, weightSuffix),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.fillMaxWidth(),
@@ -589,7 +569,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel) {
                         verticalArrangement = Arrangement.spacedBy(Spacing.small),
                     ) {
                         Text(
-                            "Weight Change Per Rep",
+                            stringResource(Res.string.exercise_edit_weight_change_per_rep),
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface,
@@ -761,8 +741,8 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel) {
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
 
                     JustLiftSettingRow(
-                        title = "Stall Detection",
-                        subtitle = "Auto-stop when movement pauses for 5 seconds",
+                        title = stringResource(Res.string.exercise_edit_stall_detection_title),
+                        subtitle = stringResource(Res.string.just_lift_stall_desc),
                         trailing = {
                             Switch(
                                 checked = stallDetectionEnabled,
@@ -774,11 +754,11 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel) {
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
 
                     JustLiftSettingRow(
-                        title = "Rest Timer",
+                        title = stringResource(Res.string.just_lift_rest_timer),
                         subtitle = if (restSeconds == 0) {
-                            "No rest between sets"
+                            stringResource(Res.string.just_lift_no_rest)
                         } else {
-                            "Rest $restSeconds seconds between sets"
+                            stringResource(Res.string.just_lift_rest_seconds_desc, restSeconds)
                         },
                         trailing = {
                             Surface(
@@ -796,7 +776,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel) {
                                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
                                 ) {
                                     Text(
-                                        text = if (restSeconds == 0) "Off" else "${restSeconds}s",
+                                        text = if (restSeconds == 0) stringResource(Res.string.hrm_state_off) else stringResource(Res.string.rep_replay_seconds_short, restSeconds.toString()),
                                         style = MaterialTheme.typography.labelLarge,
                                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                                         fontWeight = FontWeight.SemiBold,
@@ -817,18 +797,10 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel) {
                     },
                     onDismiss = { showRestTimerDialog = false },
                     options = listOf(0, 30, 60, 90, 120),
-                    title = "Rest Between Sets",
+                    title = stringResource(Res.string.just_lift_rest_between_sets),
                     formatLabel = { if (it == 0) "Off" else "${it}s" },
                 )
             }
-        }
-
-        // Connection error dialog
-        connectionError?.let { error ->
-            com.devil.phoenixproject.presentation.components.ConnectionErrorDialog(
-                message = error,
-                onDismiss = { viewModel.clearConnectionError() },
-            )
         }
 
     }
@@ -888,11 +860,11 @@ private fun ActiveStatusCard(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = when (workoutState) {
-                        is WorkoutState.Countdown -> "Get Ready: ${workoutState.secondsRemaining}s"
-                        is WorkoutState.Active -> "Workout Active"
-                        is WorkoutState.Resting -> "Resting: ${workoutState.restSecondsRemaining}s"
-                        is WorkoutState.Completed -> "Workout Complete"
-                        else -> "Workout Status"
+                        is WorkoutState.Countdown -> stringResource(Res.string.just_lift_get_ready_seconds, workoutState.secondsRemaining)
+                        is WorkoutState.Active -> stringResource(Res.string.just_lift_workout_active)
+                        is WorkoutState.Resting -> stringResource(Res.string.just_lift_resting_seconds, workoutState.restSecondsRemaining)
+                        is WorkoutState.Completed -> stringResource(Res.string.just_lift_workout_complete)
+                        else -> stringResource(Res.string.just_lift_workout_status)
                     },
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
@@ -943,7 +915,7 @@ private fun ActiveStatusCard(
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
                     Text(
-                        text = "REPS",
+                        text = stringResource(Res.string.hud_reps_label),
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -959,7 +931,7 @@ private fun ActiveStatusCard(
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
-                            "Load",
+                            stringResource(Res.string.just_lift_load_label),
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
                         )
@@ -993,7 +965,7 @@ private fun ActiveStatusCard(
                     Icon(Icons.Default.Close, contentDescription = stringResource(Res.string.cd_close_workout))
                     Spacer(modifier = Modifier.width(Spacing.small))
                     Text(
-                        "Finish Set",
+                        stringResource(Res.string.just_lift_finish_set),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
@@ -1267,9 +1239,9 @@ private fun AutoStartStopCard(
                 // Status label
                 Text(
                     text = when {
-                        isStopping -> "AUTO-STOP"
-                        isCountingDown -> "STARTING..."
-                        isActive -> "AUTO-STOP READY"
+                        isStopping -> stringResource(Res.string.autostop_title)
+                        isCountingDown -> stringResource(Res.string.just_lift_starting_ellipsis)
+                        isActive -> stringResource(Res.string.just_lift_auto_stop_ready)
                         isConnected -> stringResource(Res.string.autostart_ready)
                         else -> stringResource(Res.string.autostart_connect_prompt)
                     },
@@ -1282,9 +1254,9 @@ private fun AutoStartStopCard(
                 // Instruction
                 Text(
                     text = when {
-                        isStopping -> "Release handles to stop"
-                        isCountingDown -> "Hold steady"
-                        isActive -> "Release handles for 5s"
+                        isStopping -> stringResource(Res.string.just_lift_release_handles_stop)
+                        isCountingDown -> stringResource(Res.string.just_lift_hold_steady)
+                        isActive -> stringResource(Res.string.just_lift_release_handles_5s)
                         isConnected -> stringResource(Res.string.autostart_grab_handles)
                         else -> ""
                     },
@@ -1424,7 +1396,7 @@ private fun JustLiftRestCountdownRow(secondsRemaining: Int) {
         )
         Spacer(modifier = Modifier.width(8.dp))
         Text(
-            text = "Rest: $timeText",
+            text = stringResource(Res.string.just_lift_rest_clock, timeText),
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSecondaryContainer,

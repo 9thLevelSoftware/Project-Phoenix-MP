@@ -35,6 +35,9 @@ import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySett
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
+import org.jetbrains.compose.resources.stringResource
+import projectphoenix.shared.generated.resources.*
+import projectphoenix.shared.generated.resources.Res
 
 /**
  * Countdown Card Component
@@ -124,7 +127,11 @@ fun CountdownCard(
                         shape = MaterialTheme.shapes.medium,
                     ) {
                         Text(
-                            text = "Exercise ${currentExerciseIndex + 1} of $totalExercises",
+                            text = stringResource(
+                                Res.string.resume_exercise_of_total,
+                                currentExerciseIndex + 1,
+                                totalExercises,
+                            ),
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -200,7 +207,7 @@ fun CountdownCard(
                     val countdownText = if (countdownSecondsRemaining > 0) {
                         countdownSecondsRemaining.toString()
                     } else {
-                        "GO!"
+                        stringResource(Res.string.countdown_go)
                     }
 
                     Text(
@@ -234,7 +241,7 @@ fun CountdownCard(
                     ) {
                         // Section header
                         Text(
-                            text = "SET CONFIGURATION",
+                            text = stringResource(Res.string.set_ready_set_configuration),
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary,
@@ -251,14 +258,14 @@ fun CountdownCard(
                             if (isEchoMode) {
                                 CountdownParamChip(
                                     icon = Icons.Default.FitnessCenter,
-                                    label = "Weight",
-                                    value = "Adaptive",
+                                    label = stringResource(Res.string.label_weight),
+                                    value = stringResource(Res.string.hud_adaptive),
                                     modifier = Modifier.widthIn(min = 84.dp),
                                 )
                             } else if (nextExerciseWeight != null && formatWeight != null) {
                                 CountdownParamChip(
                                     icon = Icons.Default.FitnessCenter,
-                                    label = "Weight",
+                                    label = stringResource(Res.string.label_weight),
                                     value = formatWeight(nextExerciseWeight),
                                     modifier = Modifier.widthIn(min = 84.dp),
                                 )
@@ -266,7 +273,7 @@ fun CountdownCard(
                             if (nextExerciseReps != null) {
                                 CountdownParamChip(
                                     icon = Icons.Default.Repeat,
-                                    label = "Reps",
+                                    label = stringResource(Res.string.label_reps),
                                     value = nextExerciseReps.toString(),
                                     modifier = Modifier.widthIn(min = 84.dp),
                                 )
@@ -274,7 +281,7 @@ fun CountdownCard(
                             if (nextExerciseMode != null) {
                                 CountdownParamChip(
                                     icon = Icons.Default.Speed,
-                                    label = "Mode",
+                                    label = stringResource(Res.string.summary_stat_mode),
                                     value = nextExerciseMode,
                                     modifier = Modifier.widthIn(min = 84.dp),
                                 )
@@ -309,7 +316,7 @@ fun CountdownCard(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Start Now",
+                        text = stringResource(Res.string.countdown_start_now),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         maxLines = 2,
@@ -332,7 +339,7 @@ fun CountdownCard(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "End Workout",
+                        text = stringResource(Res.string.rest_end_workout),
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.error,

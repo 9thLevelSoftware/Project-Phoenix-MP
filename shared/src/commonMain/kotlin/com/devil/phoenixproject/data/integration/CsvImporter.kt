@@ -55,6 +55,8 @@ object CsvImporter {
     // Hevy column headers (lowercase) that uniquely identify the format
     private val HEVY_REQUIRED_HEADERS = setOf("title", "exercise_title", "set_index")
 
+    private val WHITESPACE_REGEX = Regex("""\s+""")
+
     // -------------------------------------------------------------------------
     // Public API
     // -------------------------------------------------------------------------
@@ -158,7 +160,7 @@ object CsvImporter {
                 val startedAt = parseStrongDate(dateStr)
                 val durationSec = parseStrongDuration(durationStr)
 
-                val externalId = buildStrongExternalId(workoutName, startedAt)
+                val externalId = buildExternalId("strong", workoutName, startedAt)
 
                 activities.add(
                     ExternalActivity(
@@ -245,7 +247,7 @@ object CsvImporter {
                     0
                 }
 
-                val externalId = buildHevyExternalId(title, startedAt)
+                val externalId = buildExternalId("hevy", title, startedAt)
 
                 activities.add(
                     ExternalActivity(
@@ -280,12 +282,6 @@ object CsvImporter {
                 "date" -> "date"
                 "workout name" -> "workout_name"
                 "duration" -> "duration"
-                "exercise name" -> "exercise_name"
-                "set order" -> "set_order"
-                "weight" -> "weight"
-                "reps" -> "reps"
-                "workout notes" -> "workout_notes"
-                "notes" -> "notes"
                 else -> null
             }
             if (key != null) map[key] = i
@@ -300,12 +296,6 @@ object CsvImporter {
                 "title" -> "title"
                 "start_time" -> "start_time"
                 "end_time" -> "end_time"
-                "description" -> "description"
-                "exercise_title" -> "exercise_title"
-                "set_index" -> "set_index"
-                "weight_kg" -> "weight_kg"
-                "reps" -> "reps"
-                "notes" -> "notes"
                 else -> null
             }
             if (key != null) map[key] = i
@@ -395,23 +385,13 @@ object CsvImporter {
     // -------------------------------------------------------------------------
 
     /**
-     * Build a deterministic external ID for a Strong workout.
-     * Format: `strong-{workout_name_snake_case}-{epochSeconds}`
+     * Build a deterministic external ID for an imported workout.
+     * Format: `{prefix}-{title_snake_case}-{epochSeconds}`
      */
-    internal fun buildStrongExternalId(workoutName: String, startedAtMs: Long): String {
-        val slug = workoutName.trim().lowercase().replace(Regex("""\s+"""), "_")
+    internal fun buildExternalId(prefix: String, title: String, startedAtMs: Long): String {
+        val slug = title.trim().lowercase().replace(WHITESPACE_REGEX, "_")
         val epochSec = startedAtMs / 1000L
-        return "strong-$slug-$epochSec"
-    }
-
-    /**
-     * Build a deterministic external ID for a Hevy workout.
-     * Format: `hevy-{title_snake_case}-{epochSeconds}`
-     */
-    internal fun buildHevyExternalId(title: String, startedAtMs: Long): String {
-        val slug = title.trim().lowercase().replace(Regex("""\s+"""), "_")
-        val epochSec = startedAtMs / 1000L
-        return "hevy-$slug-$epochSec"
+        return "$prefix-$slug-$epochSec"
     }
 
     // -------------------------------------------------------------------------

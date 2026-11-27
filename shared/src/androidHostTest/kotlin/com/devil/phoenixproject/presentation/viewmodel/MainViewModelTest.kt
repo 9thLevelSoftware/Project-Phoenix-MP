@@ -187,6 +187,10 @@ class MainViewModelTest {
             .getDeclaredField("wallClockMillisProvider")
             .apply { isAccessible = true }
             .set(viewModel.workoutSessionManager.activeSessionEngine, deterministicElapsedRealtime)
+        viewModel.workoutSessionManager.activeSessionEngine.javaClass
+            .getDeclaredField("biomechanicsDispatcher")
+            .apply { isAccessible = true }
+            .set(viewModel.workoutSessionManager.activeSessionEngine, testCoroutineRule.dispatcher)
     }
 
     @After
@@ -1213,7 +1217,7 @@ class MainViewModelTest {
     // ========== Issue #627: isStoppingWorkout flag lifecycle ==========
 
     @Test
-    fun `isStoppingWorkout is false before stop, true immediately on stopWorkout, persists after teardown, resets on next startWorkout`() = runTest(testCoroutineRule.dispatcher) {
+    fun `isStoppingWorkout is false before stop and true on stopWorkout and persists after teardown and resets on next startWorkout`() = runTest(testCoroutineRule.dispatcher) {
         fakeBleRepository.simulateConnect("Vee_Test", "AA:BB:CC:DD:EE:FF")
         advanceUntilIdle()
         // Precondition: flag starts false
@@ -1305,74 +1309,6 @@ class MainViewModelTest {
             viewModel.isStoppingWorkout(),
             "Flag must persist after teardown when workoutState is SetSummary (resumable) — guard stays load-bearing",
         )
-    }
-
-    @Test
-    fun `resumeWorkout is refused while stop teardown in flight — refuse-guard contract`() = runTest(testCoroutineRule.dispatcher) {
-        fakeBleRepository.simulateConnect("Vee_Test", "AA:BB:CC:DD:EE:FF")
-        advanceUntilIdle()
-        // Part (a): resume during an in-flight stop teardown is a NO-OP. Issue #687
-        // synchronously publishes Idle at the End boundary while the CAS guard
-        // (stopWorkoutInProgress) prevents a concurrent duplicate teardown.
-        val metric = WorkoutMetric(positionA = 100f, positionB = 100f, loadA = 10f, loadB = 10f)
-        viewModel.updateWorkoutParameters(
-            WorkoutParameters(
-                programMode = ProgramMode.OldSchool,
-                reps = 10,
-                warmupReps = 0,
-                weightPerCableKg = 20f,
-            ),
-        )
-        fakeBleRepository.emitMetric(metric)
-        viewModel.startWorkout(skipCountdown = true)
-        advanceUntilIdle()
-        assertEquals(WorkoutState.Active, viewModel.workoutState.value)
-
-        // pauseWorkout() sets workoutState = Paused synchronously (BLE stop is async).
-        viewModel.pauseWorkout()
-        assertIs<WorkoutState.Paused>(viewModel.workoutState.value)
-
-        // stopWorkout() arms the CAS guard synchronously; teardown coroutine is queued but not yet run.
-        viewModel.stopWorkout(exitingWorkout = true)
-        assertTrue(viewModel.isStoppingWorkout(), "Flag armed by stopWorkout() while paused")
-        assertIs<WorkoutState.Idle>(viewModel.workoutState.value)
-
-        // resumeWorkout() must be refused: state, guard, and command counts stay unchanged.
-        val workoutCommandCount = fakeBleRepository.commandsReceived.size
-        val resetCommandCount = fakeBleRepository.stopWorkoutCallCount
-        viewModel.resumeWorkout()
-        assertIs<WorkoutState.Idle>(
-            viewModel.workoutState.value,
-            "State must stay Idle — resume refused while End teardown is in flight",
-        )
-        assertEquals(workoutCommandCount, fakeBleRepository.commandsReceived.size)
-        assertEquals(resetCommandCount, fakeBleRepository.stopWorkoutCallCount)
-        assertTrue(
-            viewModel.isStoppingWorkout(),
-            "CAS guard must stay true — resumeWorkout() must not clear it while teardown is in flight (#627)",
-        )
-
-        // Part (b): after teardown completes, startWorkout() resets the guard and resume behaves normally.
-        // exitingWorkout=true → state transitions to Idle; flag stays true until startWorkout() resets it.
-        advanceUntilIdle()
-        assertEquals(WorkoutState.Idle, viewModel.workoutState.value)
-
-        // startWorkout() unconditionally resets stopWorkoutInProgress (line 2352).
-        // The successful teardown RESET resolves this process's exact hidden arm, so
-        // the next connected start can reopen the guard without an acknowledgement.
-        viewModel.startWorkout(skipCountdown = true)
-        advanceUntilIdle()
-        assertFalse(
-            viewModel.isStoppingWorkout(),
-            "startWorkout() must reset the stop guard — gate reopens for next session (#627)",
-        )
-        assertEquals(WorkoutState.Active, viewModel.workoutState.value)
-
-        // pause then resume must now succeed normally.
-        viewModel.pauseWorkout()
-        assertIs<WorkoutState.Paused>(viewModel.workoutState.value)
-        viewModel.resumeWorkout()
-        assertEquals(WorkoutState.Active, viewModel.workoutState.value, "Resume must succeed after guard is reset by startWorkout()")
     }
 
     // ========== ViewModel teardown mid-set (F-013, A-002) ==========

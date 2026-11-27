@@ -50,7 +50,11 @@ fun RestDayRow(rest: CycleItem.Rest, onTap: (() -> Unit)? = null, dragModifier: 
 
             // Content
             Text(
-                text = "Day ${rest.dayNumber}: ${rest.note ?: "Rest"}",
+                text = stringResource(
+                    Res.string.cycle_rest_day_row,
+                    rest.dayNumber,
+                    rest.note ?: stringResource(Res.string.cycles_rest_badge),
+                ),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.weight(1f),

@@ -70,6 +70,8 @@ import projectphoenix.shared.generated.resources.cd_back
 import projectphoenix.shared.generated.resources.cd_clear_search
 import projectphoenix.shared.generated.resources.cd_close
 import projectphoenix.shared.generated.resources.cd_search
+import projectphoenix.shared.generated.resources.exercise_picker_create_custom
+import projectphoenix.shared.generated.resources.exercise_picker_create_named
 import projectphoenix.shared.generated.resources.search_exercises
 import projectphoenix.shared.generated.resources.select_exercise
 
@@ -585,13 +587,11 @@ fun ExercisePickerContent(
             )
 
             if (enableCustomExercises) {
-                val createButtonLabel = remember(searchQuery) {
-                    val trimmed = searchQuery.trim()
-                    if (trimmed.isNotEmpty()) {
-                        "Create \"$trimmed\""
-                    } else {
-                        "Create Custom Exercise"
-                    }
+                val trimmedQuery = remember(searchQuery) { searchQuery.trim() }
+                val createButtonLabel = if (trimmedQuery.isNotEmpty()) {
+                    stringResource(Res.string.exercise_picker_create_named, trimmedQuery)
+                } else {
+                    stringResource(Res.string.exercise_picker_create_custom)
                 }
                 OutlinedButton(
                     onClick = onCreateExercise,

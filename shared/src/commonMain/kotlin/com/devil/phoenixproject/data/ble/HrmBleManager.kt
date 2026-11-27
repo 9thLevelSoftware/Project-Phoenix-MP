@@ -55,6 +55,7 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.atomicfu.atomic
 import kotlinx.atomicfu.locks.reentrantLock
 import kotlinx.atomicfu.locks.withLock
 import kotlinx.coroutines.flow.first
@@ -318,18 +319,16 @@ class HrmBleManager(
         recordedSessionId = sessionId
         _lastRecordedSessionId.value = sessionId
         currentPhase = phase
-        sessionLock.withLock {
-            bufferedBeatSamples.clear()
-            bufferedEcgSegments.clear()
-            sessionHrs.clear()
-            sessionRrs.clear()
-            recentRrs.clear()
-            maxTorsoPitch = null
-            maxTorsoRoll = null
-            frozenSessionSummary = null
-            rawEcgStartMs = null
-            rawEcgSampleCount = 0
-        }
+        bufferedBeatSamples.clear()
+        bufferedEcgSegments.clear()
+        sessionHrs.clear()
+        sessionRrs.clear()
+        recentRrs.clear()
+        maxTorsoPitch = null
+        maxTorsoRoll = null
+        frozenSessionSummary = null
+        rawEcgStartMs = null
+        rawEcgSampleCount = 0
         lastBeatMonotonicMs = null
         lastHeartRateMonotonicMs = null
         endHeartRate = null
@@ -447,15 +446,13 @@ class HrmBleManager(
     fun discardActiveRecording(): Unit = sessionLock.withLock {
         val targetSessionId = activeSessionId ?: return
         if (_isCooldownActive.value) return
-        sessionLock.withLock {
-            bufferedBeatSamples.clear()
-            bufferedEcgSegments.clear()
-            sessionHrs.clear()
-            sessionRrs.clear()
-            recentRrs.clear()
-            maxTorsoPitch = null
-            maxTorsoRoll = null
-        }
+        bufferedBeatSamples.clear()
+        bufferedEcgSegments.clear()
+        sessionHrs.clear()
+        sessionRrs.clear()
+        recentRrs.clear()
+        maxTorsoPitch = null
+        maxTorsoRoll = null
         if (_lastRecordedSessionId.value == targetSessionId) {
             _lastRecordedSessionId.value = null
         }
@@ -550,14 +547,12 @@ class HrmBleManager(
             if (_isCooldownActive.value) stopCooldown()
             completedCooldownSessionIds.remove(targetSessionId)
         }
-        sessionLock.withLock {
-            if (frozenSessionSummary == null) frozenSessionSummary = getSessionSummary(targetSessionId)
-        }
+        if (frozenSessionSummary == null) frozenSessionSummary = getSessionSummary(targetSessionId)
         recordedSessionId = targetSessionId
         activeSessionId = targetSessionId
         _lastRecordedSessionId.value = targetSessionId
         _activeCooldownSessionId.value = targetSessionId
-        val lastHr = sessionLock.withLock { sessionHrs.lastOrNull() }
+        val lastHr = sessionHrs.lastOrNull()
         endHeartRate = _hrMeasurement.value?.hr ?: lastHr
         _cooldownStartHeartRate.value = endHeartRate
         currentPhase = "POST_WORKOUT_COOLDOWN"
@@ -612,20 +607,16 @@ class HrmBleManager(
 
     fun getSessionSummary(sessionId: String): HrmSessionSummary? = sessionLock.withLock {
         detachedRecordings[sessionId]?.let { return it.summary }
-        sessionLock.withLock {
-            frozenSessionSummary?.takeIf { it.sessionId == sessionId }?.let {
-                return it.copy(hrr60Bpm = hrr60, hrr300Bpm = hrr300)
-            }
+        frozenSessionSummary?.takeIf { it.sessionId == sessionId }?.let {
+            return it.copy(hrr60Bpm = hrr60, hrr300Bpm = hrr300)
         }
         if (sessionId != recordedSessionId) return null
-        val snapshot = sessionLock.withLock {
-            SessionSampleSnapshot(
-                hrs = sessionHrs.toList(),
-                rrs = sessionRrs.toList(),
-                maxPitch = maxTorsoPitch,
-                rollMax = maxTorsoRoll,
-            )
-        }
+        val snapshot = SessionSampleSnapshot(
+            hrs = sessionHrs.toList(),
+            rrs = sessionRrs.toList(),
+            maxPitch = maxTorsoPitch,
+            rollMax = maxTorsoRoll,
+        )
         val avgHr = if (snapshot.hrs.isNotEmpty()) snapshot.hrs.average().roundToInt() else null
         val maxHr = snapshot.hrs.maxOrNull()
         val minHr = snapshot.hrs.minOrNull()
@@ -787,6 +778,8 @@ class HrmBleManager(
     @Volatile
     private var isExplicitDisconnect = false
 
+    private val teardownEpoch = atomic(0L)
+
     internal val wasEverConnectedForTesting: Boolean get() = wasEverConnected
     internal val isExplicitDisconnectForTesting: Boolean get() = isExplicitDisconnect
     internal val isReconnectJobActiveForTesting: Boolean get() = reconnectJob?.isActive == true
@@ -804,6 +797,11 @@ class HrmBleManager(
     }
 
     private var stateObserverJob: Job? = null
+    @Volatile
+    private var setupJob: Job? = null
+    @Volatile
+    private var activeReadyGate: CompletableDeferred<Unit>? = null
+    private val connectMutex = Mutex()
     private var hrObserveJob: Job? = null
     private var batteryObserveJob: Job? = null
 
@@ -987,6 +985,7 @@ class HrmBleManager(
         }
         val address = _rememberedAddress.value ?: return Result.success(Unit)
         val name = _rememberedName.value ?: "Heart Rate Sensor"
+        val reconnectTeardownEpoch = teardownEpoch.value
         log.i { "Attempting auto-reconnect to remembered heart rate sensor: $name ($address)" }
 
         val cachedAdv = cachedAdvertisement(address)
@@ -994,6 +993,10 @@ class HrmBleManager(
             val connectResult = connect(ScannedDevice(name = name, address = address))
             if (connectResult.isSuccess) {
                 return connectResult
+            }
+            if (isExplicitDisconnect || teardownEpoch.value != reconnectTeardownEpoch) {
+                log.d { "Auto-reconnect aborted after cached connect due to explicit disconnect" }
+                return Result.success(Unit)
             }
             log.w { "Direct connection with cached advertisement failed, falling back to targeted scan for $name ($address)" }
         }
@@ -1018,6 +1021,11 @@ class HrmBleManager(
                 found
             }
 
+            if (isExplicitDisconnect || teardownEpoch.value != reconnectTeardownEpoch) {
+                log.d { "Auto-reconnect aborted before targeted connect due to explicit disconnect" }
+                return Result.success(Unit)
+            }
+
             if (matchedDevice != null) {
                 connect(matchedDevice)
             } else {
@@ -1036,126 +1044,157 @@ class HrmBleManager(
      */
     suspend fun connect(device: ScannedDevice): Result<Unit> {
         log.i { "Connecting to heart rate sensor: ${device.name} (${device.address})" }
+        val connectTeardownEpoch = teardownEpoch.value
         val currentJob = currentCoroutineContext()[Job]
         if (reconnectJob !== currentJob) {
             reconnectJob?.cancel()
         }
 
-        val wasScanning = scanJob?.isActive == true || _connectionState.value is ConnectionState.Scanning
-        stopScanning()
-        if (wasScanning) {
-            delay(150)
-        }
+        return connectMutex.withLock {
+            if (teardownEpoch.value != connectTeardownEpoch) {
+                return@withLock Result.failure(IllegalStateException("HRM disconnected"))
+            }
+            val wasScanning = scanJob?.isActive == true || _connectionState.value is ConnectionState.Scanning
+            stopScanning()
+            if (wasScanning) {
+                delay(150)
+            }
+            if (teardownEpoch.value != connectTeardownEpoch) {
+                return@withLock Result.failure(IllegalStateException("HRM disconnected"))
+            }
 
-        val advertisement = cachedAdvertisement(device.address)
-            ?: return Result.failure(IllegalStateException("HRM device ${device.address} not found in scanned cache"))
+            val advertisement = cachedAdvertisement(device.address)
+                ?: return@withLock Result.failure(IllegalStateException("HRM device ${device.address} not found in scanned cache"))
 
-        logRepo.info(
-            eventType = LogEventType.CONNECT_START,
-            message = "[HRM] Connecting to ${device.name}",
-            deviceName = device.name,
-            deviceAddress = device.address,
-            tag = "HRM",
-        )
+            logRepo.info(
+                eventType = LogEventType.CONNECT_START,
+                message = "[HRM] Connecting to ${device.name}",
+                deviceName = device.name,
+                deviceAddress = device.address,
+                tag = "HRM",
+            )
 
-        return try {
-            cleanupExistingConnection()
-            _connectionState.value = ConnectionState.Connecting
-            isExplicitDisconnect = false
-            wasEverConnected = false
+            try {
+                cleanupExistingConnection()
+                if (teardownEpoch.value != connectTeardownEpoch) {
+                    return@withLock Result.failure(IllegalStateException("HRM disconnected"))
+                }
+                _connectionState.value = ConnectionState.Connecting
+                isExplicitDisconnect = false
+                wasEverConnected = false
 
-            val p = createPeripheral(advertisement)
-            peripheral = p
+                val p = createPeripheral(advertisement)
+                peripheral = p
+                val gen = connectionGeneration
+                val readyGate = CompletableDeferred<Unit>()
+                activeReadyGate = readyGate
 
-            stateObserverJob = scope.launch {
-                p.state.collect { state ->
-                    if (peripheral !== p) {
-                        log.d { "Ignoring state change ($state) for stale peripheral $p" }
-                        return@collect
-                    }
-                    log.d { "HRM state: $state" }
-                    when (state) {
-                        is State.Connecting -> {
-                            _isConnected.value = false
-                            _connectionState.value = ConnectionState.Connecting
+                stateObserverJob = scope.launch {
+                    p.state.collect { state ->
+                        if (peripheral !== p) {
+                            log.d { "Ignoring state change ($state) for stale peripheral $p" }
+                            return@collect
                         }
-                        is State.Connected -> {
-                            wasEverConnected = true
-                            _isConnected.value = true
-                            _connectionState.value = ConnectionState.Connected(
-                                deviceName = device.name,
-                                deviceAddress = device.address,
-                            )
-                            logRepo.info(
-                                eventType = LogEventType.CONNECT_SUCCESS,
-                                message = "[HRM] Connected to ${device.name}",
-                                deviceName = device.name,
-                                deviceAddress = device.address,
-                                tag = "HRM",
-                            )
-                            if (_isAutoReconnectEnabled.value) {
-                                hrmSettings.rememberDevice(device.address, device.name)
-                                _rememberedAddress.value = device.address
-                                _rememberedName.value = device.name
+                        log.d { "HRM state: $state" }
+                        when (state) {
+                            is State.Connecting -> {
+                                _isConnected.value = false
+                                _connectionState.value = ConnectionState.Connecting
                             }
-                            onDeviceConnected(p)
-                        }
-                        is State.Disconnecting -> {
-                            _isConnected.value = false
-                        }
-                        is State.Disconnected -> {
-                            if (!wasEverConnected) {
-                                log.d { "HRM initial state: Disconnected (awaiting connect() call)" }
-                                return@collect
+                            is State.Connected -> {
+                                wasEverConnected = true
+                                // Launch setup on a separate job so p.state.collect stays unblocked
+                                // to observe State.Disconnected during discovery, battery, or PMD setup.
+                                if (setupJob == null) {
+                                    setupJob = scope.launch {
+                                        try {
+                                            onDeviceConnected(p, device, gen, readyGate)
+                                        } catch (e: CancellationException) {
+                                            if (!readyGate.isCompleted) {
+                                                readyGate.completeExceptionally(IllegalStateException("HRM setup cancelled", e))
+                                            }
+                                            throw e
+                                        } catch (e: Exception) {
+                                            if (!readyGate.isCompleted) {
+                                                readyGate.completeExceptionally(e)
+                                            }
+                                        }
+                                    }
+                                }
                             }
-                            wasEverConnected = false
-                            _isConnected.value = false
-                            _connectionState.value = ConnectionState.Disconnected
-                            logRepo.info(
-                                eventType = LogEventType.DISCONNECT,
-                                message = "[HRM] Disconnected",
-                                deviceName = device.name,
-                                deviceAddress = device.address,
-                                tag = "HRM",
-                            )
-                            cleanupSessionTelemetry()
+                            is State.Disconnecting -> {
+                                _isConnected.value = false
+                            }
+                            is State.Disconnected -> {
+                                if (!wasEverConnected) {
+                                    log.d { "HRM initial state: Disconnected (awaiting connect() call)" }
+                                    return@collect
+                                }
+                                wasEverConnected = false
+                                _isConnected.value = false
+                                setupJob?.cancel()
+                                setupJob = null
+                                if (!readyGate.isCompleted) {
+                                    readyGate.completeExceptionally(IllegalStateException("HRM disconnected during setup"))
+                                }
+                                _connectionState.value = ConnectionState.Disconnected
+                                logRepo.info(
+                                    eventType = LogEventType.DISCONNECT,
+                                    message = "[HRM] Disconnected",
+                                    deviceName = device.name,
+                                    deviceAddress = device.address,
+                                    tag = "HRM",
+                                )
+                                cleanupSessionTelemetry()
+                            }
                         }
                     }
                 }
-            }
 
-            val connected = withTimeoutOrNull(BleConstants.CONNECTION_TIMEOUT_MS) {
-                p.connect()
-                p.state.first { it is State.Connected }
-            }
-            check(connected != null) { "HRM connection timed out" }
+                val connected = withTimeoutOrNull(BleConstants.CONNECTION_TIMEOUT_MS) {
+                    p.connect()
+                    p.state.first { it is State.Connected }
+                }
+                check(connected != null) { "HRM connection timed out" }
 
-            Result.success(Unit)
-        } catch (e: Exception) {
-            withContext(NonCancellable) {
-                _isConnected.value = false
-                cleanupExistingConnection()
-                _connectionState.value = ConnectionState.Disconnected
+                withTimeoutOrNull(BleConstants.CONNECTION_TIMEOUT_MS) {
+                    readyGate.await()
+                } ?: throw IllegalStateException("HRM service validation timed out")
+
+                Result.success(Unit)
+            } catch (e: Exception) {
+                withContext(NonCancellable) {
+                    _isConnected.value = false
+                    cleanupExistingConnection()
+                    _connectionState.value = ConnectionState.Disconnected
+                }
+                e.rethrowIfCancellation()
+                if (isExplicitDisconnect || teardownEpoch.value != connectTeardownEpoch) {
+                    log.i { "HRM connect aborted by explicit disconnect/teardown: ${e.message}" }
+                    return@withLock Result.failure(e)
+                }
+                log.e(e) { "Failed to connect to heart rate sensor: ${e.message}" }
+                logRepo.error(
+                    eventType = LogEventType.CONNECT_FAIL,
+                    message = "[HRM] Failed to connect: ${e.message}",
+                    deviceName = device.name,
+                    deviceAddress = device.address,
+                    details = e.stackTraceToString(),
+                    tag = "HRM",
+                )
+                _connectionState.value = ConnectionState.Error("Connection failed: ${e.message}", e)
+                Result.failure(e)
             }
-            e.rethrowIfCancellation()
-            log.e(e) { "Failed to connect to heart rate sensor: ${e.message}" }
-            logRepo.error(
-                eventType = LogEventType.CONNECT_FAIL,
-                message = "[HRM] Failed to connect: ${e.message}",
-                deviceName = device.name,
-                deviceAddress = device.address,
-                details = e.stackTraceToString(),
-                tag = "HRM",
-            )
-            _connectionState.value = ConnectionState.Error("Connection failed: ${e.message}", e)
-            Result.failure(e)
         }
     }
 
-    private suspend fun onDeviceConnected(p: Peripheral) {
+    private suspend fun onDeviceConnected(
+        p: Peripheral,
+        device: ScannedDevice,
+        gen: Int,
+        readyGate: CompletableDeferred<Unit>,
+    ) {
         log.i { "Configuring HRM connection parameters and services" }
-        val gen = connectionGeneration
-        startWatchdog()
 
         // 0. Authoritative service discovery enumeration (SD2): the ONLY source of
         // ABSENT findings. Inconclusive enumeration never yields ABSENT — probes
@@ -1165,7 +1204,7 @@ class HrmBleManager(
         // Post-connection HR validation (T8/SD5): a candidate that advertised
         // 0x180D (or a name) but does not expose the standard Heart Rate
         // Measurement characteristic is not a standard heart rate sensor. Fail
-        // validation with a clear, non-crash error state — never a throw.
+        // validation, disconnect, and report failure before connect() returns success.
         val hrMeasurementExposed = services == null || exposesCharacteristic(
             services,
             BleConstants.Hrm.HR_SERVICE_UUID,
@@ -1179,11 +1218,34 @@ class HrmBleManager(
                 message = "[HRM] Connected device is not a standard heart rate sensor (no Heart Rate Measurement 0x2A37)",
                 tag = "HRM",
             )
-            _connectionState.value = ConnectionState.Error(
+            throw IllegalStateException(
                 "Connected device is not a standard heart rate sensor (missing Heart Rate Measurement 0x2A37)",
             )
-            return
         }
+
+        if (peripheral !== p || !isCurrentGeneration(gen)) {
+            throw IllegalStateException("HRM connection superseded before validation completed")
+        }
+
+        _isConnected.value = true
+        _connectionState.value = ConnectionState.Connected(
+            deviceName = device.name,
+            deviceAddress = device.address,
+        )
+        logRepo.info(
+            eventType = LogEventType.CONNECT_SUCCESS,
+            message = "[HRM] Connected to ${device.name}",
+            deviceName = device.name,
+            deviceAddress = device.address,
+            tag = "HRM",
+        )
+        if (_isAutoReconnectEnabled.value) {
+            hrmSettings.rememberDevice(device.address, device.name)
+            _rememberedAddress.value = device.address
+            _rememberedName.value = device.name
+        }
+        startWatchdog()
+        readyGate.complete(Unit)
 
         // 1. Request MTU 232 if supported
         try {
@@ -1208,7 +1270,9 @@ class HrmBleManager(
         } else {
             updateCapability(gen) { it.copy(battery = HrmCapabilityState.CHECKING) }
             try {
-                val batteryBytes = p.read(BleConstants.Hrm.batteryLevelCharacteristic)
+                val batteryBytes = withTimeoutOrNull(BleConstants.GATT_OPERATION_TIMEOUT_MS) {
+                    p.read(BleConstants.Hrm.batteryLevelCharacteristic)
+                } ?: throw IllegalStateException("Battery level read timed out")
                 val level = parseBatteryLevel(batteryBytes)
                 if (level != null) {
                     if (isCurrentGeneration(gen)) {
@@ -1360,27 +1424,6 @@ class HrmBleManager(
         } else {
             updateCapability(gen) { it.copy(contact = parseContactReport(data)) }
         }
-        if (!measurement.contactDetected || measurement.hr <= 0 || isBatteryCritical()) {
-            log.w { "HRM strap removed, zero HR, or critical battery (contact=${measurement.contactDetected}, hr=${measurement.hr}, batt=${_batteryLevel.value}). Dropping telemetry." }
-            handleNoContact(measurement)
-            return
-        }
-
-        if (previousContactDetected != true) {
-            previousContactDetected = true
-            logRepo.debug(
-                eventType = LogEventType.DIAGNOSTIC,
-                message = "[HRM] Contact detected (contact: false -> true, hr=${measurement.hr})",
-                tag = "HRM",
-            )
-        }
-
-        _isContactDetected.value = true
-        contactLossJob?.cancel()
-        contactLossJob = null
-        lastValidPacketTimestampMs = monotonicClock()
-        _hrMeasurement.value = measurement
-
         processRrIntervals(measurement)
     }
 
@@ -1442,6 +1485,7 @@ class HrmBleManager(
             return
         }
         if (!measurement.contactDetected || measurement.hr <= 0 || isBatteryCritical()) {
+            log.w { "HRM strap removed, zero HR, or critical battery (contact=${measurement.contactDetected}, hr=${measurement.hr}, batt=${_batteryLevel.value}). Dropping telemetry." }
             handleNoContact(measurement)
             return
         }
@@ -1498,28 +1542,24 @@ class HrmBleManager(
 
             val currentSid = activeSessionId
             if (currentSid != null) {
-                val currentRmssd = sessionLock.withLock {
-                    if (frozenSessionSummary == null) {
-                        sessionRrs.add(beat.rrIntervalMs)
-                    }
-                    recentRrs.addLast(beat.rrIntervalMs)
-                    if (recentRrs.size > 30) recentRrs.removeFirst()
-                    HrmTelemetryUtils.calculateRmssdMs(recentRrs.toList())
+                if (frozenSessionSummary == null) {
+                    sessionRrs.add(beat.rrIntervalMs)
                 }
-                sessionLock.withLock {
-                    bufferedBeatSamples.add(
-                        BufferedBeatSample(
-                            timestampMs = beat.timestampMs,
-                            phase = currentPhase,
-                            hrBpm = beat.hr.toLong(),
-                            rrMs = beat.rrIntervalMs,
-                            rmssdMs = currentRmssd,
-                            torsoPitchDeg = _torsoPitchDeg.value,
-                            torsoRollDeg = _torsoRollDeg.value,
-                            dynamicAccMg = _dynamicAccMg.value?.toLong(),
-                        )
+                recentRrs.addLast(beat.rrIntervalMs)
+                if (recentRrs.size > 30) recentRrs.removeFirst()
+                val currentRmssd = HrmTelemetryUtils.calculateRmssdMs(recentRrs.toList())
+                bufferedBeatSamples.add(
+                    BufferedBeatSample(
+                        timestampMs = beat.timestampMs,
+                        phase = currentPhase,
+                        hrBpm = beat.hr.toLong(),
+                        rrMs = beat.rrIntervalMs,
+                        rmssdMs = currentRmssd,
+                        torsoPitchDeg = _torsoPitchDeg.value,
+                        torsoRollDeg = _torsoRollDeg.value,
+                        dynamicAccMg = _dynamicAccMg.value?.toLong(),
                     )
-                }
+                )
             }
         }
 
@@ -1654,21 +1694,19 @@ class HrmBleManager(
                 val currentSid = activeSessionId
                 if (currentSid != null && _isRawEcgStorageEnabled.value) {
                     val nowMs = wallClock()
-                    sessionLock.withLock {
-                        val startMs = rawEcgStartMs ?: monotonicClock().also { rawEcgStartMs = it }
-                        if (monotonicClock() - startMs >= MAX_RAW_ECG_DURATION_MS) return@withLock
-                        val retained = measurement.samplesMicrovolts.take(MAX_RAW_ECG_SAMPLES - rawEcgSampleCount)
-                        if (retained.isEmpty()) return@withLock
-                        rawEcgSampleCount += retained.size
-                        bufferedEcgSegments.add(
-                            BufferedEcgSegment(
-                                sensorTimestampNs = measurement.sensorTimestampNs,
-                                wallClockTimestampMs = nowMs,
-                                phase = currentPhase,
-                                samplesUvCsv = retained.joinToString(","),
-                            )
+                    val startMs = rawEcgStartMs ?: monotonicClock().also { rawEcgStartMs = it }
+                    if (monotonicClock() - startMs >= MAX_RAW_ECG_DURATION_MS) return@withLock
+                    val retained = measurement.samplesMicrovolts.take(MAX_RAW_ECG_SAMPLES - rawEcgSampleCount)
+                    if (retained.isEmpty()) return@withLock
+                    rawEcgSampleCount += retained.size
+                    bufferedEcgSegments.add(
+                        BufferedEcgSegment(
+                            sensorTimestampNs = measurement.sensorTimestampNs,
+                            wallClockTimestampMs = nowMs,
+                            phase = currentPhase,
+                            samplesUvCsv = retained.joinToString(","),
                         )
-                    }
+                    )
                 }
             }
             is PolarPmdMeasurement.Acc -> {
@@ -1690,20 +1728,18 @@ class HrmBleManager(
                     _torsoRollDeg.value = bio.rollDeg
                     _dynamicAccMg.value = bio.dynamicAccMg
                     if (activeSessionId != null && frozenSessionSummary == null) {
-                        sessionLock.withLock {
-                            if (maxTorsoPitch == null) {
+                        if (maxTorsoPitch == null) {
+                            maxTorsoPitch = bio.pitchDeg
+                        } else {
+                            val currentMax = maxTorsoPitch!!
+                            if (bio.pitchDeg > currentMax) {
                                 maxTorsoPitch = bio.pitchDeg
-                            } else {
-                                val currentMax = maxTorsoPitch!!
-                                if (bio.pitchDeg > currentMax) {
-                                    maxTorsoPitch = bio.pitchDeg
-                                } else if (currentMax <= 0.0 && abs(bio.pitchDeg) > abs(currentMax)) {
-                                    maxTorsoPitch = bio.pitchDeg
-                                }
+                            } else if (currentMax <= 0.0 && abs(bio.pitchDeg) > abs(currentMax)) {
+                                maxTorsoPitch = bio.pitchDeg
                             }
-                            if (maxTorsoRoll == null || abs(bio.rollDeg) > abs(maxTorsoRoll!!)) {
-                                maxTorsoRoll = bio.rollDeg
-                            }
+                        }
+                        if (maxTorsoRoll == null || abs(bio.rollDeg) > abs(maxTorsoRoll!!)) {
+                            maxTorsoRoll = bio.rollDeg
                         }
                     }
                 }
@@ -1745,11 +1781,14 @@ class HrmBleManager(
         }
 
         try {
-            p.write(
-                characteristic = BleConstants.PolarPmd.pmdControlPointCharacteristic,
-                data = command,
-                writeType = WriteType.WithResponse,
-            )
+            withTimeoutOrNull(timeoutMs) {
+                p.write(
+                    characteristic = BleConstants.PolarPmd.pmdControlPointCharacteristic,
+                    data = command,
+                    writeType = WriteType.WithResponse,
+                )
+                true
+            } ?: throw IllegalStateException("Polar PMD control point write timed out")
             val status = withTimeoutOrNull(timeoutMs) {
                 responseDeferred.await()
             } ?: throw IllegalStateException("Polar PMD control point response timed out")
@@ -2052,8 +2091,13 @@ class HrmBleManager(
     suspend fun disconnect() {
         _isConnected.value = false
         isExplicitDisconnect = true
+        teardownEpoch.incrementAndGet()
         reconnectJob?.cancel()
         reconnectJob = null
+        setupJob?.cancel()
+        setupJob = null
+        activeReadyGate?.completeExceptionally(IllegalStateException("HRM disconnected"))
+        activeReadyGate = null
 
         val p = peripheral
         if (p != null) {
@@ -2064,14 +2108,26 @@ class HrmBleManager(
                 tag = "HRM",
             )
             try {
-                if (_isEcgStreaming.value) {
-                    try { stopEcgStream() } catch (_: Exception) {}
-                }
-                if (_isAccStreaming.value) {
-                    try { stopAccStream() } catch (_: Exception) {}
+                if (p.state.value is State.Connected) {
+                    if (_isEcgStreaming.value) {
+                        try {
+                            withTimeoutOrNull(1_000L) { stopEcgStream() }
+                        } catch (e: Exception) {
+                            e.rethrowIfCancellation()
+                        }
+                    }
+                    if (_isAccStreaming.value) {
+                        try {
+                            withTimeoutOrNull(1_000L) { stopAccStream() }
+                        } catch (e: Exception) {
+                            e.rethrowIfCancellation()
+                        }
+                    }
                 }
                 peripheral = null
-                p.disconnect()
+                withTimeoutOrNull(BleConstants.GATT_OPERATION_TIMEOUT_MS) {
+                    p.disconnect()
+                }
             } catch (e: Exception) {
                 e.rethrowIfCancellation()
                 log.w { "Error during Polar disconnect: ${e.message}" }
@@ -2143,6 +2199,14 @@ class HrmBleManager(
     }
 
     private suspend fun cleanupExistingConnection() {
+        setupJob?.cancel()
+        setupJob = null
+        activeReadyGate?.let { gate ->
+            if (!gate.isCompleted) {
+                gate.completeExceptionally(IllegalStateException("HRM connection cleaned up"))
+            }
+        }
+        activeReadyGate = null
         stateObserverJob?.cancel()
         stateObserverJob = null
         cleanupSessionTelemetry()
@@ -2150,7 +2214,9 @@ class HrmBleManager(
         peripheral = null
         if (p != null) {
             try {
-                p.disconnect()
+                withTimeoutOrNull(BleConstants.GATT_OPERATION_TIMEOUT_MS) {
+                    p.disconnect()
+                }
             } catch (e: Exception) {
                 e.rethrowIfCancellation()
                 log.w { "Cleanup disconnect error (non-fatal): ${e.message}" }
@@ -2168,10 +2234,19 @@ class HrmBleManager(
     fun shutdown() {
         _isConnected.value = false
         isExplicitDisconnect = true
+        teardownEpoch.incrementAndGet()
         scanJob?.cancel()
         scanJob = null
         reconnectJob?.cancel()
         reconnectJob = null
+        setupJob?.cancel()
+        setupJob = null
+        activeReadyGate?.let { gate ->
+            if (!gate.isCompleted) {
+                gate.completeExceptionally(IllegalStateException("HRM manager shut down"))
+            }
+        }
+        activeReadyGate = null
         stateObserverJob?.cancel()
         stateObserverJob = null
         val p = peripheral
@@ -2182,17 +2257,17 @@ class HrmBleManager(
         if (p != null) {
             scope.launch {
                 try {
-                    if (_isEcgStreaming.value) {
-                        try { stopEcgStream() } catch (_: Exception) {}
+                    withTimeoutOrNull(BleConstants.GATT_OPERATION_TIMEOUT_MS) {
+                        p.disconnect()
                     }
-                    if (_isAccStreaming.value) {
-                        try { stopAccStream() } catch (_: Exception) {}
-                    }
-                    p.disconnect()
-                } catch (_: Exception) {}
+                } catch (e: Exception) {
+                    e.rethrowIfCancellation()
+                }
                 try {
                     p.close()
-                } catch (_: Exception) {}
+                } catch (e: Exception) {
+                    e.rethrowIfCancellation()
+                }
             }
         }
     }

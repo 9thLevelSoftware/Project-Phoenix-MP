@@ -15,7 +15,9 @@ actual class BackupJsonWriter actual constructor(actual val filePath: String) {
     }
 
     actual fun write(text: String) {
-        writer?.write(text)
+        val currentWriter = writer
+            ?: throw IllegalStateException("BackupJsonWriter.write() called with no open writer")
+        currentWriter.write(text)
     }
 
     actual fun flush() {

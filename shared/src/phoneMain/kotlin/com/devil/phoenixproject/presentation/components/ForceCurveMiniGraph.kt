@@ -48,7 +48,7 @@ fun ForceCurveMiniGraph(forceCurveResult: ForceCurveResult, onTapToExpand: () ->
         if (forceData.isEmpty()) {
             // No data placeholder
             Text(
-                "No data",
+                stringResource(Res.string.label_no_data),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.align(Alignment.Center),
@@ -80,7 +80,7 @@ fun ForceCurveMiniGraph(forceCurveResult: ForceCurveResult, onTapToExpand: () ->
 
             // Label overlay
             Text(
-                "Force Curve",
+                stringResource(Res.string.summary_force_curve_title),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                 modifier = Modifier
@@ -127,7 +127,7 @@ fun ExpandedForceCurve(forceCurveResult: ForceCurveResult, onDismiss: () -> Unit
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    "Force Curve",
+                    stringResource(Res.string.summary_force_curve_title),
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                 )
@@ -153,7 +153,7 @@ fun ExpandedForceCurve(forceCurveResult: ForceCurveResult, onDismiss: () -> Unit
             ) {
                 if (forceData.isEmpty()) {
                     Text(
-                        "No force curve data available",
+                        stringResource(Res.string.force_curve_no_data),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
@@ -165,7 +165,7 @@ fun ExpandedForceCurve(forceCurveResult: ForceCurveResult, onDismiss: () -> Unit
 
                     // Y axis label
                     Text(
-                        "Force (N)",
+                        stringResource(Res.string.force_curve_axis_force_n),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -243,7 +243,7 @@ fun ExpandedForceCurve(forceCurveResult: ForceCurveResult, onDismiss: () -> Unit
                     }
 
                     Text(
-                        "ROM %",
+                        stringResource(Res.string.force_curve_axis_rom_pct),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
@@ -258,7 +258,7 @@ fun ExpandedForceCurve(forceCurveResult: ForceCurveResult, onDismiss: () -> Unit
                             shape = MaterialTheme.shapes.extraSmall,
                         ) {
                             Text(
-                                text = "Sticking point: $roundedPct% ROM",
+                                text = stringResource(Res.string.force_curve_sticking_point_int, roundedPct),
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.Medium,
                                 color = errorColor,
@@ -274,24 +274,24 @@ fun ExpandedForceCurve(forceCurveResult: ForceCurveResult, onDismiss: () -> Unit
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(
-                                "Min",
+                                stringResource(Res.string.force_curve_min),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                             Text(
-                                "${minForce.toInt()} N",
+                                stringResource(Res.string.summary_force_newton, minForce.toInt()),
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.Bold,
                             )
                         }
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(
-                                "Max",
+                                stringResource(Res.string.force_curve_max),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                             Text(
-                                "${maxForce.toInt()} N",
+                                stringResource(Res.string.summary_force_newton, maxForce.toInt()),
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.Bold,
                             )

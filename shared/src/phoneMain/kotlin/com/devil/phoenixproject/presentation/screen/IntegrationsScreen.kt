@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.devil.phoenixproject.data.integration.EXTERNAL_NON_ACTIVITY_INTEGRATIONS_ENABLED
 import com.devil.phoenixproject.domain.model.ConnectionStatus
 import com.devil.phoenixproject.domain.model.IntegrationProvider
 import com.devil.phoenixproject.domain.model.WeightUnit
@@ -350,7 +351,7 @@ fun IntegrationsScreen(
                 if (weightUnit == WeightUnit.KG) {
                     "${UnitConverter.formatDecimal(measurement.value.toFloat())} ${stringResource(Res.string.label_kg)}"
                 } else {
-                    "${UnitConverter.formatDecimal(UnitConverter.kgToLb(measurement.value.toFloat()))} ${stringResource(Res.string.label_lb)}"
+                    "${UnitConverter.formatDecimal(UnitConverter.kgToLb(measurement.value.toFloat()))} ${stringResource(Res.string.label_lbs)}"
                 }
             }
 
@@ -445,38 +446,53 @@ fun IntegrationsScreen(
             // Hevy card
             val hevyStatus = uiState.integrationStatuses[IntegrationProvider.HEVY]
             val hevyConnected = hevyStatus?.status == ConnectionStatus.CONNECTED
+            val hevyError = hevyStatus?.status == ConnectionStatus.ERROR
             val hevyEntitlement = uiState.entitlementStateByProvider[IntegrationProvider.HEVY]
             val hevyBusy = uiState.operationLoading.any { it.startsWith("${IntegrationProvider.HEVY.key}:") }
             IntegrationCard(
                 title = stringResource(Res.string.integrations_hevy),
-                subtitle = hevyEntitlement?.upgradeReason
+                subtitle = hevyStatus?.takeIf { hevyError }?.errorMessage?.takeIf { it.isNotBlank() }
+                    ?: hevyEntitlement?.upgradeReason
+                    ?: hevyStatus?.errorMessage?.takeIf { it.isNotBlank() }
                     ?: hevyEntitlement?.providerPlanName?.let {
                         stringResource(Res.string.integrations_provider_plan, it)
                     }
                     ?: stringResource(Res.string.integrations_hevy_description),
                 statusConnected = hevyConnected,
-                badges = listOf(
-                    stringResource(
-                        Res.string.integrations_workouts_chip,
-                        uiState.externalActivities.count { it.provider == IntegrationProvider.HEVY },
-                    ),
-                    stringResource(
-                        Res.string.integrations_routines_chip,
-                        uiState.externalRoutines.count { it.provider == IntegrationProvider.HEVY },
-                    ),
-                    stringResource(
-                        Res.string.integrations_folders_chip,
-                        uiState.externalRoutineFolders.count { it.provider == IntegrationProvider.HEVY },
-                    ),
-                    stringResource(
-                        Res.string.integrations_templates_chip,
-                        uiState.externalExerciseTemplateCountByProvider[IntegrationProvider.HEVY] ?: 0,
-                    ),
-                    stringResource(
-                        Res.string.integrations_measurements_chip,
-                        uiState.externalMeasurements.count { it.provider == IntegrationProvider.HEVY },
-                    ),
-                ),
+                badges = buildList {
+                    add(
+                        stringResource(
+                            Res.string.integrations_workouts_chip,
+                            uiState.externalActivities.count { it.provider == IntegrationProvider.HEVY },
+                        ),
+                    )
+                    if (EXTERNAL_NON_ACTIVITY_INTEGRATIONS_ENABLED) {
+                        add(
+                            stringResource(
+                                Res.string.integrations_routines_chip,
+                                uiState.externalRoutines.count { it.provider == IntegrationProvider.HEVY },
+                            ),
+                        )
+                        add(
+                            stringResource(
+                                Res.string.integrations_folders_chip,
+                                uiState.externalRoutineFolders.count { it.provider == IntegrationProvider.HEVY },
+                            ),
+                        )
+                        add(
+                            stringResource(
+                                Res.string.integrations_templates_chip,
+                                uiState.externalExerciseTemplateCountByProvider[IntegrationProvider.HEVY] ?: 0,
+                            ),
+                        )
+                        add(
+                            stringResource(
+                                Res.string.integrations_measurements_chip,
+                                uiState.externalMeasurements.count { it.provider == IntegrationProvider.HEVY },
+                            ),
+                        )
+                    }
+                },
                 actions = {
                     if (hevyConnected) {
                         OutlinedButton(
@@ -519,34 +535,47 @@ fun IntegrationsScreen(
             // Liftosaur card
             val liftosaurStatus = uiState.integrationStatuses[IntegrationProvider.LIFTOSAUR]
             val liftosaurConnected = liftosaurStatus?.status == ConnectionStatus.CONNECTED
+            val liftosaurError = liftosaurStatus?.status == ConnectionStatus.ERROR
             val liftosaurEntitlement = uiState.entitlementStateByProvider[IntegrationProvider.LIFTOSAUR]
             val liftosaurBusy = uiState.operationLoading.any { it.startsWith("${IntegrationProvider.LIFTOSAUR.key}:") }
             IntegrationCard(
                 title = stringResource(Res.string.integrations_liftosaur),
-                subtitle = liftosaurEntitlement?.upgradeReason
+                subtitle = liftosaurStatus?.takeIf { liftosaurError }?.errorMessage?.takeIf { it.isNotBlank() }
+                    ?: liftosaurEntitlement?.upgradeReason
+                    ?: liftosaurStatus?.errorMessage?.takeIf { it.isNotBlank() }
                     ?: liftosaurEntitlement?.providerPlanName?.let {
                         stringResource(Res.string.integrations_provider_plan, it)
                     }
                     ?: stringResource(Res.string.integrations_liftosaur_description),
                 statusConnected = liftosaurConnected,
-                badges = listOf(
-                    stringResource(
-                        Res.string.integrations_workouts_chip,
-                        uiState.externalActivities.count { it.provider == IntegrationProvider.LIFTOSAUR },
-                    ),
-                    stringResource(
-                        Res.string.integrations_programs_chip,
-                        uiState.externalPrograms.count { it.provider == IntegrationProvider.LIFTOSAUR },
-                    ),
-                    stringResource(
-                        Res.string.integrations_current_chip,
-                        if (uiState.activeProgram != null) 1 else 0,
-                    ),
-                    stringResource(
-                        Res.string.integrations_stats_chip,
-                        uiState.externalProgramStatsByProgramId.size,
-                    ),
-                ),
+                badges = buildList {
+                    add(
+                        stringResource(
+                            Res.string.integrations_workouts_chip,
+                            uiState.externalActivities.count { it.provider == IntegrationProvider.LIFTOSAUR },
+                        ),
+                    )
+                    if (EXTERNAL_NON_ACTIVITY_INTEGRATIONS_ENABLED) {
+                        add(
+                            stringResource(
+                                Res.string.integrations_programs_chip,
+                                uiState.externalPrograms.count { it.provider == IntegrationProvider.LIFTOSAUR },
+                            ),
+                        )
+                        add(
+                            stringResource(
+                                Res.string.integrations_current_chip,
+                                if (uiState.activeProgram != null) 1 else 0,
+                            ),
+                        )
+                        add(
+                            stringResource(
+                                Res.string.integrations_stats_chip,
+                                uiState.externalProgramStatsByProgramId.size,
+                            ),
+                        )
+                    }
+                },
                 actions = {
                     if (liftosaurConnected) {
                         OutlinedButton(

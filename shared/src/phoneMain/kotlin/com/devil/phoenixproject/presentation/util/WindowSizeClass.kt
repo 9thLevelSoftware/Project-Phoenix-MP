@@ -164,20 +164,6 @@ object ResponsiveDimensions {
     }
 
     /**
-     * Calculate max width for cards to prevent over-stretching on tablets.
-     * Returns null for phones (use full width), or a max width for tablets.
-     */
-    @Composable
-    fun cardMaxWidth(): Dp? {
-        val windowSizeClass = LocalWindowSizeClass.current
-        return when (windowSizeClass.widthSizeClass) {
-            WindowWidthSizeClass.Expanded -> 600.dp
-            WindowWidthSizeClass.Medium -> 500.dp
-            WindowWidthSizeClass.Compact -> null // No max, use full width
-        }
-    }
-
-    /**
      * Calculate max width for page-level content containers on tablets/large screens.
      * Returns null for phones (use full width), or a max width for medium/expanded layouts.
      */

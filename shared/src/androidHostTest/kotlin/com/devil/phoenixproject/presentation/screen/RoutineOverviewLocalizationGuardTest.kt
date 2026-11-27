@@ -1,30 +1,17 @@
 package com.devil.phoenixproject.presentation.screen
 
-import java.io.File
+import com.devil.phoenixproject.testutil.readProjectFile
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class RoutineOverviewLocalizationGuardTest {
 
-    private val projectRoot: File by lazy {
-        var dir = File(System.getProperty("user.dir") ?: ".")
-        while (!File(dir, "shared/src/commonMain").exists()) {
-            dir = dir.parentFile ?: break
+    private fun read(relativePath: String): String =
+        requireNotNull(readProjectFile(relativePath)) {
+            "Source file not found at $relativePath. " +
+                "This localization guard test requires project source files to be present on disk."
         }
-        dir
-    }
-
-    private fun read(relativePath: String): String {
-        val file = File(projectRoot, relativePath)
-        if (!file.exists()) {
-            throw IllegalStateException(
-                "Source file not found at ${file.absolutePath}. " +
-                    "This localization guard test requires project source files to be present on disk.",
-            )
-        }
-        return file.readText()
-    }
 
     @Test
     fun overviewEchoLevelSelectorUsesResourceLabelAndLocalizedChipText() {

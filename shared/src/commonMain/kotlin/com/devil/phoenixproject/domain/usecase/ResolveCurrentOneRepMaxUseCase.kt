@@ -65,9 +65,11 @@ class ResolveCurrentOneRepMaxUseCase(
 
         assessmentRepository.getLatestAssessment(exerciseId, profileId)?.let { assessment ->
             if (assessment.exerciseId == exerciseId && assessment.profileId == profileId) {
-                val validTotalKg = assessment.userOverrideKg?.validPositiveOrNull()
+                val validInputKg = assessment.userOverrideKg?.validPositiveOrNull()
                     ?: assessment.estimatedOneRepMaxKg.validPositiveOrNull()
-                val perCableKg = validTotalKg?.div(2f)?.validPositiveOrNull()
+                val perCableKg = validInputKg?.let { inputKg ->
+                    (inputKg / 2f).validPositiveOrNull()
+                }
                 if (perCableKg != null) {
                     return CurrentOneRepMax(
                         perCableKg = perCableKg,

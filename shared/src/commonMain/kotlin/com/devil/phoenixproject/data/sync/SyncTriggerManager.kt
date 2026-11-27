@@ -131,6 +131,8 @@ class SyncTriggerManager(
     private suspend fun syncHealthBodyWeightFromConnectedPlatform() {
         try {
             healthBodyWeightSyncManager?.syncLatestFromConnectedPlatform()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Logger.w(e) { "SyncTrigger: Health body-weight sync failed without blocking portal sync" }
         }

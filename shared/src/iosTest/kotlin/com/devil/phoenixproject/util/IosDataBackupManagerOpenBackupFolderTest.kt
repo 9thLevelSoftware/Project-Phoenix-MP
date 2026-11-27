@@ -9,6 +9,7 @@ import com.devil.phoenixproject.testutil.FakeBackupDestinationResolver
 import com.devil.phoenixproject.testutil.FakePreferencesManager
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.devil.phoenixproject.testutil.createTestDatabase
+import com.devil.phoenixproject.testutil.extractFunctionBody
 import com.devil.phoenixproject.testutil.readProjectFile
 import com.russhwolf.settings.MapSettings
 import kotlin.test.Test
@@ -16,7 +17,6 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
-import kotlin.test.fail
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import platform.Foundation.NSDocumentDirectory
@@ -220,7 +220,7 @@ class IosDataBackupManagerOpenBackupFolderTest {
         val source = requireNotNull(
             readProjectFile("src/iosMain/kotlin/com/devil/phoenixproject/util/DataBackupManager.ios.kt"),
         ) { "DataBackupManager.ios.kt not found" }
-        val body = functionBody(source, "override fun openBackupFolder")
+        val body = extractFunctionBody(source, "override fun openBackupFolder")
         assertFalse(body.contains("presentShareSheet"), "the share sheet is never the folder opener (issue #1423)")
         assertFalse(body.contains("UIActivityViewController"), "no activity view controller for folders")
         assertTrue(body.contains("handoffOrBrowse"), "the fixed handoff fallback chain drives the button")
@@ -237,22 +237,5 @@ class IosDataBackupManagerOpenBackupFolderTest {
         assertTrue(source.contains("UTTypeFolder"), "the browse fallback opens folders")
         assertTrue(source.contains("presentDocumentPicker"), "the browse fallback uses the shared presenter")
         assertTrue(source.contains("directoryURL"), "the browse fallback starts at the target folder")
-    }
-
-    private fun functionBody(source: String, signature: String): String {
-        val start = source.indexOf(signature)
-        assertTrue(start >= 0, "Missing $signature")
-        val open = source.indexOf('{', start)
-        var depth = 0
-        for (i in open until source.length) {
-            when (source[i]) {
-                '{' -> depth++
-                '}' -> {
-                    depth--
-                    if (depth == 0) return source.substring(open, i + 1)
-                }
-            }
-        }
-        fail("Unclosed $signature")
     }
 }

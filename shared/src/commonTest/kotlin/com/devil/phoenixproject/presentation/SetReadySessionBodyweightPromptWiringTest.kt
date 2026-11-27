@@ -11,20 +11,26 @@ class SetReadySessionBodyweightPromptWiringTest {
     @Test
     fun promptCopy_isPresentInSetReadySource() {
         val src = readSetReadyScreenSource()
+        val stringsXml = readProjectFile("src/commonMain/composeResources/values/strings.xml")
+        assertNotNull(stringsXml, "Could not locate values/strings.xml")
 
         listOf(
-            "Current bodyweight",
-            "Used for bodyweight effective load and volume in this session.",
-            "Add bodyweight to calculate bodyweight effective load and volume for this session.",
-            "Use for this session",
-            "Not now",
-            "Save for session",
-            "Save to profile for next time",
-            "Edit current bodyweight",
-        ).forEach { expected ->
+            "set_ready_current_bodyweight" to "Current bodyweight",
+            "set_ready_bodyweight_has_saved" to "Used for bodyweight effective load and volume in this session.",
+            "set_ready_bodyweight_missing" to "Add bodyweight to calculate bodyweight effective load and volume for this session.",
+            "set_ready_use_for_session" to "Use for this session",
+            "set_ready_not_now" to "Not now",
+            "set_ready_save_for_session" to "Save for session",
+            "set_ready_save_to_profile" to "Save to profile for next time",
+            "set_ready_edit_bodyweight" to "Edit current bodyweight",
+        ).forEach { (key, expected) ->
             assertTrue(
-                expected in src,
-                "SetReadyScreen.kt must contain issue #600 prompt copy: $expected",
+                "Res.string.$key" in src,
+                "SetReadyScreen.kt must reference issue #600 resource key: Res.string.$key",
+            )
+            assertTrue(
+                """<string name="$key">$expected</string>""" in stringsXml,
+                "values/strings.xml must preserve issue #600 prompt copy: $expected",
             )
         }
         assertTrue(
@@ -107,7 +113,7 @@ class SetReadySessionBodyweightPromptWiringTest {
             "Bodyweight effective-load preview must use the resolved session bodyweight value.",
         )
         assertTrue(
-            src.contains("Text(\"Edit current bodyweight\")"),
+            src.contains("Text(stringResource(Res.string.set_ready_edit_bodyweight))"),
             "Handled bodyweight sessions must expose an edit affordance from the bodyweight setup area.",
         )
     }

@@ -43,10 +43,12 @@ import projectphoenix.shared.generated.resources.routine_csv_commit_failed
 import projectphoenix.shared.generated.resources.routine_csv_confirm
 import projectphoenix.shared.generated.resources.routine_csv_export_blocked_message
 import projectphoenix.shared.generated.resources.routine_csv_export_blocked_title
+import projectphoenix.shared.generated.resources.routine_csv_file_label
 import projectphoenix.shared.generated.resources.routine_csv_group
 import projectphoenix.shared.generated.resources.routine_csv_import_title
 import projectphoenix.shared.generated.resources.routine_csv_imported
 import projectphoenix.shared.generated.resources.routine_csv_issues_title
+import projectphoenix.shared.generated.resources.routine_csv_line_number
 import projectphoenix.shared.generated.resources.routine_csv_matches_found
 import projectphoenix.shared.generated.resources.routine_csv_mode_copies
 import projectphoenix.shared.generated.resources.routine_csv_mode_overwrite
@@ -287,7 +289,11 @@ private fun IssueList(issues: List<RoutineCsvIssue>) {
                         color = MaterialTheme.colorScheme.errorContainer,
                     ) {
                         Text(
-                            text = if (issue.line != null) "Line ${issue.line}" else "File",
+                            text = if (issue.line != null) {
+                                stringResource(Res.string.routine_csv_line_number, issue.line)
+                            } else {
+                                stringResource(Res.string.routine_csv_file_label)
+                            },
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onErrorContainer,

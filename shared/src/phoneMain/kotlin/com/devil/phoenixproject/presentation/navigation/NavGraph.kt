@@ -23,6 +23,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import androidx.savedstate.read
+import com.devil.phoenixproject.data.integration.EXTERNAL_NON_ACTIVITY_INTEGRATIONS_ENABLED
+import com.devil.phoenixproject.data.integration.EXTERNAL_PLAYGROUND_ENABLED
 import com.devil.phoenixproject.data.repository.ActiveProfileContext
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.ProfileContextRecoveryException
@@ -450,7 +452,6 @@ fun NavGraph(
             popExitTransition = { NavTransitions.tabFadeExit() },
         ) {
             val globalSettings by viewModel.globalSettings.collectAsState()
-            val connectionError by viewModel.connectionError.collectAsState()
             val backupStats by viewModel.backupStats.collectAsState()
             // Refresh backup stats when Settings screen is displayed
             LaunchedEffect(Unit) { viewModel.refreshBackupStats() }
@@ -475,8 +476,6 @@ fun NavGraph(
                 onNavigateToIntegrations = {
                     navController.navigate(NavigationRoutes.Integrations.route)
                 },
-                connectionError = connectionError,
-                onClearConnectionError = viewModel::clearConnectionError,
                 onSetTitle = viewModel::updateTopBarTitle,
                 onTestSounds = viewModel::testSounds,
                 bleCompatibilityMode = globalSettings.bleCompatibilityMode,
@@ -883,9 +882,7 @@ fun NavGraph(
                 )
             },
         ) {
-            LinkAccountScreen(
-                onNavigateBack = { navController.popBackStack() },
-            )
+            LinkAccountScreen()
         }
 
         // Integrations screen - third-party app connections and CSV import/export
@@ -983,12 +980,16 @@ fun NavGraph(
                 )
             },
         ) {
-            ExternalRoutinesScreen(
-                onRoutineClick = { provider, externalId ->
-                    navController.navigate(NavigationRoutes.ExternalRoutineDetail.createRoute(provider.key, externalId))
-                },
-                onSetTitle = { viewModel.updateTopBarTitle(it) },
-            )
+            if (EXTERNAL_NON_ACTIVITY_INTEGRATIONS_ENABLED) {
+                ExternalRoutinesScreen(
+                    onRoutineClick = { provider, externalId ->
+                        navController.navigate(NavigationRoutes.ExternalRoutineDetail.createRoute(provider.key, externalId))
+                    },
+                    onSetTitle = { viewModel.updateTopBarTitle(it) },
+                )
+            } else {
+                LaunchedEffect(Unit) { navController.popBackStack() }
+            }
         }
 
         composable(
@@ -1012,11 +1013,15 @@ fun NavGraph(
                 )
             },
         ) { backStackEntry ->
-            ExternalRoutineDetailScreen(
-                providerKey = backStackEntry.arguments?.read { getStringOrNull("provider") } ?: "",
-                externalRoutineId = backStackEntry.arguments?.read { getStringOrNull("externalRoutineId") } ?: "",
-                onSetTitle = { viewModel.updateTopBarTitle(it) },
-            )
+            if (EXTERNAL_NON_ACTIVITY_INTEGRATIONS_ENABLED) {
+                ExternalRoutineDetailScreen(
+                    providerKey = backStackEntry.arguments?.read { getStringOrNull("provider") } ?: "",
+                    externalRoutineId = backStackEntry.arguments?.read { getStringOrNull("externalRoutineId") } ?: "",
+                    onSetTitle = { viewModel.updateTopBarTitle(it) },
+                )
+            } else {
+                LaunchedEffect(Unit) { navController.popBackStack() }
+            }
         }
 
         composable(
@@ -1036,12 +1041,16 @@ fun NavGraph(
                 )
             },
         ) {
-            ExternalProgramsScreen(
-                onProgramClick = { provider, externalId ->
-                    navController.navigate(NavigationRoutes.ExternalProgramDetail.createRoute(provider.key, externalId))
-                },
-                onSetTitle = { viewModel.updateTopBarTitle(it) },
-            )
+            if (EXTERNAL_NON_ACTIVITY_INTEGRATIONS_ENABLED) {
+                ExternalProgramsScreen(
+                    onProgramClick = { provider, externalId ->
+                        navController.navigate(NavigationRoutes.ExternalProgramDetail.createRoute(provider.key, externalId))
+                    },
+                    onSetTitle = { viewModel.updateTopBarTitle(it) },
+                )
+            } else {
+                LaunchedEffect(Unit) { navController.popBackStack() }
+            }
         }
 
         composable(
@@ -1065,14 +1074,18 @@ fun NavGraph(
                 )
             },
         ) { backStackEntry ->
-            ExternalProgramDetailScreen(
-                providerKey = backStackEntry.arguments?.read { getStringOrNull("provider") } ?: "",
-                externalProgramId = backStackEntry.arguments?.read { getStringOrNull("externalProgramId") } ?: "",
-                onNavigateToPlayground = { provider, externalId ->
-                    navController.navigate(NavigationRoutes.ExternalProgramPlayground.createRoute(provider.key, externalId))
-                },
-                onSetTitle = { viewModel.updateTopBarTitle(it) },
-            )
+            if (EXTERNAL_NON_ACTIVITY_INTEGRATIONS_ENABLED) {
+                ExternalProgramDetailScreen(
+                    providerKey = backStackEntry.arguments?.read { getStringOrNull("provider") } ?: "",
+                    externalProgramId = backStackEntry.arguments?.read { getStringOrNull("externalProgramId") } ?: "",
+                    onNavigateToPlayground = { provider, externalId ->
+                        navController.navigate(NavigationRoutes.ExternalProgramPlayground.createRoute(provider.key, externalId))
+                    },
+                    onSetTitle = { viewModel.updateTopBarTitle(it) },
+                )
+            } else {
+                LaunchedEffect(Unit) { navController.popBackStack() }
+            }
         }
 
         composable(
@@ -1096,11 +1109,15 @@ fun NavGraph(
                 )
             },
         ) { backStackEntry ->
-            ExternalProgramPlaygroundScreen(
-                providerKey = backStackEntry.arguments?.read { getStringOrNull("provider") } ?: "",
-                externalProgramId = backStackEntry.arguments?.read { getStringOrNull("externalProgramId") } ?: "",
-                onSetTitle = { viewModel.updateTopBarTitle(it) },
-            )
+            if (EXTERNAL_PLAYGROUND_ENABLED) {
+                ExternalProgramPlaygroundScreen(
+                    providerKey = backStackEntry.arguments?.read { getStringOrNull("provider") } ?: "",
+                    externalProgramId = backStackEntry.arguments?.read { getStringOrNull("externalProgramId") } ?: "",
+                    onSetTitle = { viewModel.updateTopBarTitle(it) },
+                )
+            } else {
+                LaunchedEffect(Unit) { navController.popBackStack() }
+            }
         }
 
         composable(
@@ -1120,9 +1137,13 @@ fun NavGraph(
                 )
             },
         ) {
-            ExternalMeasurementTrendsScreen(
-                onSetTitle = { viewModel.updateTopBarTitle(it) },
-            )
+            if (EXTERNAL_NON_ACTIVITY_INTEGRATIONS_ENABLED) {
+                ExternalMeasurementTrendsScreen(
+                    onSetTitle = { viewModel.updateTopBarTitle(it) },
+                )
+            } else {
+                LaunchedEffect(Unit) { navController.popBackStack() }
+            }
         }
     }
 }

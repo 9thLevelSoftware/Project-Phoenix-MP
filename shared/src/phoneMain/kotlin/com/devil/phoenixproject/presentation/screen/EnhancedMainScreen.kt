@@ -98,6 +98,7 @@ import com.devil.phoenixproject.data.sync.SyncManager
 import com.devil.phoenixproject.data.sync.SyncState
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.WorkoutState
+import com.devil.phoenixproject.presentation.components.ConnectionErrorDialog
 import com.devil.phoenixproject.presentation.components.ConnectionLostDialog
 import com.devil.phoenixproject.presentation.components.HapticFeedbackEffect
 import com.devil.phoenixproject.presentation.components.ProfileAddDialog
@@ -230,6 +231,7 @@ fun EnhancedMainScreen(
 ) {
     val workoutState by viewModel.workoutState.collectAsState()
     val connectionState by viewModel.connectionState.collectAsState()
+    val connectionError by viewModel.connectionError.collectAsState()
     val connectionLostDuringWorkout by viewModel.connectionLostDuringWorkout.collectAsState()
     val machineSafetyUiState by viewModel.machineSafetyUiState.collectAsState()
     val topBarTitle by viewModel.topBarTitle.collectAsState()
@@ -707,6 +709,13 @@ fun EnhancedMainScreen(
                             viewModel.dismissConnectionLostAlert()
                         }
                     },
+                )
+            }
+
+            connectionError?.let { error ->
+                ConnectionErrorDialog(
+                    message = error,
+                    onDismiss = { viewModel.clearConnectionError() },
                 )
             }
 

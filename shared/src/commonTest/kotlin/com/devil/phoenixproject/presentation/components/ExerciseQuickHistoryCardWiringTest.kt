@@ -59,9 +59,12 @@ class ExerciseQuickHistoryCardWiringTest {
     @Test
     fun historyCard_headerText() {
         val src = readHistoryCardSource()
+        val stringsXml = readProjectFile("src/commonMain/composeResources/values/strings.xml")
+        assertNotNull(stringsXml)
         assertTrue(
-            src.contains("RECENT SESSIONS"),
-            "ExerciseQuickHistoryCard header must display 'RECENT SESSIONS'.",
+            src.contains("Res.string.recent_sessions_header") &&
+                stringsXml.contains("""<string name="recent_sessions_header">RECENT SESSIONS</string>"""),
+            "ExerciseQuickHistoryCard header must display 'RECENT SESSIONS' via Res.string.recent_sessions_header.",
         )
     }
 
@@ -108,9 +111,13 @@ class ExerciseQuickHistoryCardWiringTest {
     @Test
     fun historyCard_repsDisplay() {
         val src = readHistoryCardSource()
+        val stringsXml = readProjectFile("src/commonMain/composeResources/values/strings.xml")
+        assertNotNull(stringsXml)
         assertTrue(
-            src.contains("workingReps") && src.contains("reps"),
-            "ExerciseQuickHistoryCard must display workingReps with 'reps' suffix.",
+            src.contains("workingReps") &&
+                src.contains("Res.string.recovery_reps_count") &&
+                stringsXml.contains("""<string name="recovery_reps_count">%1${'$'}d reps</string>"""),
+            "ExerciseQuickHistoryCard must display workingReps with localized reps suffix.",
         )
     }
 
@@ -162,12 +169,15 @@ class ExerciseQuickHistoryCardWiringTest {
     @Test
     fun historyCard_accessibilitySemantics() {
         val src = readHistoryCardSource()
+        val stringsXml = readProjectFile("src/commonMain/composeResources/values/strings.xml")
+        assertNotNull(stringsXml)
         assertTrue(
             src.contains("contentDescription"),
             "ExerciseQuickHistoryCard must provide contentDescription for accessibility.",
         )
         assertTrue(
-            src.contains("Recent Sessions"),
+            src.contains("Res.string.recent_sessions_cd") &&
+                stringsXml.contains("""<string name="recent_sessions_cd">Recent Sessions, %1${'$'}s</string>"""),
             "ExerciseQuickHistoryCard header must have 'Recent Sessions' in contentDescription.",
         )
     }

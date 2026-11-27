@@ -315,6 +315,7 @@ abstract class BaseDataBackupManager(
             "polarBeatSamples",
             "polarEcgSegments",
             "personalRecords",
+            "personalRecordTombstones",
             "progressionEvents",
             "earnedBadges",
             "streakHistory",
@@ -348,6 +349,7 @@ abstract class BaseDataBackupManager(
             "completedSets",
             "polarBeatSamples",
             "polarEcgSegments",
+            "personalRecordTombstones",
             "personalRecords",
             // After every section that names exercises (routine exercises, sessions, PRs): a
             // baseline row carries only an id, so a retired catalogue id that maps by name alone
@@ -368,6 +370,13 @@ abstract class BaseDataBackupManager(
         val uniqueRoutineNameByExerciseId: Map<String, String>,
         val uniqueRoutineNameByExerciseName: Map<String, String>,
     )
+
+    private data class ScopedRoutineNameResolutionContext(
+        val byProfileId: Map<String, RoutineNameResolutionContext>,
+    ) {
+        fun forProfile(profileId: String): RoutineNameResolutionContext? =
+            byProfileId[profileId.ifBlank { "default" }]
+    }
 
     private data class DeferredProfileRestore(
         val backupVersion: Int,
@@ -467,7 +476,7 @@ abstract class BaseDataBackupManager(
         // Every table read below fails the export on error (F-041): a backup that silently
         // exports an empty section is worse than a retryable failure.
         val supersets = queries.selectAllSupersetsSync().executeAsList()
-        val personalRecords = queries.selectActiveRecordsForBackup().executeAsList().map { pr ->
+        val personalRecords = queries.selectAllRecordsSync().executeAsList().map { pr ->
             mapPersonalRecordToBackup(pr)
         }
         val trainingCycles = queries.selectAllTrainingCyclesSync().executeAsList()
@@ -496,7 +505,7 @@ abstract class BaseDataBackupManager(
         val profilePreferences = userProfiles.map { profile ->
             profilePreferencesRepository.get(profile.id).toBackup()
         }
-        val customExercises = queries.selectCustomExercises().executeAsList()
+        val customExercises = queries.selectAllCustomExercisesSync().executeAsList()
         val profileExerciseBaselines = queries.selectAllProfileExerciseBaselines().executeAsList()
         val workoutDeletions = queries.selectAllWorkoutDeletions().executeAsList()
         val pendingProfileRecoveries = queries.selectAllPendingProfileRecoveries().executeAsList()
@@ -523,7 +532,8 @@ abstract class BaseDataBackupManager(
                 routines = routines.map { mapRoutineToBackup(it) },
                 routineExercises = routineExercises.map { mapRoutineExerciseToBackup(it) },
                 supersets = supersets.map { mapSupersetToBackup(it) },
-                personalRecords = personalRecords,
+                personalRecords = personalRecords.filter { it.deletedAt == null },
+                personalRecordTombstones = personalRecords.filter { it.deletedAt != null },
                 trainingCycles = trainingCycles.map { mapTrainingCycleToBackup(it) },
                 cycleDays = cycleDays,
                 cycleProgress = cycleProgress.map { mapCycleProgressToBackup(it) },
@@ -802,6 +812,9 @@ abstract class BaseDataBackupManager(
             "polarBeatSamples" -> json.decodeFromString<PolarBeatSampleBackup>(raw)
             "polarEcgSegments" -> json.decodeFromString<PolarEcgSegmentBackup>(raw)
             "personalRecords" -> json.decodeFromString<PersonalRecordBackup>(raw)
+            "personalRecordTombstones" -> requireNotNull(json.decodeFromString<PersonalRecordBackup>(raw).deletedAt) {
+                "Personal record tombstone must have a deletion timestamp"
+            }
             "progressionEvents" -> json.decodeFromString<ProgressionEventBackup>(raw)
             "earnedBadges" -> json.decodeFromString<EarnedBadgeBackup>(raw)
             "streakHistory" -> json.decodeFromString<StreakHistoryBackup>(raw)
@@ -865,14 +878,20 @@ abstract class BaseDataBackupManager(
                 matchedCleanSessionIds.forEach { id -> queries.markSessionSynced(id) }
             }
         }
+        var backupVersion = 1
+        var profilePreferencesRestored = false
         suspend fun resetStateABackupCannotCarry() {
             // State a backup file cannot carry must not describe the pre-restore database
             // (sync cursors, repair walks, one-shot work markers).
+            queries.deleteAppliedDataRepairsForRestore()
             portalTokenStorage?.resetAfterBackupRestore(
                 profileIds = representedProfileIds.ifEmpty { setOf(legacyFallbackProfileId()) },
                 restoredRoutineGroupIds = restoredRoutineGroupIds,
             )
-            preferencesManager?.resetOneShotWorkAfterRestore()
+            preferencesManager?.resetOneShotWorkAfterRestore(
+                clearProfilePreferencesMigration = backupVersion < 5 ||
+                    (backupVersion < 6 && !profilePreferencesRestored),
+            )
         }
         try {
             val nav = BackupJsonNavigator(source)
@@ -987,10 +1006,13 @@ abstract class BaseDataBackupManager(
                 return claims.firstOrNull { it.owner_user_id == ownerUserId }?.target_profile_id == profileId
             }
 
-            fun inferRoutineName(session: WorkoutSessionBackup): String? {
+            fun inferRoutineName(session: WorkoutSessionBackup, sessionProfileId: String): String? {
                 session.routineId?.let { routineId ->
                     if (optionalParentCompatible("routine", routineId)) {
-                        queries.selectRoutineById(routineId).executeAsOneOrNull()?.name?.let { return it }
+                        queries.selectRoutineById(routineId).executeAsOneOrNull()
+                            ?.takeIf { it.profile_id == sessionProfileId }
+                            ?.name
+                            ?.let { return it }
                     }
                 }
                 if (session.exerciseId == null && session.exerciseName.isNullOrBlank()) return null
@@ -999,6 +1021,7 @@ abstract class BaseDataBackupManager(
                 source.open()
                 var candidateRoutineId: String? = null
                 var ambiguous = false
+                val routineProfileById = mutableMapOf<String, String?>()
                 try {
                     val sectionNav = BackupJsonNavigator(source)
                     sectionNav.beginArray()
@@ -1010,8 +1033,13 @@ abstract class BaseDataBackupManager(
                             LegacyLabelSanitizer.normalizeExerciseToken(exercise.exerciseName) == LegacyLabelSanitizer.normalizeExerciseToken(session.exerciseName)
                         }
                         if (matches && parentAvailable("routineExercise", exercise.id)) {
-                            if (candidateRoutineId == null) candidateRoutineId = exercise.routineId
-                            else if (candidateRoutineId != exercise.routineId) ambiguous = true
+                            val routineProfileId = routineProfileById.getOrPut(exercise.routineId) {
+                                queries.selectRoutineById(exercise.routineId).executeAsOneOrNull()?.profile_id
+                            }
+                            if (routineProfileId == sessionProfileId) {
+                                if (candidateRoutineId == null) candidateRoutineId = exercise.routineId
+                                else if (candidateRoutineId != exercise.routineId) ambiguous = true
+                            }
                         }
                     }
                     sectionNav.endArray()
@@ -1021,7 +1049,11 @@ abstract class BaseDataBackupManager(
                 }
                 return candidateRoutineId
                     ?.takeUnless { ambiguous }
-                    ?.let { queries.selectRoutineById(it).executeAsOneOrNull()?.name }
+                    ?.let {
+                        queries.selectRoutineById(it).executeAsOneOrNull()
+                            ?.takeIf { routine -> routine.profile_id == sessionProfileId }
+                            ?.name
+                    }
             }
 
             fun committedTransaction(block: () -> Unit) {
@@ -1169,8 +1201,6 @@ abstract class BaseDataBackupManager(
                 metricsImported++
             }
 
-            var backupVersion = 1
-
             fun restoreGamificationStats(stats: GamificationStatsBackup) {
                 committedTransaction {
                     if (backupVersion >= 6 && !profileParentAvailable(stats.profileId)) {
@@ -1186,10 +1216,8 @@ abstract class BaseDataBackupManager(
                         }
                         return@committedTransaction
                     }
-                    val stableId = stats.profileId.hashCode().toLong()
                     val inserted = tryImport("gamificationStats", stats.profileId) {
                         queries.insertGamificationStatsRestoreIfAbsent(
-                            id = stableId,
                             totalWorkouts = stats.totalWorkouts.toLong(),
                             totalReps = stats.totalReps.toLong(),
                             totalVolumeKg = stats.totalVolumeKg.toLong(),
@@ -1298,15 +1326,9 @@ abstract class BaseDataBackupManager(
                                                 mvtOverrideMs = exercise.mvtOverrideMs?.toDouble(),
                                                 isBodyweight = exercise.isBodyweight?.let { if (it) 1L else 0L },
                                             )
-                                            exercise.updatedAt?.let { updatedAt ->
-                                                queries.updateCustomExerciseFromSync(
-                                                    name = exercise.name,
-                                                    displayName = exercise.displayName,
-                                                    muscleGroup = exercise.muscleGroup,
-                                                    muscleGroups = exercise.muscleGroups,
-                                                    equipment = exercise.equipment,
-                                                    defaultCableConfig = exercise.defaultCableConfig,
-                                                    updatedAt = updatedAt,
+                                            if (exercise.updatedAt != null || exercise.serverId != null || exercise.deletedAt != null) {
+                                                queries.restoreCustomExerciseSyncFields(
+                                                    updatedAt = exercise.updatedAt,
                                                     serverId = exercise.serverId,
                                                     deletedAt = exercise.deletedAt,
                                                     id = exercise.id,
@@ -1571,8 +1593,8 @@ abstract class BaseDataBackupManager(
                                             val resolvedRoutineName = when {
                                                 session.isJustLift -> "Just Lift"
                                                 LegacyLabelSanitizer.normalizeExerciseToken(sanitizedRoutineName) == LegacyLabelSanitizer.normalizeExerciseToken(session.exerciseName) ->
-                                                    inferRoutineName(session)
-                                                sanitizedRoutineName == null -> inferRoutineName(session)
+                                                    inferRoutineName(session, sessionProfileId)
+                                                sanitizedRoutineName == null -> inferRoutineName(session, sessionProfileId)
                                                 else -> sanitizedRoutineName
                                             }
                                             val safeProgressionKg = session.progressionKg.sanitizeProgressionKg()
@@ -1837,23 +1859,30 @@ abstract class BaseDataBackupManager(
 
                                             val existingRoutine = queries.selectRoutineById(routine.id).executeAsOneOrNull()
                                             if (existingRoutine == null) {
-                                                queries.insertRoutine(
+                                                queries.insertRoutineForBackup(
                                                     id = routine.id,
                                                     name = routine.name,
                                                     description = routine.description,
                                                     createdAt = routine.createdAt,
                                                     lastUsed = routine.lastUsed,
                                                     useCount = routine.useCount.toLong(),
+                                                    updatedAt = routine.updatedAt,
+                                                    serverId = routine.serverId,
+                                                    deletedAt = routine.deletedAt,
                                                     profile_id = routineProfileId,
                                                     groupId = groupId,
-                                                    deletedAt = routine.deletedAt,
                                                 )
                                                 routinesImported++
                                                 restoredRoutineProfileIds += routineProfileId
                                                 recordParent("routine", routine.id, BackupParentStatus.INSERTED)
                                             } else {
                                                 val expected = routine.copy(profileId = routineProfileId, groupId = groupId)
-                                                val existingBackup = mapRoutineToBackup(existingRoutine)
+                                                val existingBackup = mapRoutineToBackup(existingRoutine).let { actual ->
+                                                    actual.copy(
+                                                        updatedAt = if (expected.updatedAt == null) null else actual.updatedAt,
+                                                        serverId = if (expected.serverId == null) null else actual.serverId,
+                                                    )
+                                                }
                                                 val legacyProfileOnlyAdoption = backupVersion < 6 &&
                                                     existingRoutine.profile_id != routineProfileId &&
                                                     queries.getProfileById(existingRoutine.profile_id).executeAsOneOrNull() == null &&
@@ -1911,7 +1940,7 @@ abstract class BaseDataBackupManager(
                                                     profile_id = group.profileId,
                                                 )
                                             }
-                                            if (inserted != null) routineGroupsImported++ else routineGroupsSkipped++
+                                            if (inserted != null) routineGroupsImported++
                                         }
                                         nav.endArray()
                                     }
@@ -2082,7 +2111,7 @@ abstract class BaseDataBackupManager(
                                 }
 
                                 // --- personalRecords ---
-                                "personalRecords" -> {
+                                "personalRecords", "personalRecordTombstones" -> {
                                     committedTransaction {
                                         nav.beginArray()
                                         while (nav.hasNextInArray()) {
@@ -2116,8 +2145,13 @@ abstract class BaseDataBackupManager(
                                                         it.phase == phase && it.profile_id == profileId
                                                 }
                                             if (existing != null) {
-                                                val existingBackup = mapPersonalRecordToBackup(existing)
                                                 val expected = pr.copy(id = existing.id, phase = phase, profileId = profileId, uuid = existing.uuid)
+                                                val existingBackup = mapPersonalRecordToBackup(existing).let { actual ->
+                                                    actual.copy(
+                                                        updatedAt = if (expected.updatedAt == null) null else actual.updatedAt,
+                                                        serverId = if (expected.serverId == null) null else actual.serverId,
+                                                    )
+                                                }
                                                 if (existingBackup == expected && (pr.uuid == null || pr.uuid == existing.uuid)) {
                                                     personalRecordsSkipped++
                                                 } else {
@@ -2128,7 +2162,7 @@ abstract class BaseDataBackupManager(
                                             }
 
                                             val inserted = tryImport("personalRecord", pr.uuid) {
-                                                queries.insertPRIgnore(
+                                                queries.insertPRFromMergeIgnore(
                                                     exerciseId = pr.exerciseId,
                                                     exerciseName = pr.exerciseName,
                                                     weight = pr.weight.toDouble(),
@@ -2139,13 +2173,21 @@ abstract class BaseDataBackupManager(
                                                     prType = pr.prType,
                                                     volume = pr.volume.toDouble(),
                                                     phase = phase,
+                                                    updatedAt = pr.updatedAt,
+                                                    serverId = pr.serverId,
+                                                    deletedAt = pr.deletedAt,
                                                     profile_id = profileId,
                                                     cable_count = pr.cableCount?.toLong(),
                                                     uuid = pr.uuid ?: generateUUID(),
                                                 )
                                             }
                                             if (inserted != null) {
-                                                personalRecordsImported++
+                                                if (inserted.value > 0L) {
+                                                    personalRecordsImported++
+                                                } else {
+                                                    entitiesWithErrors++
+                                                    Logger.w { "Backup restore skipped personalRecord due to unique constraint conflict key=$key" }
+                                                }
                                             }
                                         }
                                         nav.endArray()
@@ -2917,6 +2959,16 @@ abstract class BaseDataBackupManager(
                                             val note = tryImport("sessionNotes-parse", null) {
                                                 json.decodeFromString<SessionNotesBackup>(rawJson)
                                             } ?: continue
+                                            val hasLiveParent = note.routineSessionId.isNotBlank() &&
+                                                queries.countLiveWorkoutSessionsForPortalParent(note.routineSessionId)
+                                                    .executeAsOne() > 0L
+                                            if (!hasLiveParent) {
+                                                entitiesWithErrors++
+                                                Logger.w {
+                                                    "Backup restore missing live parent WorkoutSession for sessionNotes routineSessionId=${note.routineSessionId}"
+                                                }
+                                                continue
+                                            }
                                             val existing = queries.getSessionNotes(note.routineSessionId).executeAsOneOrNull()
                                             if (existing != null) {
                                                 if (mapSessionNotesToBackup(existing) == note) {
@@ -2985,7 +3037,7 @@ abstract class BaseDataBackupManager(
             activeIdentityNormalized = true
 
             reconciliationAttempted = true
-            restoreDeferredAndReconcile(
+            profilePreferencesRestored = restoreDeferredAndReconcile(
                 deferred = DeferredProfileRestore(
                     backupVersion = backupVersion,
                     profilePreferences = emptyList(),
@@ -3149,7 +3201,7 @@ abstract class BaseDataBackupManager(
         val privacy = json.encodeToString(BackupPrivacyMetadata.serializer(), backupPrivacy())
         writer.write("""{"version":$CURRENT_BACKUP_VERSION,"exportedAt":"$exportedAt","appVersion":"${Constants.APP_VERSION}","privacy":$privacy,"data":{""")
 
-        val customExercises = queries.selectCustomExercises().executeAsList()
+        val customExercises = queries.selectAllCustomExercisesSync().executeAsList()
         writeJsonArray(
             writer,
             "customExercises",
@@ -3223,8 +3275,10 @@ abstract class BaseDataBackupManager(
         writeJsonArray(writer, "supersets", supersets.map { json.encodeToString(SupersetBackup.serializer(), mapSupersetToBackup(it)) })
         writer.write(",")
 
-        val personalRecords = queries.selectActiveRecordsForBackup().executeAsList()
-        writeJsonArray(writer, "personalRecords", personalRecords.map { json.encodeToString(PersonalRecordBackup.serializer(), mapPersonalRecordToBackup(it)) })
+        val personalRecords = queries.selectAllRecordsSync().executeAsList()
+        writeJsonArray(writer, "personalRecords", personalRecords.filter { it.deletedAt == null }.map { json.encodeToString(PersonalRecordBackup.serializer(), mapPersonalRecordToBackup(it)) })
+        writer.write(",")
+        writeJsonArray(writer, "personalRecordTombstones", personalRecords.filter { it.deletedAt != null }.map { json.encodeToString(PersonalRecordBackup.serializer(), mapPersonalRecordToBackup(it)) })
         writer.write(",")
 
         val trainingCycles = queries.selectAllTrainingCyclesSync().executeAsList()
@@ -3410,22 +3464,23 @@ abstract class BaseDataBackupManager(
      */
     private fun normalizeRoutineMetadataForBackup(
         session: WorkoutSession,
-        routineNameResolutionContext: RoutineNameResolutionContext? = null,
+        routineNameResolutionContext: ScopedRoutineNameResolutionContext? = null,
     ): Pair<String?, String?> {
+        val profileContext = routineNameResolutionContext?.forProfile(session.profile_id)
         val existingSessionId = sanitizeRoutineSessionId(session.routineSessionId)
         val existingRoutineName = LegacyLabelSanitizer.sanitizeRoutineName(session.routineName)
 
         // Direct lookup via routineId (most reliable - added in migration 12)
         val directLookupName = session.routineId?.let { routineId ->
-            routineNameResolutionContext?.routineNameById?.get(routineId)
+            profileContext?.routineNameById?.get(routineId)
         }
 
         // Heuristic inference for legacy sessions without routineId
         val inferredRoutineNameById = session.exerciseId?.let { exerciseId ->
-            routineNameResolutionContext?.uniqueRoutineNameByExerciseId?.get(exerciseId)
+            profileContext?.uniqueRoutineNameByExerciseId?.get(exerciseId)
         }
         val inferredRoutineNameByExerciseName = LegacyLabelSanitizer.normalizeExerciseToken(session.exerciseName)?.let { normalizedExerciseName ->
-            routineNameResolutionContext?.uniqueRoutineNameByExerciseName?.get(normalizedExerciseName)
+            profileContext?.uniqueRoutineNameByExerciseName?.get(normalizedExerciseName)
         }
         val inferredRoutineName = inferredRoutineNameById ?: inferredRoutineNameByExerciseName
         val existingLooksLikeExercisePlaceholder =
@@ -3445,6 +3500,22 @@ abstract class BaseDataBackupManager(
     }
 
     private fun buildRoutineNameResolutionContext(
+        routines: List<Routine>,
+        routineExercises: List<RoutineExercise>,
+    ): ScopedRoutineNameResolutionContext {
+        val routineExercisesByRoutineId = routineExercises.groupBy { it.routineId }
+        val byProfileId = routines
+            .groupBy { it.profile_id.ifBlank { "default" } }
+            .mapValues { (_, profileRoutines) ->
+                val profileExercises = profileRoutines.flatMap { routine ->
+                    routineExercisesByRoutineId[routine.id].orEmpty()
+                }
+                buildProfileRoutineNameResolutionContext(profileRoutines, profileExercises)
+            }
+        return ScopedRoutineNameResolutionContext(byProfileId = byProfileId)
+    }
+
+    private fun buildProfileRoutineNameResolutionContext(
         routines: List<Routine>,
         routineExercises: List<RoutineExercise>,
     ): RoutineNameResolutionContext {
@@ -3532,7 +3603,7 @@ abstract class BaseDataBackupManager(
 
     private fun mapSessionToBackup(
         session: WorkoutSession,
-        routineNameResolutionContext: RoutineNameResolutionContext? = null,
+        routineNameResolutionContext: ScopedRoutineNameResolutionContext? = null,
     ): WorkoutSessionBackup {
         val (routineSessionId, routineName) = normalizeRoutineMetadataForBackup(session, routineNameResolutionContext)
         return WorkoutSessionBackup(
@@ -3660,6 +3731,8 @@ abstract class BaseDataBackupManager(
         profileId = routine.profile_id,
         groupId = routine.groupId,
         deletedAt = routine.deletedAt,
+        updatedAt = routine.updatedAt,
+        serverId = routine.serverId,
     )
 
     private fun mapRoutineExerciseToBackup(exercise: RoutineExercise): RoutineExerciseBackup = RoutineExerciseBackup(
@@ -3812,23 +3885,26 @@ abstract class BaseDataBackupManager(
         staging: BackupImportStagingArea,
         now: Long,
         onInvalid: (String, String, Throwable?) -> Unit,
-    ) {
+    ): Boolean {
         val profileIdsAfterImport = queries.selectAllUserProfileIds().executeAsList().toSet()
         val eligibleProfileIds = deferred.representedProfileIds
             .filterTo(linkedSetOf()) {
                 it in profileIdsAfterImport && staging.parentStatus("profile", it)?.isAvailable == true
             }
 
-        when {
-            deferred.backupVersion < 4 -> Unit
-            deferred.backupVersion == 4 && !deferred.legacyRackFieldPresent -> Unit
-            deferred.backupVersion == 4 -> restoreLegacyV4Rack(
-                items = decodeLegacyV4Rack(deferred.legacyRackElement, onInvalid),
-                eligibleProfileIds = eligibleProfileIds,
-                profileIdsAfterImport = profileIdsAfterImport,
-                now = now,
-                onInvalid = onInvalid,
-            )
+        return when {
+            deferred.backupVersion < 4 -> false
+            deferred.backupVersion == 4 && !deferred.legacyRackFieldPresent -> false
+            deferred.backupVersion == 4 -> {
+                restoreLegacyV4Rack(
+                    items = decodeLegacyV4Rack(deferred.legacyRackElement, onInvalid),
+                    eligibleProfileIds = eligibleProfileIds,
+                    profileIdsAfterImport = profileIdsAfterImport,
+                    now = now,
+                    onInvalid = onInvalid,
+                )
+                false
+            }
             else -> restoreV5ProfilePreferencesFromStaging(
                 staging = staging,
                 eligibleProfileIds = eligibleProfileIds,
@@ -3843,15 +3919,17 @@ abstract class BaseDataBackupManager(
         eligibleProfileIds: Set<String>,
         now: Long,
         onInvalid: (String, String, Throwable?) -> Unit,
-    ) {
-        val section = staging.openSection("profilePreferences") ?: return
+    ): Boolean {
+        val section = staging.openSection("profilePreferences") ?: return false
         val callerContext = currentCoroutineContext()
         val source = GuardedBackupStreamSource(section) { callerContext.ensureActive() }
         source.open()
+        var sawEntries = false
         try {
             val nav = BackupJsonNavigator(source)
             nav.beginArray()
             while (nav.hasNextInArray()) {
+                sawEntries = true
                 val entry = json.decodeFromString<ProfilePreferencesBackup>(nav.nextValueAsString())
                 restoreV5ProfilePreferences(
                     entries = listOf(entry),
@@ -3865,6 +3943,7 @@ abstract class BaseDataBackupManager(
         } finally {
             source.close()
         }
+        return sawEntries
     }
 
     private suspend fun restoreLegacyV4Rack(
@@ -3984,8 +4063,8 @@ abstract class BaseDataBackupManager(
         staging: BackupImportStagingArea,
         now: Long,
         onInvalid: (String, String, Throwable?) -> Unit,
-    ) {
-        try {
+    ): Boolean {
+        val restored = try {
             restoreDeferredProfileState(deferred, staging, now, onInvalid)
         } catch (restoreFailure: Throwable) {
             val reconcileFailure = runCatching {
@@ -3997,6 +4076,7 @@ abstract class BaseDataBackupManager(
             throw restoreFailure
         }
         userProfileRepository.reconcileActiveProfileContext()
+        return restored
     }
 
     private fun mapSupersetToBackup(superset: Superset): SupersetBackup = SupersetBackup(
@@ -4031,6 +4111,9 @@ abstract class BaseDataBackupManager(
         profileId = pr.profile_id,
         cableCount = pr.cable_count?.toInt(),
         uuid = pr.uuid,
+        updatedAt = pr.updatedAt,
+        serverId = pr.serverId,
+        deletedAt = pr.deletedAt,
     )
 
     /**

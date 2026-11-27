@@ -85,6 +85,14 @@ class MachineSafetyCoordinator(
     private var acknowledgementInProgress: MachineSafetyHazardIdentity? = null
     private var nextGeneration = 0L
 
+    private data class RejectedRowTarget(
+        val visibleIdentity: MachineSafetyHazardIdentity,
+        val rawTrainerAddress: String,
+        val storedGeneration: Long?,
+    )
+
+    private var activeRejectedTarget: RejectedRowTarget? = null
+
     /** The hidden arm row this coordinator last persisted; only it may be resolved by a clean teardown. */
     private var armedDocument: MachineSafetyHazardDocument? = null
 
@@ -105,10 +113,10 @@ class MachineSafetyCoordinator(
         } catch (_: Exception) {
             listOf(MachineSafetyLoadResult.Rejected(MachineSafetyRejection.CORRUPT_JSON, null))
         }
-        val records = results.mapNotNull { result ->
+        val candidates = results.mapNotNull { result ->
             when (result) {
-                is MachineSafetyLoadResult.Loaded -> result.document
-                is MachineSafetyLoadResult.Rejected -> rejectedDocument(result)
+                is MachineSafetyLoadResult.Loaded -> result.document to null
+                is MachineSafetyLoadResult.Rejected -> rejectedDocument(result) to result
                 MachineSafetyLoadResult.Missing -> null
             }
         }
@@ -116,8 +124,15 @@ class MachineSafetyCoordinator(
         val onlyLiveArm = liveExecutionId != null && armed != null && armed.executionId == liveExecutionId &&
             results.all { (it as? MachineSafetyLoadResult.Loaded)?.document?.generation == armed.generation }
         if (onlyLiveArm) return
-        records.maxByOrNull { it.updatedAtEpochMs }?.let { newest ->
-            show(newest, records.any { doc -> doc.sessionId.startsWith("rejected-") })
+        candidates.maxByOrNull { it.first.updatedAtEpochMs }?.let { (newest, rejected) ->
+            activeRejectedTarget = rejected?.rawTrainerAddress?.let { rawAddress ->
+                RejectedRowTarget(
+                    visibleIdentity = newest.identity,
+                    rawTrainerAddress = rawAddress,
+                    storedGeneration = rejected.storedGeneration,
+                )
+            }
+            show(newest, restoreWasRejected = rejected != null)
             logSafety(
                 LogLevel.WARNING,
                 "Stored machine-safety hazard shown; new sets stay blocked until the user confirms the trainer is at rest",
@@ -137,6 +152,7 @@ class MachineSafetyCoordinator(
         return try {
             repository.replace(persisted)
             nextGeneration = safeGeneration
+            activeRejectedTarget = null
             // A visible loss replaces that trainer's arm row and is never cleared by a clean teardown.
             if (!showRecoveryUi) {
                 armedDocument = persisted
@@ -284,14 +300,17 @@ class MachineSafetyCoordinator(
             recoveryAttemptToken = 0L,
         )
         armedDocument = null
+        activeRejectedTarget = null
+        var restoreWasRejected = loadResult is MachineSafetyLoadResult.Rejected
         try {
             repository.replace(loss)
+            restoreWasRejected = false
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
             // Keep the in-memory warning visible so the process remains fail closed.
         }
-        show(loss, restoreWasRejected = loadResult is MachineSafetyLoadResult.Rejected)
+        show(loss, restoreWasRejected = restoreWasRejected)
         logSafety(LogLevel.WARNING, "Connection lost with a machine obligation pending; hazard recorded and new sets blocked", loss)
         true
     }
@@ -408,10 +427,27 @@ class MachineSafetyCoordinator(
                 if (visible.document.identity != identity || acknowledgementInProgress != identity) {
                     return@withLock
                 }
-                if (repository.deleteIfGenerationMatches(identity.trainerAddress, identity.generation) &&
+                val rejectedTarget = activeRejectedTarget?.takeIf { it.visibleIdentity == identity }
+                val cleared = if (rejectedTarget != null) {
+                    val deletedRejected = repository.deleteRejectedIfMatches(
+                        rawTrainerAddress = rejectedTarget.rawTrainerAddress,
+                        generation = rejectedTarget.storedGeneration,
+                    )
+                    val deletedAliasOrReplaced =
+                        if (!deletedRejected || rejectedTarget.rawTrainerAddress != identity.trainerAddress) {
+                            repository.deleteIfGenerationMatches(identity.trainerAddress, identity.generation)
+                        } else {
+                            false
+                        }
+                    deletedRejected || deletedAliasOrReplaced
+                } else {
+                    repository.deleteIfGenerationMatches(identity.trainerAddress, identity.generation)
+                }
+                if (cleared &&
                     (_uiState.value as? MachineSafetyUiState.Visible)?.document?.identity == identity
                 ) {
                     if (armedDocument?.identity == identity) armedDocument = null
+                    if (activeRejectedTarget?.visibleIdentity == identity) activeRejectedTarget = null
                     _uiState.value = MachineSafetyUiState.Hidden
                     logSafety(LogLevel.INFO, "User confirmed handles at rest; machine-safety hazard cleared", visible.document)
                 } else {
@@ -474,9 +510,9 @@ class MachineSafetyCoordinator(
     private fun rejectedDocument(result: MachineSafetyLoadResult.Rejected): MachineSafetyHazardDocument {
         val now = nowEpochMs()
         return MachineSafetyHazardDocument(
-            generation = nextGeneration + 1L,
-            trainerAddress = result.trainerAddress ?: "unknown-trainer",
-            sessionId = "rejected-${now}",
+            generation = result.storedGeneration?.takeIf { it > 0L } ?: (nextGeneration + 1L),
+            trainerAddress = result.trainerAddress?.takeIf { it.isNotBlank() } ?: "unknown-trainer",
+            sessionId = "rejected-$now",
             workoutKind = MachineSafetyWorkoutKind.UNKNOWN,
             createdAtEpochMs = now,
             updatedAtEpochMs = now,

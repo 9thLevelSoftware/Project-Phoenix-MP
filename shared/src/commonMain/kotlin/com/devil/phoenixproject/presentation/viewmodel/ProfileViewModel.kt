@@ -845,7 +845,11 @@ class ProfileViewModel(
                         profileId = profileId,
                         exerciseId = exerciseId,
                         load = {
-                            resolveCurrentOneRepMax(exerciseId, profileId)
+                            resolveCurrentOneRepMax(
+                                exerciseId = exerciseId,
+                                profileId = profileId,
+                                isBodyweight = exercise.isBodyweight,
+                            )
                                 ?.let { ProfileLoadable.Ready(it) }
                                 ?: ProfileLoadable.Empty
                         },

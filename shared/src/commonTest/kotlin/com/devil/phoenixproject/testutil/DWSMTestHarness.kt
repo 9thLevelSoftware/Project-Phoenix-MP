@@ -262,7 +262,8 @@ internal class DWSMTestHarness(
     workoutRepositoryOverride: WorkoutRepository? = null,
     hrmBleManager: HrmBleManager? = null,
     completedSetRepositoryOverride: CompletedSetRepository? = null,
-    biomechanicsDispatcher: CoroutineDispatcher = Dispatchers.Default,
+    scopeDispatcher: CoroutineDispatcher = StandardTestDispatcher(testScope.testScheduler),
+    biomechanicsDispatcher: CoroutineDispatcher = StandardTestDispatcher(testScope.testScheduler),
     biomechanicsRepProcessor: BiomechanicsRepProcessor = BiomechanicsRepProcessor.Default,
     beforeVbtCommit: (executionId: Long, sessionId: String, repNumber: Int) -> Unit = { _, _, _ -> },
     afterVbtDecisionCommit: (executionId: Long, sessionId: String, repNumber: Int) -> Unit = { _, _, _ -> },
@@ -281,6 +282,7 @@ internal class DWSMTestHarness(
     transitionIdGenerator: () -> String = { "test-transition" },
     offerIdGenerator: () -> String = { "test-offer" },
     wallClockMillisProvider: (() -> Long)? = null,
+    elapsedRealtimeProviderOverride: (() -> Long)? = null,
     hapticEvents: MutableSharedFlow<HapticEvent> = MutableSharedFlow(
         extraBufferCapacity = 32,
         onBufferOverflow = BufferOverflow.SUSPEND,
@@ -366,7 +368,7 @@ internal class DWSMTestHarness(
     // long-running init collectors as "pending", interleaving teardown ordering in the
     // full test suite and making advanceUntilIdle() return before init work was truly settled.
     private val dwsmJob = Job(testScope.coroutineContext[Job])
-    private val dwsmScope = CoroutineScope(StandardTestDispatcher(testScope.testScheduler) + dwsmJob)
+    private val dwsmScope = CoroutineScope(scopeDispatcher + dwsmJob)
     val workoutScope: CoroutineScope get() = dwsmScope
 
     val fakeEquipmentRackRepo = ProfileEquipmentRackRepository(fakeUserProfileRepo, dwsmScope)
@@ -430,7 +432,7 @@ internal class DWSMTestHarness(
         afterResetInvalidation = afterResetInvalidation,
         afterExecutionBegin = afterExecutionBegin,
         _hapticEvents = hapticEvents,
-        elapsedRealtimeProvider = { testScope.testScheduler.currentTime },
+        elapsedRealtimeProvider = elapsedRealtimeProviderOverride ?: { testScope.testScheduler.currentTime },
         wallClockMillisProvider = wallClockMillisProvider ?: { nowMs },
         machineSafetyCoordinator = machineSafetyCoordinator,
         recentJustLiftExerciseStore = recentJustLiftExerciseStore,

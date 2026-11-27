@@ -1,5 +1,6 @@
 package com.devil.phoenixproject
 
+import com.devil.phoenixproject.testutil.findProjectRoot
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -7,24 +8,33 @@ import kotlin.test.assertTrue
 import kotlin.test.fail
 
 /**
+
  * Swift calls [com.devil.phoenixproject.di.doInitKoin], [MainViewController] and — since
  * issue #1391 — the Garmin companion-bridge seam ([GarminNativeBridge],
  * [GarminNativeBridgeEvents], [GarminBridgeDeviceInfo], [GarminCompanionBridgeRegistry];
- * see SWIFT_ENTRY_POINTS). Every other top-level iosMain declaration is either an
+ * see SWIFT_ENTRY_POINTS). Every other top-level iosMain / appleDarwinMain declaration is either an
  * expect/actual (visibility is fixed by the shared contract) or must be internal/private
  * so it stays out of the Kotlin/Native framework header. The sources are not compiled on
  * the host.
+
  */
 class IosKnExportVisibilityContractTest {
     @Test
     fun swiftEntryPointsStayPublicAndOtherIosDeclarationsAreHidden() {
-        val iosMain = File(projectRoot(), "shared/src/iosMain")
+        val root = findProjectRoot()
+        val iosMain = File(root, "shared/src/iosMain")
         assertTrue(iosMain.isDirectory, "iosMain sources must be present")
+        val appleDarwinMain = File(root, "shared/src/appleDarwinMain")
 
-        val declarations = iosMain.walkTopDown()
-            .filter { it.isFile && it.extension == "kt" }
-            .flatMap { file -> topLevelDeclarations(file.readText()) }
-            .toList()
+        val declarations = listOfNotNull(
+            iosMain,
+            appleDarwinMain.takeIf { it.isDirectory },
+        ).flatMap { sourceRoot ->
+            sourceRoot.walkTopDown()
+                .filter { it.isFile && it.extension == "kt" }
+                .flatMap { file -> topLevelDeclarations(file.readText()) }
+                .toList()
+        }
 
         val entries = declarations.filter { it.name in SWIFT_ENTRY_POINTS }
         assertEquals(
@@ -44,18 +54,10 @@ class IosKnExportVisibilityContractTest {
         }
         if (leaks.isNotEmpty()) {
             fail(
-                "iosMain declarations that Swift does not call must be internal or private:\n" +
+                "iosMain/appleDarwinMain declarations that Swift does not call must be internal or private:\n" +
                     leaks.joinToString("\n") { "  ${it.name}: ${it.head}" },
             )
         }
-    }
-
-    private fun projectRoot(): File {
-        var dir = File(System.getProperty("user.dir") ?: ".")
-        while (!File(dir, "shared/src/iosMain").exists()) {
-            dir = dir.parentFile ?: break
-        }
-        return dir
     }
 
     private fun topLevelDeclarations(source: String): List<Declaration> {
