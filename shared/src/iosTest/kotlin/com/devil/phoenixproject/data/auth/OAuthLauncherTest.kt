@@ -20,23 +20,38 @@ class OAuthLauncherTest {
     @Test
     fun launchWithInvalidUrlFromBackgroundDispatcherCompletesSafely() {
         val launcher = OAuthLauncher()
-        var completed = false
-        var result: Result<String>? = null
+        val invalidUrls = listOf(
+            "https://example.com/bad url with spaces",
+            "",
+            "   ",
+            "not-a-url",
+            "ftp://example.com/auth",
+            "https:///no-host",
+        )
+        for (invalidUrl in invalidUrls) {
+            var completed = false
+            var result: Result<String>? = null
 
-        val job = CoroutineScope(Dispatchers.Default).launch {
-            result = launcher.launch("https://example.com/bad url with spaces", "phoenix")
-            completed = true
+            val job = CoroutineScope(Dispatchers.Default).launch {
+                result = launcher.launchWithSessionFactory(invalidUrl, "phoenix") { _, _, _, _ ->
+                    error("sessionFactory must not be called for invalid URL: $invalidUrl")
+                }
+                completed = true
+            }
+
+            val deadline = NSDate.dateWithTimeIntervalSinceNow(5.0)
+            while (!completed && NSDate().timeIntervalSince1970 < deadline.timeIntervalSince1970) {
+                NSRunLoop.mainRunLoop.runUntilDate(NSDate.dateWithTimeIntervalSinceNow(0.01))
+            }
+
+            job.cancel()
+            assertTrue(completed, "OAuthLauncher.launchWithSessionFactory must complete without hanging for '$invalidUrl'")
+            val failure = result?.exceptionOrNull()
+            assertTrue(
+                failure is IllegalArgumentException,
+                "Expected IllegalArgumentException for '$invalidUrl', got $failure",
+            )
         }
-
-        val deadline = NSDate.dateWithTimeIntervalSinceNow(5.0)
-        while (!completed && NSDate().timeIntervalSince1970 < deadline.timeIntervalSince1970) {
-            NSRunLoop.mainRunLoop.runUntilDate(NSDate.dateWithTimeIntervalSinceNow(0.01))
-        }
-
-        job.cancel()
-        assertTrue(completed, "OAuthLauncher.launch must complete without hanging")
-        val failure = result?.exceptionOrNull()
-        assertTrue(failure is IllegalArgumentException, "Expected IllegalArgumentException, got $failure")
     }
 
     @Test

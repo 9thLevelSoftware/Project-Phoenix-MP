@@ -340,6 +340,7 @@ class TvAppBridgeBoundaryTest {
                     deviceName = "Vee_Boundary",
                     deviceAddress = "boundary",
                     reason = "test_drop",
+                    timestamp = 1L,
                 ),
             )
             withContext(Dispatchers.Default) {
@@ -395,6 +396,7 @@ class TvAppBridgeBoundaryTest {
                     deviceName = "Vee_Boundary",
                     deviceAddress = "boundary",
                     reason = "test_drop",
+                    timestamp = 1L,
                 ),
             )
             withContext(Dispatchers.Default) {

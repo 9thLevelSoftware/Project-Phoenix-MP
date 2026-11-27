@@ -4295,6 +4295,8 @@ class DWSMWorkoutLifecycleTest {
     @Test
     fun `stopWorkout with exitingWorkout false transitions to SetSummary`() = runTest {
         val harness = activeDWSM()
+        harness.setActiveSummaryCountdownSeconds(0)
+        runCurrent()
 
         harness.dwsm.stopWorkout(exitingWorkout = false)
         advanceUntilIdle()
@@ -4309,6 +4311,8 @@ class DWSMWorkoutLifecycleTest {
     @Test
     fun `stopWorkout guard flag prevents double stop`() = runTest {
         val harness = activeDWSM()
+        harness.setActiveSummaryCountdownSeconds(0)
+        runCurrent()
 
         // First stop should work
         harness.dwsm.stopWorkout(exitingWorkout = false)
@@ -4378,6 +4382,8 @@ class DWSMWorkoutLifecycleTest {
     @Test
     fun `resetForNewWorkout clears rep count and resets to Idle`() = runTest {
         val harness = activeDWSM()
+        harness.setActiveSummaryCountdownSeconds(0)
+        runCurrent()
 
         // Stop workout first to get to SetSummary
         harness.dwsm.stopWorkout(exitingWorkout = false)
@@ -5487,6 +5493,7 @@ class DWSMWorkoutLifecycleTest {
     @Test
     fun `standard set auto-stops after stalled deload timer expires`() = runTest {
         val harness = DWSMTestHarness(this)
+        harness.setActiveSummaryCountdownSeconds(0)
         harness.fakeBleRepo.simulateConnect("Vee_Test")
 
         harness.dwsm.updateWorkoutParameters(
@@ -5591,6 +5598,7 @@ class DWSMWorkoutLifecycleTest {
     @Test
     fun `Issue 256 - velocity stall auto-stops with pending rep after timer expires`() = runTest {
         val harness = DWSMTestHarness(this)
+        harness.setActiveSummaryCountdownSeconds(0)
         harness.fakeBleRepo.simulateConnect("Vee_Test")
 
         harness.dwsm.updateWorkoutParameters(
@@ -5982,6 +5990,7 @@ class DWSMWorkoutLifecycleTest {
     fun `Issue 652 recurrence - progressive Hard to Hardest Echo sets count current reps and stop only at the configured target or a new stall`() = runTest {
         val harness = DWSMTestHarness(this)
         try {
+            harness.setActiveSummaryCountdownSeconds(0)
             harness.fakeBleRepo.simulateConnect("Vee_Test")
 
             suspend fun startEchoSet(level: EchoLevel) {
@@ -6254,6 +6263,7 @@ class DWSMWorkoutLifecycleTest {
     @Test
     fun `F4 - deload-armed stall survives racked handles and auto-stops`() = runTest {
         val harness = DWSMTestHarness(this)
+        harness.setActiveSummaryCountdownSeconds(0)
         harness.fakeBleRepo.simulateConnect("Vee_Test")
         harness.dwsm.updateWorkoutParameters(
             WorkoutParameters(

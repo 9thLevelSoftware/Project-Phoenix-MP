@@ -79,6 +79,16 @@ private fun createPlatformWebAuthSession(
     }
 }
 
+private fun parseValidAuthorizeUrl(authorizeUrl: String): NSURL? {
+    if (authorizeUrl.isBlank()) return null
+    if (authorizeUrl.any { it.isWhitespace() || it.isISOControl() }) return null
+    val url = NSURL.URLWithString(authorizeUrl) ?: return null
+    val scheme = url.scheme?.lowercase()
+    if (scheme != "http" && scheme != "https") return null
+    if (url.host.isNullOrBlank()) return null
+    return url
+}
+
 /**
  * iOS OAuth launcher using Apple's [ASWebAuthenticationSession].
  *
@@ -107,13 +117,10 @@ actual class OAuthLauncher {
             (NSURL?, NSError?) -> Unit,
         ) -> WebAuthSessionHandle,
     ): Result<String> = withContext(Dispatchers.Main.immediate) {
-        suspendCancellableCoroutine { cont ->
-            val url = NSURL.URLWithString(authorizeUrl)
-            if (url == null) {
-                cont.resume(Result.failure(IllegalArgumentException("Invalid authorize URL: $authorizeUrl")))
-                return@suspendCancellableCoroutine
-            }
+        val url = parseValidAuthorizeUrl(authorizeUrl)
+            ?: return@withContext Result.failure(IllegalArgumentException("Invalid authorize URL: $authorizeUrl"))
 
+        suspendCancellableCoroutine { cont ->
             val provider = PresentationContextProvider()
             lateinit var webSession: WebAuthSessionHandle
             webSession = sessionFactory(url, callbackScheme, provider) { callbackURL: NSURL?, error: NSError? ->

@@ -1,24 +1,21 @@
 package com.devil.phoenixproject.testutil
 
 import app.cash.sqldelight.db.QueryResult
-import app.cash.sqldelight.driver.native.NativeSqliteDriver
+import app.cash.sqldelight.driver.native.inMemoryDriver
 import co.touchlab.sqliter.DatabaseConfiguration
 import com.devil.phoenixproject.database.PhoenixDatabase
 
 /**
  * tvOS implementation of test database factory.
- * Uses in-memory SQLite via native driver for fast, isolated tests.
+ * Uses an ephemeral in-memory SQLite database via native driver for fast, isolated tests.
  *
  * Foreign keys are ON, as in DriverFactory.tvos.kt after reconciliation. SQLiter applies
  * the extended config to every pooled connection (a PRAGMA would only reach one).
  */
 actual fun createTestDatabase(): PhoenixDatabase {
-    val driver = NativeSqliteDriver(
+    val driver = inMemoryDriver(
         schema = PhoenixDatabase.Schema,
-        name = ":memory:",
-        onConfiguration = { config ->
-            config.copy(extendedConfig = DatabaseConfiguration.Extended(foreignKeyConstraints = true))
-        },
+        extendedConfig = DatabaseConfiguration.Extended(foreignKeyConstraints = true),
     )
     val enabled = driver.executeQuery(
         null,

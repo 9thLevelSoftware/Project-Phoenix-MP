@@ -13,14 +13,12 @@ object CrashLog {
     const val MAX_REPORT_CHARS = 100_000
 
     private const val REDACTED = "[redacted]"
-    // Every quantifier is bounded so matching stays linear in the report length. An unbounded
-    // `[...]+@` backtracks quadratically over long unbroken runs (hex dumps, base64), which would
-    // stall the dying process inside the crash handler.
-    private val secretPatterns = listOf(
-        Regex("Bearer\\s{1,8}\\S{1,4096}", RegexOption.IGNORE_CASE),
-        Regex("eyJ[A-Za-z0-9_-]{1,4096}\\.[A-Za-z0-9_-]{1,4096}\\.[A-Za-z0-9_-]{1,4096}"),
-        Regex("[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,255}\\.[A-Za-z]{2,24}"),
-    )
+    private const val BEARER_MAX_WS = 8
+    private const val TOKEN_MAX_LEN = 4096
+    private const val EMAIL_LOCAL_MAX_LEN = 64
+    private const val EMAIL_DOMAIN_MAX_LEN = 255
+    private const val EMAIL_TLD_MIN_LEN = 2
+    private const val EMAIL_TLD_MAX_LEN = 24
 
     fun formatReport(
         throwable: Throwable,
@@ -36,8 +34,163 @@ object CrashLog {
         append(throwable.stackTraceToString())
     }.let { cap(redact(cap(it))) } // Cap first so redaction input is bounded; re-cap since a short match can grow.
 
-    /** Strips bearer tokens, JWTs and email addresses, since reports are often posted publicly. */
-    internal fun redact(text: String): String = secretPatterns.fold(text) { acc, regex -> regex.replace(acc, REDACTED) }
+    /**
+     * Strips bearer tokens, JWTs and email addresses, since reports are often posted publicly.
+     * Uses linear anchor-indexed scanning (`bearer`, `eyJ`, `@`) rather than whole-string regex
+     * so long unbroken runs never trigger per-character regex backtracking.
+     */
+    internal fun redact(text: String): String = redactEmail(redactJwt(redactBearer(text)))
+
+    private fun redactBearer(text: String): String {
+        var sb: StringBuilder? = null
+        var lastEmitted = 0
+        var i = 0
+        while (i < text.length) {
+            val idx = text.indexOf("bearer", startIndex = i, ignoreCase = true)
+            if (idx == -1) break
+            val wsStart = idx + 6
+            var wsEnd = wsStart
+            val wsLimit = minOf(text.length, wsStart + BEARER_MAX_WS)
+            while (wsEnd < wsLimit && text[wsEnd].isWhitespace()) wsEnd++
+            if (wsEnd > wsStart) {
+                var tokEnd = wsEnd
+                val tokLimit = minOf(text.length, wsEnd + TOKEN_MAX_LEN)
+                while (tokEnd < tokLimit && !text[tokEnd].isWhitespace()) tokEnd++
+                if (tokEnd > wsEnd) {
+                    val out = sb ?: StringBuilder(text.length).also { sb = it }
+                    out.appendRange(text, lastEmitted, idx)
+                    out.append(REDACTED)
+                    lastEmitted = tokEnd
+                    i = tokEnd
+                    continue
+                }
+            }
+            i = wsEnd
+        }
+        val out = sb ?: return text
+        out.appendRange(text, lastEmitted, text.length)
+        return out.toString()
+    }
+
+    private fun redactJwt(text: String): String {
+        var sb: StringBuilder? = null
+        var lastEmitted = 0
+        var i = 0
+        while (i < text.length) {
+            val idx = text.indexOf("eyJ", startIndex = i)
+            if (idx == -1) break
+            val p1Start = idx + 3
+            var p1End = p1Start
+            while (p1End < text.length && isJwtBodyChar(text[p1End])) p1End++
+            if (p1End >= text.length || text[p1End] != '.') {
+                i = p1End + 1
+                continue
+            }
+            val p2Start = p1End + 1
+            var p2End = p2Start
+            val p2Limit = minOf(text.length, p2Start + TOKEN_MAX_LEN + 1)
+            while (p2End < p2Limit && isJwtBodyChar(text[p2End])) p2End++
+            val p2Len = p2End - p2Start
+            if (p2Len !in 1..TOKEN_MAX_LEN || p2End >= text.length || text[p2End] != '.') {
+                i = p1End + 1
+                continue
+            }
+            val p3Start = p2End + 1
+            var p3End = p3Start
+            val p3Limit = minOf(text.length, p3Start + TOKEN_MAX_LEN)
+            while (p3End < p3Limit && isJwtBodyChar(text[p3End])) p3End++
+            if (p3End == p3Start) {
+                i = p1End + 1
+                continue
+            }
+            val p1Len = p1End - p1Start
+            val matchStart = when {
+                p1Len in 1..TOKEN_MAX_LEN -> idx
+                p1Len > TOKEN_MAX_LEN -> {
+                    val earliestAllowed = maxOf(p1Start, p1End - TOKEN_MAX_LEN - 3)
+                    val innerIdx = text.indexOf("eyJ", startIndex = earliestAllowed)
+                    if (innerIdx != -1 && innerIdx <= p1End - 4) innerIdx else -1
+                }
+                else -> -1
+            }
+            if (matchStart == -1) {
+                i = p1End + 1
+                continue
+            }
+            val out = sb ?: StringBuilder(text.length).also { sb = it }
+            out.appendRange(text, lastEmitted, matchStart)
+            out.append(REDACTED)
+            lastEmitted = p3End
+            i = p3End
+        }
+        val out = sb ?: return text
+        out.appendRange(text, lastEmitted, text.length)
+        return out.toString()
+    }
+
+    private fun redactEmail(text: String): String {
+        var sb: StringBuilder? = null
+        var lastEmitted = 0
+        var i = 0
+        while (i < text.length) {
+            val atIdx = text.indexOf('@', startIndex = i)
+            if (atIdx == -1) break
+            var localStart = atIdx
+            val localMin = maxOf(lastEmitted, atIdx - EMAIL_LOCAL_MAX_LEN)
+            while (localStart > localMin && isEmailLocalChar(text[localStart - 1])) {
+                localStart--
+            }
+            if (localStart == atIdx) {
+                i = atIdx + 1
+                continue
+            }
+            val domainStart = atIdx + 1
+            val maxAfterAt = minOf(text.length, domainStart + EMAIL_DOMAIN_MAX_LEN + 1 + EMAIL_TLD_MAX_LEN)
+            var runEnd = domainStart
+            while (runEnd < maxAfterAt && isEmailDomainChar(text[runEnd])) {
+                runEnd++
+            }
+            var matchEnd = -1
+            val maxDotIdx = minOf(runEnd - 1, domainStart + EMAIL_DOMAIN_MAX_LEN)
+            for (dotIdx in maxDotIdx downTo domainStart + 1) {
+                if (text[dotIdx] != '.') continue
+                var tldEnd = dotIdx + 1
+                val tldLimit = minOf(text.length, dotIdx + 1 + EMAIL_TLD_MAX_LEN)
+                while (tldEnd < tldLimit && isAsciiLetter(text[tldEnd])) {
+                    tldEnd++
+                }
+                if (tldEnd - (dotIdx + 1) >= EMAIL_TLD_MIN_LEN) {
+                    matchEnd = tldEnd
+                    break
+                }
+            }
+            if (matchEnd == -1) {
+                i = atIdx + 1
+                continue
+            }
+            val out = sb ?: StringBuilder(text.length).also { sb = it }
+            out.appendRange(text, lastEmitted, localStart)
+            out.append(REDACTED)
+            lastEmitted = matchEnd
+            i = matchEnd
+        }
+        val out = sb ?: return text
+        out.appendRange(text, lastEmitted, text.length)
+        return out.toString()
+    }
+
+    private fun isJwtBodyChar(c: Char): Boolean =
+        c in 'A'..'Z' || c in 'a'..'z' || c in '0'..'9' || c == '_' || c == '-'
+
+    private fun isEmailLocalChar(c: Char): Boolean =
+        c in 'A'..'Z' || c in 'a'..'z' || c in '0'..'9' ||
+            c == '.' || c == '_' || c == '%' || c == '+' || c == '-'
+
+    private fun isEmailDomainChar(c: Char): Boolean =
+        c in 'A'..'Z' || c in 'a'..'z' || c in '0'..'9' || c == '.' || c == '-'
+
+    private fun isAsciiLetter(c: Char): Boolean =
+        c in 'A'..'Z' || c in 'a'..'z'
 
     /** Keeps the head and the tail (where the root "Caused by" usually is) of an oversized report. */
     private fun cap(report: String): String {
