@@ -2491,7 +2491,6 @@ class ActiveSessionEngine(
             activeRuntimeDocument != document ||
             activeRuntimeDocumentVersion != owner.documentVersion ||
             coordinator._restTransitionPlan.value != null ||
-            document.restTransitionPlan != null ||
             !hasRestoredOwnerContextAuthority(owner, document)
         ) {
             revokeRestoredActionAuthorityLocked(owner.guardOwner)
@@ -2754,7 +2753,7 @@ class ActiveSessionEngine(
         }
         val routine = coordinator._loadedRoutine.value ?: return false
         val sourceExercise = routine.exercises.getOrNull(document.sourceExerciseIndex) ?: return false
-        return (routine.profileId ?: "default") == document.profileId &&
+        return routine.profileId == document.profileId &&
             coordinator.currentRoutineId == document.routineId &&
             coordinator.currentRoutineSessionId == document.routineSessionId &&
             coordinator._currentExerciseIndex.value == document.sourceExerciseIndex &&
@@ -5434,7 +5433,7 @@ class ActiveSessionEngine(
 
         // #7: CRITICAL: Global metricsFlow collection (matches parent repo)
         coordinator.monitorDataCollectionJob = scope.launch {
-            Logger.d("ActiveSessionEngine") { "Starting global metricsFlow collection..." }
+            Logger.d(tag = "ActiveSessionEngine") { "Starting global metricsFlow collection..." }
             bleRepository.metricsFlow
                 .catch { e -> Logger.e(e) { "metricsFlow collector error" } }
                 .collect { metric ->
@@ -5457,7 +5456,7 @@ class ActiveSessionEngine(
 
                         if (currentMax > coordinator.maxHeuristicKgMax) {
                             coordinator.maxHeuristicKgMax = currentMax
-                            Logger.v("ActiveSessionEngine") { "Echo force telemetry: kgMax=$currentMax (concentric=$concentricMax, eccentric=$eccentricMax)" }
+                            Logger.v(tag = "ActiveSessionEngine") { "Echo force telemetry: kgMax=$currentMax (concentric=$concentricMax, eccentric=$eccentricMax)" }
                         }
                     }
                 } catch (e: Exception) {
@@ -5812,7 +5811,7 @@ class ActiveSessionEngine(
             }
         }
 
-        Logger.d("ActiveSessionEngine") {
+        Logger.d(tag = "ActiveSessionEngine") {
             "HEALTH_DEBUG_SUMMARY: cableCountHint=${cableCountHint ?: -1}, " +
                 "heuristicIsSingleCable=$heuristicIsSingleCable, resolvedCableCount=$cableCount, " +
                 "peakCableA=$peakCableA, peakCableB=$peakCableB, " +
@@ -5982,7 +5981,7 @@ class ActiveSessionEngine(
             counterweightKg = rackAdjustment.counterweightKg,
         )
 
-        Logger.d("ActiveSessionEngine") {
+        Logger.d(tag = "ActiveSessionEngine") {
             "applyBodyweightVolume: exercise=$exerciseName, bodyWeightSet=${bodyWeightKg > 0f}, " +
                 "variant=${resolvedVariant?.label ?: "name-match"}, reps=$repCount, " +
                 "externalAddedLoad=${rackAdjustment.externalAddedLoadKg}kg, counterweight=${rackAdjustment.counterweightKg}kg, " +
@@ -7931,7 +7930,7 @@ class ActiveSessionEngine(
             val resolvedItems = equipmentRackRepository.rackItems.value
                 .filter { it.enabled && it.id in distinctIds }
             val currentParams = coordinator._workoutParameters.value
-            val physicalCableCount = currentExercise?.exercise?.preferredCableCount ?: 1
+            val physicalCableCount = currentExercise.exercise.preferredCableCount ?: 1
             val adjustment = applyEquipmentRackLoadUseCase.calculate(
                 programmedWeightPerCableKg = currentParams.weightPerCableKg,
                 physicalCableCount = physicalCableCount,
@@ -8629,9 +8628,9 @@ class ActiveSessionEngine(
                 // Issue #222: For ALL bodyweight exercises, skip machine commands
                 if (isBodyweight) {
                     val effectiveDuration = bodyweightDuration ?: 30
-                    Logger.d("Starting bodyweight exercise: ${currentExercise?.exercise?.name} for ${effectiveDuration}s (bodyweightDuration=$bodyweightDuration)")
+                    Logger.d("Starting bodyweight exercise: ${currentExercise.exercise.name} for ${effectiveDuration}s (bodyweightDuration=$bodyweightDuration)")
 
-                    Logger.d("ActiveSessionEngine") { "Issue #222 v6: Bodyweight start - keeping existing polling state (matching parent repo)" }
+                    Logger.d(tag = "ActiveSessionEngine") { "Issue #222 v6: Bodyweight start - keeping existing polling state (matching parent repo)" }
 
                     repCounter.reset()
                     repCounter.configure(
@@ -8702,7 +8701,7 @@ class ActiveSessionEngine(
 
                 val effectiveWarmupReps = Constants.DEFAULT_WARMUP_REPS
                 val effectiveParams = if (params.warmupReps != effectiveWarmupReps) {
-                    Logger.d("ActiveSessionEngine") { "Issue #222: Forcing warmupReps=$effectiveWarmupReps for cable exercise (was ${params.warmupReps})" }
+                    Logger.d(tag = "ActiveSessionEngine") { "Issue #222: Forcing warmupReps=$effectiveWarmupReps for cable exercise (was ${params.warmupReps})" }
                     val updated = params.copy(warmupReps = effectiveWarmupReps)
                     coordinator._workoutParameters.value = updated
                     updated
@@ -8716,10 +8715,10 @@ class ActiveSessionEngine(
                     coordinator.pendingWeightChangeKg = null
                 }
 
-                Logger.d("ActiveSessionEngine") { "Cable workout starting - bodyweightSetsInRoutine=${coordinator.bodyweightSetsCompletedInRoutine}, exerciseIdx=${coordinator._currentExerciseIndex.value}, setIdx=${coordinator._currentSetIndex.value}, echo=${effectiveParams.isEchoMode}, mode=${effectiveParams.programMode}" }
-                Logger.d("ActiveSessionEngine") { "BLE params: mode=${effectiveParams.programMode.displayName}, weight=${effectiveParams.weightPerCableKg}kg, reps=${effectiveParams.reps} (AMRAP=${effectiveParams.isAMRAP}), warmup=${effectiveParams.warmupReps}, progression=${effectiveParams.progressionRegressionKg}kg/rep" }
-                Logger.d("ActiveSessionEngine") { "BLE params (cont): justLift=${effectiveParams.isJustLift}, echo=${effectiveParams.isEchoMode}, echoLevel=${effectiveParams.echoLevel.displayName}, eccentricLoad=${effectiveParams.eccentricLoad.percentage}%, stopAtTop=${effectiveParams.stopAtTop}, stallDetection=${effectiveParams.stallDetectionEnabled}" }
-                Logger.d("ActiveSessionEngine") { "Issue203: setReps=${currentExercise?.setReps}, currentSetIndex=${coordinator._currentSetIndex.value}, isAMRAP=${effectiveParams.isAMRAP}" }
+                Logger.d(tag = "ActiveSessionEngine") { "Cable workout starting - bodyweightSetsInRoutine=${coordinator.bodyweightSetsCompletedInRoutine}, exerciseIdx=${coordinator._currentExerciseIndex.value}, setIdx=${coordinator._currentSetIndex.value}, echo=${effectiveParams.isEchoMode}, mode=${effectiveParams.programMode}" }
+                Logger.d(tag = "ActiveSessionEngine") { "BLE params: mode=${effectiveParams.programMode.displayName}, weight=${effectiveParams.weightPerCableKg}kg, reps=${effectiveParams.reps} (AMRAP=${effectiveParams.isAMRAP}), warmup=${effectiveParams.warmupReps}, progression=${effectiveParams.progressionRegressionKg}kg/rep" }
+                Logger.d(tag = "ActiveSessionEngine") { "BLE params (cont): justLift=${effectiveParams.isJustLift}, echo=${effectiveParams.isEchoMode}, echoLevel=${effectiveParams.echoLevel.displayName}, eccentricLoad=${effectiveParams.eccentricLoad.percentage}%, stopAtTop=${effectiveParams.stopAtTop}, stallDetection=${effectiveParams.stallDetectionEnabled}" }
+                Logger.d(tag = "ActiveSessionEngine") { "Issue203: setReps=${currentExercise?.setReps}, currentSetIndex=${coordinator._currentSetIndex.value}, isAMRAP=${effectiveParams.isAMRAP}" }
 
                 // ===== Variable Warm-up Sets (Phase 35C: Issue #30) =====
                 // When the exercise has warmupSets defined, override weight/reps for warm-up phase.
@@ -8830,7 +8829,7 @@ class ActiveSessionEngine(
                 if (!bleParams.isJustLift && routineExercise != null &&
                     bleParams.weightPerCableKg < 2f && routineExercise.weightPerCableKg > 5f
                 ) {
-                    Logger.e("Issue390") {
+                    Logger.e(tag = "Issue390") {
                         "CRITICAL: BLE weight (${bleParams.weightPerCableKg}kg) is far below " +
                             "routine exercise weight (${routineExercise.weightPerCableKg}kg). " +
                             "The machine will receive near-zero weight! " +
@@ -8961,7 +8960,7 @@ class ActiveSessionEngine(
                 if (!machineSafetyStartAllowed) {
                     // Never refuse silently: re-show the stored hazard's recovery UI (unless the only
                     // row is the replaced live set's own arm, which its teardown will resolve).
-                    machineSafetyCoordinator?.surfaceStoredHazard(liveExecutionId = outgoingLease?.executionId)
+                    machineSafetyCoordinator.surfaceStoredHazard(liveExecutionId = outgoingLease?.executionId)
                     failStart(lease, priorWorkoutState)
                     return@launch
                 }
@@ -9216,11 +9215,11 @@ class ActiveSessionEngine(
                 coordinator._currentMetric.value?.let { metric ->
                     repCounter.setInitialBaseline(metric.positionA, metric.positionB)
                     coordinator._repRanges.value = repCounter.getRepRanges()
-                    Logger.d("ActiveSessionEngine") { "POSITION BASELINE: Set initial baseline posA=${metric.positionA}, posB=${metric.positionB}" }
+                    Logger.d(tag = "ActiveSessionEngine") { "POSITION BASELINE: Set initial baseline posA=${metric.positionA}, posB=${metric.positionB}" }
 
                     coordinator._loadBaselineA.value = metric.loadA
                     coordinator._loadBaselineB.value = metric.loadB
-                    Logger.d("ActiveSessionEngine") { "LOAD BASELINE: Set initial baseline loadA=${metric.loadA}kg, loadB=${metric.loadB}kg" }
+                    Logger.d(tag = "ActiveSessionEngine") { "LOAD BASELINE: Set initial baseline loadA=${metric.loadA}kg, loadB=${metric.loadB}kg" }
                 }
             } catch (e: CancellationException) {
                 if (retryRequest != null && !configurationTeardownHandedOff && !retryStartCommitted) {
@@ -9578,7 +9577,7 @@ class ActiveSessionEngine(
             fallbackStartMs = metrics.firstOrNull()?.timestamp,
         )
         if (!timing.startKnown) {
-            Logger.w("ActiveSessionEngine") {
+            Logger.w(tag = "ActiveSessionEngine") {
                 "Set completion for session ${lease.sessionId} had no start time; saving with a zero duration"
             }
         }
@@ -10270,7 +10269,7 @@ class ActiveSessionEngine(
                         loadedRoutine == null ||
                             (
                                 loadedRoutine.id == document.routineId &&
-                                    (loadedRoutine.profileId ?: "default") == document.profileId
+                                    loadedRoutine.profileId == document.profileId
                                 )
                         )
             },
@@ -10283,7 +10282,7 @@ class ActiveSessionEngine(
 
     private fun exitProfileMismatchedPresentationIfCurrent(readyProfileId: String) {
         val loadedRoutine = coordinator._loadedRoutine.value ?: return
-        if ((loadedRoutine.profileId ?: "default") == readyProfileId) return
+        if (loadedRoutine.profileId == readyProfileId) return
         val routineId = coordinator.currentRoutineId
         val routineSessionId = coordinator.currentRoutineSessionId
         executionGuard.mutateConfigurationInputsIf(
@@ -10990,7 +10989,7 @@ class ActiveSessionEngine(
         val polarSessionIdAtStop = hrmBleManager?.currentRecordingSessionId
         val polarSummaryAtStop = if (completion == null) {
             polarSessionIdAtStop?.let { sessionId ->
-                hrmBleManager?.freezeSessionRecording(sessionId)
+                hrmBleManager.freezeSessionRecording(sessionId)
             }
         } else {
             null
@@ -11062,7 +11061,7 @@ class ActiveSessionEngine(
                     }
                 }
                 val legacyAttemptNumber = legacyContext?.completionFacts?.attemptNumber ?: 1
-                Logger.d("ActiveSessionEngine") { "Manual stop continuation: exitingWorkout=$shouldExitToIdle" }
+                Logger.d(tag = "ActiveSessionEngine") { "Manual stop continuation: exitingWorkout=$shouldExitToIdle" }
                 coordinator._hapticEvents.emit(HapticEvent.WORKOUT_END)
 
                 val repCount = coordinator._repCount.value
@@ -11144,14 +11143,14 @@ class ActiveSessionEngine(
                 if (!timing.startKnown && repCount.totalReps == 0 && firstSampleAtStopMs == null) {
                     // No set was running at Stop: no start, no reps, no samples. There is
                     // nothing to record, and saving here is what wrote the 1970 sessions.
-                    Logger.w("ActiveSessionEngine") {
+                    Logger.w(tag = "ActiveSessionEngine") {
                         "Manual stop with no running set (no start time, reps or samples); not saving a session"
                     }
                     applyManualStopEndState(shouldExitToIdle, nonExitState = WorkoutState.Idle)
                     return@launchPresentationContinuation
                 }
                 if (!timing.startKnown) {
-                    Logger.w("ActiveSessionEngine") {
+                    Logger.w(tag = "ActiveSessionEngine") {
                         "Manual stop had no start time; saving the set with a zero duration"
                     }
                 }
@@ -11264,7 +11263,7 @@ class ActiveSessionEngine(
                     repBiomechanics = emptyList(),
                 )
                 polarSessionIdAtStop?.let { recordedSourceId ->
-                    hrmBleManager?.flushSessionTelemetry(session.id, recordedSourceId)?.join()
+                    hrmBleManager.flushSessionTelemetry(session.id, recordedSourceId)?.join()
                 }
                 val completedSetId = completedSet?.id
                 if (completedSet != null) {
@@ -11551,7 +11550,7 @@ class ActiveSessionEngine(
         val externalActivityRepository = externalActivityRepository ?: return
 
         if (!isValidCompletedSession(session)) {
-            Logger.i("ActiveSessionEngine") {
+            Logger.i(tag = "ActiveSessionEngine") {
                 "HEALTH_DEBUG_PUSH: skipped invalid workout sessionId=${session.id}, " +
                     "exerciseId=${session.exerciseId ?: "NULL"}, workingReps=${session.workingReps}, durationMs=${session.duration}"
             }
@@ -11563,14 +11562,14 @@ class ActiveSessionEngine(
             try {
                 val provider = healthProviderForPlatform()
                 val status = externalActivityRepository.getIntegrationStatus(provider, profileId).first()
-                Logger.i("ActiveSessionEngine") {
+                Logger.i(tag = "ActiveSessionEngine") {
                     "HEALTH_DEBUG_PUSH: provider=${provider.key}, status=${status?.status}, " +
                         "sessionId=${session.id}, exercise=${session.exerciseName ?: "NULL"}, " +
                         "weightPerCableKg=${session.weightPerCableKg}, cableCount=${session.cableCount ?: -1}, " +
                         "estimatedCalories=${session.estimatedCalories ?: -1f}"
                 }
                 if (status?.status != ConnectionStatus.CONNECTED) {
-                    Logger.i("ActiveSessionEngine") {
+                    Logger.i(tag = "ActiveSessionEngine") {
                         "Health auto-push skipped: ${provider.displayName} is not connected (status=${status?.status})"
                     }
                     return@launch
@@ -11582,14 +11581,14 @@ class ActiveSessionEngine(
                     completedSets = completedSets,
                 )
                 if (data == null) {
-                    Logger.i("ActiveSessionEngine") {
+                    Logger.i(tag = "ActiveSessionEngine") {
                         "Health auto-push skipped: no exportable segments for sessionId=${session.id}"
                     }
                     return@launch
                 }
                 val cursorRepository = healthExportCursorRepository
                 if (cursorRepository != null && HealthExportMarkers.isExported(cursorRepository, provider, profileId, data.externalId)) {
-                    Logger.i("ActiveSessionEngine") {
+                    Logger.i(tag = "ActiveSessionEngine") {
                         "Health auto-push skipped: ${data.externalId} is already marked exported"
                     }
                     return@launch
@@ -11600,14 +11599,14 @@ class ActiveSessionEngine(
                         if (cursorRepository != null) {
                             HealthExportMarkers.markExported(cursorRepository, provider, profileId, data.externalId)
                         }
-                        Logger.i("ActiveSessionEngine") { "Auto-pushed workout to ${provider.displayName}: sessionId=${session.id}" }
+                        Logger.i(tag = "ActiveSessionEngine") { "Auto-pushed workout to ${provider.displayName}: sessionId=${session.id}" }
                     }
                     .onFailure { e ->
-                        Logger.w("ActiveSessionEngine") { "Health auto-push failed (non-fatal): ${e.message}" }
+                        Logger.w(tag = "ActiveSessionEngine") { "Health auto-push failed (non-fatal): ${e.message}" }
                     }
             } catch (e: Exception) {
                 e.rethrowIfCancellation()
-                Logger.w("ActiveSessionEngine") { "Health auto-push failed (non-fatal): ${e.message}" }
+                Logger.w(tag = "ActiveSessionEngine") { "Health auto-push failed (non-fatal): ${e.message}" }
             }
         }
     }
@@ -11637,7 +11636,7 @@ class ActiveSessionEngine(
             ).size
 
         if (completedExerciseCount <= 0 || completedSetKeys.isEmpty()) {
-            Logger.i("ActiveSessionEngine") {
+            Logger.i(tag = "ActiveSessionEngine") {
                 "Routine health push skipped: no valid completed routine sets " +
                     "(routineSessionId=$routineSessionId, completedExercises=$completedExerciseCount, completedSets=${completedSetKeys.size})"
             }
@@ -11776,7 +11775,6 @@ class ActiveSessionEngine(
             ?.exercises
             ?.getOrNull(coordinator._currentExerciseIndex.value)
         val shouldPromptBodyweightAtCapture = (currentExerciseAtCapture?.exercise?.isBodyweight ?: false) &&
-            currentExerciseAtCapture != null &&
             coordinator.bodyweightCompletionVariantOverride == null &&
             coordinator._loadedRoutine.value != null
         val isWarmupTransition = coordinator._currentWarmupSetIndex.value >= 0 &&
@@ -11845,7 +11843,6 @@ class ActiveSessionEngine(
             // history-visible filter then dropped the entire routine from Analytics while
             // Home Recent Activity surfaced the misleading "0 reps · <load>" rows.
             val shouldPromptBodyweightRepEntry = wasBodyweight &&
-                currentExercise != null &&
                 coordinator.bodyweightCompletionVariantOverride == null &&
                 // Defensive: a non-routine path could in theory reach here without a
                 // routine-loaded exercise; require a real routine exercise so we never
@@ -11864,7 +11861,7 @@ class ActiveSessionEngine(
 
             if (wasBodyweight) {
                 coordinator.bodyweightSetsCompletedInRoutine++
-                Logger.d(tag = "ActiveSessionEngine") { "Bodyweight set #${coordinator.bodyweightSetsCompletedInRoutine} completed (exercise=${currentExercise.exercise?.name})" }
+                Logger.d(tag = "ActiveSessionEngine") { "Bodyweight set #${coordinator.bodyweightSetsCompletedInRoutine} completed (exercise=${currentExercise.exercise.name})" }
             }
 
             coordinator.previousExerciseWasBodyweight = wasBodyweight
@@ -12343,7 +12340,7 @@ class ActiveSessionEngine(
             if (completion?.routineIdentity != null && installResult !is InitialRestPlanInstallResult.Installed) {
                 return@launch
             }
-            val persistedTimerClaim = if (installedPlan != null && completion != null && timerJob != null) {
+            val persistedTimerClaim = if (installedPlan != null) {
                 claimPersistedRestTimer(completion, installedPlan, restDuration, timerJob)
                     ?: return@launch
             } else {
@@ -12496,7 +12493,7 @@ class ActiveSessionEngine(
             }
 
             // Issue #297, #228: Initialize rest timer control state
-            val persistedInitialPresentation = if (persistedTimerClaim != null && timerJob != null) {
+            val persistedInitialPresentation = if (persistedTimerClaim != null) {
                 publishCurrentPlanOwnedRestPresentation(
                     timerJob = timerJob,
                     initializeDeadline = true,
@@ -12521,20 +12518,20 @@ class ActiveSessionEngine(
                 nextExercise?.supersetId == currentExercise?.supersetId
 
             // Emit Resting immediately so the UI timer starts without waiting on repository lookups.
-            if (persistedInitialPresentation != null) {
-                Unit
-            } else if (hasExpectedAuthority(lease, "rest_timer_initial_state")) {
-                coordinator._workoutState.value = WorkoutState.Resting(
-                    restSecondsRemaining = initialRemainingSeconds,
-                    nextExerciseName = initialNextName,
-                    isLastExercise = isLastExerciseOverall,
-                    currentSet = displaySetIndex,
-                    totalSets = displayTotalSets,
-                    isSupersetTransition = isSupersetTransition,
-                    supersetLabel = supersetLabel,
-                )
-            } else {
-                return@launch
+            if (persistedInitialPresentation == null) {
+                if (hasExpectedAuthority(lease, "rest_timer_initial_state")) {
+                    coordinator._workoutState.value = WorkoutState.Resting(
+                        restSecondsRemaining = initialRemainingSeconds,
+                        nextExerciseName = initialNextName,
+                        isLastExercise = isLastExerciseOverall,
+                        currentSet = displaySetIndex,
+                        totalSets = displayTotalSets,
+                        isSupersetTransition = isSupersetTransition,
+                        supersetLabel = supersetLabel,
+                    )
+                } else {
+                    return@launch
+                }
             }
 
             if (exerciseId != null) {
@@ -12561,7 +12558,7 @@ class ActiveSessionEngine(
                 // Issue #339: Deadline-based loop so timers catch up after background suspension.
                 while (isActive) {
                     if (!hasExpectedAuthority(lease, "rest_timer_tick")) return@launch
-                    val planOwnedPresentation = if (installedPlan != null && timerJob != null) {
+                    val planOwnedPresentation = if (installedPlan != null) {
                         val captured = captureCurrentPlanOwnedRestPresentation(timerJob)
                         if (captured == null) {
                             afterPersistedRestTimerProfileAuthorityFailureForTest?.invoke()
@@ -12661,7 +12658,7 @@ class ActiveSessionEngine(
                     delay(100)
                 }
             } finally {
-                if (installedPlan != null && timerJob != null) {
+                if (installedPlan != null) {
                     withContext(NonCancellable) {
                         restTransitionMutex.withLock {
                             if (persistedRestTimerOwner?.job === timerJob) {

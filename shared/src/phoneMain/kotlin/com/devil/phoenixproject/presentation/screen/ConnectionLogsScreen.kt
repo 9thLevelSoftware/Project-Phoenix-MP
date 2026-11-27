@@ -91,6 +91,17 @@ import projectphoenix.shared.generated.resources.clear_logs_title
 import projectphoenix.shared.generated.resources.copy_to_clipboard
 import projectphoenix.shared.generated.resources.export_logs
 import projectphoenix.shared.generated.resources.log_level_count
+import projectphoenix.shared.generated.resources.logs_content_preview
+import projectphoenix.shared.generated.resources.logs_copied_to_clipboard
+import projectphoenix.shared.generated.resources.logs_count
+import projectphoenix.shared.generated.resources.logs_device_info
+import projectphoenix.shared.generated.resources.logs_device_unknown
+import projectphoenix.shared.generated.resources.logs_empty_subtitle
+import projectphoenix.shared.generated.resources.logs_empty_title
+import projectphoenix.shared.generated.resources.logs_filter_hrm
+import projectphoenix.shared.generated.resources.logs_logging_off
+import projectphoenix.shared.generated.resources.logs_logging_on
+import projectphoenix.shared.generated.resources.logs_na
 import projectphoenix.shared.generated.resources.logs_ready_to_export
 import projectphoenix.shared.generated.resources.search_logs
 
@@ -134,10 +145,11 @@ fun ConnectionLogsScreen(
     }
 
     // Show snackbar when content is copied
-    LaunchedEffect(showCopiedMessage) {
+    val copiedMessage = stringResource(Res.string.logs_copied_to_clipboard)
+    LaunchedEffect(showCopiedMessage, copiedMessage) {
         if (showCopiedMessage) {
             snackbarHostState.showSnackbar(
-                message = "Logs copied to clipboard",
+                message = copiedMessage,
                 duration = SnackbarDuration.Short,
             )
             showCopiedMessage = false
@@ -219,7 +231,7 @@ fun ConnectionLogsScreen(
                     selected = filter.hrmOnly,
                     onClick = { logsViewModel.toggleHrmOnly() },
                     modifier = Modifier.heightIn(min = 48.dp),
-                    label = { Text("HRM") },
+                    label = { Text(stringResource(Res.string.logs_filter_hrm)) },
                 )
             }
 
@@ -237,7 +249,7 @@ fun ConnectionLogsScreen(
                     itemVerticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = "${logs.size} logs",
+                        text = stringResource(Res.string.logs_count, logs.size),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(end = 4.dp),
@@ -261,7 +273,13 @@ fun ConnectionLogsScreen(
                         selected = isLoggingEnabled,
                         onClick = { logsViewModel.setLoggingEnabled(!isLoggingEnabled) },
                         modifier = Modifier.heightIn(min = 48.dp),
-                        label = { Text(if (isLoggingEnabled) "Logging ON" else "Logging OFF") },
+                        label = {
+                            Text(
+                                stringResource(
+                                    if (isLoggingEnabled) Res.string.logs_logging_on else Res.string.logs_logging_off,
+                                ),
+                            )
+                        },
                     )
 
                     IconButton(
@@ -299,13 +317,13 @@ fun ConnectionLogsScreen(
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
-                            text = "No logs yet",
+                            text = stringResource(Res.string.logs_empty_title),
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "Connection events will appear here",
+                            text = stringResource(Res.string.logs_empty_subtitle),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                         )
@@ -348,7 +366,7 @@ fun ConnectionLogsScreen(
         ) {
             Text(stringResource(Res.string.logs_ready_to_export, logs.size))
             Text(
-                text = "Log content preview:",
+                text = stringResource(Res.string.logs_content_preview),
                 style = MaterialTheme.typography.bodySmall,
             )
             val previewHeight = (LocalWindowSizeClass.current.heightDp * 0.35f).coerceIn(140.dp, 320.dp)
@@ -499,7 +517,11 @@ private fun LogEntryCard(log: ConnectionLogEntity) {
             if (log.deviceName != null || log.deviceAddress != null) {
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Device: ${log.deviceName ?: "Unknown"} (${log.deviceAddress ?: "N/A"})",
+                    text = stringResource(
+                        Res.string.logs_device_info,
+                        log.deviceName ?: stringResource(Res.string.logs_device_unknown),
+                        log.deviceAddress ?: stringResource(Res.string.logs_na),
+                    ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

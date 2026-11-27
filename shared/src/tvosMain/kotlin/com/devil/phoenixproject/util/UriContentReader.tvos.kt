@@ -21,6 +21,7 @@ actual suspend fun readUriContent(uriOrPath: String): String? = withContext(Disp
     try {
         readUtf8File(uriOrPath)
     } catch (e: Exception) {
+        e.rethrowIfCancellation()
         log.e(e) { "Failed to read file content: $uriOrPath" }
         null
     }
@@ -37,6 +38,7 @@ actual suspend fun readUriContentUpTo(uriOrPath: String, maxBytes: Int): Bounded
             else -> readUtf8File(uriOrPath)?.let { BoundedUriContent.Read(it) } ?: BoundedUriContent.Unreadable
         }
     } catch (e: Exception) {
+        e.rethrowIfCancellation()
         log.e(e) { "Failed to read file content: $uriOrPath" }
         BoundedUriContent.Unreadable
     }

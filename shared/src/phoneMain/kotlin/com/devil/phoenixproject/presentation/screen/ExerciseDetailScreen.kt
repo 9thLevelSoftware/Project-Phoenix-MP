@@ -268,7 +268,7 @@ fun ExerciseDetailScreen(
                         shape = MaterialTheme.shapes.small,
                     ) {
                         Text(
-                            text = if (isConnected) "Assess 1RM" else "Assess 1RM (Connect to trainer first)",
+                            text = stringResource(if (isConnected) Res.string.detail_assess_1rm else Res.string.detail_assess_1rm_connect),
                             style = MaterialTheme.typography.labelLarge,
                             fontWeight = FontWeight.Bold,
                         )
@@ -319,7 +319,7 @@ fun ExerciseDetailScreen(
                     // History Header
                     item {
                         Text(
-                            "HISTORY",
+                            stringResource(Res.string.detail_history_header),
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary,
@@ -331,7 +331,7 @@ fun ExerciseDetailScreen(
                     if (exerciseSessions.isEmpty()) {
                         item {
                             Text(
-                                "No workout history for this exercise.",
+                                stringResource(Res.string.detail_no_workout_history),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -398,7 +398,7 @@ private fun OneRepMaxCard(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
-                "ESTIMATED 1RM",
+                stringResource(Res.string.detail_estimated_1rm_header),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
             )
@@ -414,11 +414,13 @@ private fun OneRepMaxCard(
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
                     Text(
-                        when (resolution.source) {
-                            CurrentOneRepMaxSource.VELOCITY -> "Velocity profile"
-                            CurrentOneRepMaxSource.ASSESSMENT -> "Strength assessment"
-                            CurrentOneRepMaxSource.SESSION -> "Recent session"
-                        },
+                        stringResource(
+                            when (resolution.source) {
+                                CurrentOneRepMaxSource.VELOCITY -> Res.string.detail_source_velocity
+                                CurrentOneRepMaxSource.ASSESSMENT -> Res.string.detail_source_assessment
+                                CurrentOneRepMaxSource.SESSION -> Res.string.detail_source_session
+                            },
+                        ),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f),
                     )
@@ -441,7 +443,10 @@ private fun OneRepMaxCard(
                             )
                             Spacer(Modifier.width(4.dp))
                             Text(
-                                "${if (isPositive) "+" else ""}${formatWeight(delta, weightUnit)} from last",
+                                stringResource(
+                                    Res.string.detail_delta_from_last,
+                                    "${if (isPositive) "+" else ""}${formatWeight(delta, weightUnit)}",
+                                ),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = if (isPositive) AccessibilityTheme.colors.success else AccessibilityTheme.colors.error,
                             )
@@ -450,19 +455,19 @@ private fun OneRepMaxCard(
                 }
 
                 state is ExerciseDetailOneRepMaxState.Failed -> Text(
-                    "Unable to load 1RM",
+                    stringResource(Res.string.detail_unable_to_load_1rm),
                     style = MaterialTheme.typography.titleLarge,
                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
                 )
 
                 state is ExerciseDetailOneRepMaxState.Loading -> Text(
-                    "Loading…",
+                    stringResource(Res.string.detail_loading_ellipsis),
                     style = MaterialTheme.typography.titleLarge,
                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.5f),
                 )
 
                 else -> Text(
-                    "No data",
+                    stringResource(Res.string.label_no_data),
                     style = MaterialTheme.typography.titleLarge,
                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.5f),
                 )
@@ -498,7 +503,7 @@ private fun ProgressionChartCard(data: List<Pair<Long, Float>>, weightUnit: Weig
             modifier = Modifier.padding(16.dp),
         ) {
             Text(
-                "1RM PROGRESSION",
+                stringResource(Res.string.detail_chart_1rm_progression),
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary,
@@ -622,7 +627,7 @@ private fun WeightTrendChartCard(data: List<Pair<Long, Float>>, weightUnit: Weig
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                "WEIGHT TREND",
+                stringResource(Res.string.detail_chart_weight_trend),
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary,
@@ -666,7 +671,7 @@ private fun VolumeChartCard(sessions: List<WorkoutSession>, weightUnit: WeightUn
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                "VOLUME",
+                stringResource(Res.string.detail_chart_volume),
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary,
@@ -692,7 +697,7 @@ private fun ExerciseHistoryTable(
 ) {
     if (sessions.isEmpty()) {
         Text(
-            "No workout history for this exercise.",
+            stringResource(Res.string.detail_no_workout_history),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -708,7 +713,7 @@ private fun ExerciseHistoryTable(
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                "SESSION DATA",
+                stringResource(Res.string.detail_session_data_header),
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary,
@@ -723,7 +728,9 @@ private fun ExerciseHistoryTable(
                     .fillMaxWidth()
                     .horizontalScroll(scrollState),
             ) {
-                val weightUnitLabel = if (weightUnit == WeightUnit.LB) "lbs" else "kg"
+                val weightUnitLabel = stringResource(
+                    if (weightUnit == WeightUnit.LB) Res.string.label_lbs else Res.string.label_kg,
+                )
                 // Header row
                 Row(
                     modifier = Modifier
@@ -734,12 +741,12 @@ private fun ExerciseHistoryTable(
                         )
                         .padding(horizontal = 12.dp, vertical = 10.dp),
                 ) {
-                    TableHeaderCell("Date", Modifier.weight(1.5f))
-                    TableHeaderCell("Weight ($weightUnitLabel)", Modifier.weight(1f))
-                    TableHeaderCell("Reps", Modifier.weight(0.7f))
-                    TableHeaderCell("Volume ($weightUnitLabel)", Modifier.weight(1f))
-                    TableHeaderCell("1RM ($weightUnitLabel)", Modifier.weight(1f))
-                    TableHeaderCell("Mode", Modifier.weight(1f))
+                    TableHeaderCell(stringResource(Res.string.recent_sessions_col_date), Modifier.weight(1.5f))
+                    TableHeaderCell(stringResource(Res.string.detail_table_weight_unit, weightUnitLabel), Modifier.weight(1f))
+                    TableHeaderCell(stringResource(Res.string.label_reps), Modifier.weight(0.7f))
+                    TableHeaderCell(stringResource(Res.string.detail_table_volume_unit, weightUnitLabel), Modifier.weight(1f))
+                    TableHeaderCell(stringResource(Res.string.detail_table_1rm_unit, weightUnitLabel), Modifier.weight(1f))
+                    TableHeaderCell(stringResource(Res.string.summary_stat_mode), Modifier.weight(1f))
                 }
 
                 // Data rows
@@ -857,7 +864,11 @@ private fun SessionHistoryRow(
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     Text(
-                        "${WeightDisplayFormatter.formatDisplayWeight(session.displayHeaviestKgPerCable(isBodyweight), weightUnit)} × ${session.workingReps} reps",
+                        stringResource(
+                            Res.string.detail_session_weight_reps,
+                            WeightDisplayFormatter.formatDisplayWeight(session.displayHeaviestKgPerCable(isBodyweight), weightUnit),
+                            session.workingReps,
+                        ),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -865,7 +876,7 @@ private fun SessionHistoryRow(
 
                 Icon(
                     if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                    contentDescription = if (isExpanded) "Collapse" else "Expand",
+                    contentDescription = stringResource(if (isExpanded) Res.string.cd_collapse else Res.string.cd_expand),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -880,9 +891,9 @@ private fun SessionHistoryRow(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceEvenly,
                 ) {
-                    DetailItem("Mode", session.mode)
-                    DetailItem("Total Reps", session.workingReps.toString())
-                    DetailItem("Duration", DurationFormatter.formatDuration(session.duration))
+                    DetailItem(stringResource(Res.string.summary_stat_mode), session.mode)
+                    DetailItem(stringResource(Res.string.insights_total_reps), session.workingReps.toString())
+                    DetailItem(stringResource(Res.string.label_duration), DurationFormatter.formatDuration(session.duration))
                 }
             }
         }

@@ -10,6 +10,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
@@ -68,8 +69,10 @@ class HapticEventAudioTest {
 
     @Test
     fun `AUTO_START_READY has stable equality and hashCode`() {
-        assertEquals(HapticEvent.AUTO_START_READY, HapticEvent.AUTO_START_READY)
-        assertEquals(HapticEvent.AUTO_START_READY.hashCode(), HapticEvent.AUTO_START_READY.hashCode())
+        val fromList: HapticEvent = listOf(HapticEvent.WORKOUT_START, HapticEvent.AUTO_START_READY).last()
+        assertSame(HapticEvent.AUTO_START_READY, fromList)
+        assertEquals(1, setOf(HapticEvent.AUTO_START_READY, fromList).size)
+        assertEquals(HapticEvent.AUTO_START_READY.hashCode(), fromList.hashCode())
     }
 
     @Test
@@ -355,7 +358,7 @@ class AudioPreferenceGateTest {
     }
 
     @Test
-    fun `ActiveSessionEngine emits dual cue on final rep, falls back above 25, gates warmup, and respects AMRAP`() = runTest {
+    fun `ActiveSessionEngine emits dual cue on final rep and falls back above 25 and gates warmup and respects AMRAP`() = runTest {
         val harness = DWSMTestHarness(this)
         val events = mutableListOf<HapticEvent>()
         val collector = launch(UnconfinedTestDispatcher(testScheduler)) {

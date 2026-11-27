@@ -40,6 +40,23 @@ import com.devil.phoenixproject.presentation.util.DurationFormatter
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.labelAllCaps
 import com.devil.phoenixproject.util.KmpUtils
+import org.jetbrains.compose.resources.stringResource
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.cd_collapse
+import projectphoenix.shared.generated.resources.cd_expand
+import projectphoenix.shared.generated.resources.external_cd_collapsed
+import projectphoenix.shared.generated.resources.external_cd_expanded
+import projectphoenix.shared.generated.resources.label_reps
+import projectphoenix.shared.generated.resources.recent_sessions_cd
+import projectphoenix.shared.generated.resources.recent_sessions_col_date
+import projectphoenix.shared.generated.resources.recent_sessions_col_time
+import projectphoenix.shared.generated.resources.recent_sessions_col_weight
+import projectphoenix.shared.generated.resources.recent_sessions_duration_suffix
+import projectphoenix.shared.generated.resources.recent_sessions_header
+import projectphoenix.shared.generated.resources.recent_sessions_row_cd
+import projectphoenix.shared.generated.resources.recent_sessions_state_collapsed
+import projectphoenix.shared.generated.resources.recent_sessions_state_expanded
+import projectphoenix.shared.generated.resources.recovery_reps_count
 
 /**
  * Compact, collapsible card showing the last 3–5 sessions for a specific exercise.
@@ -68,6 +85,13 @@ fun ExerciseQuickHistoryCard(
         shape = MaterialTheme.shapes.medium,
     ) {
         Column(modifier = Modifier.padding(Spacing.small)) {
+            val headerStateText = stringResource(
+                if (expanded.value) Res.string.recent_sessions_state_expanded else Res.string.recent_sessions_state_collapsed,
+            )
+            val headerCd = stringResource(Res.string.recent_sessions_cd, headerStateText)
+            val headerStateDesc = stringResource(
+                if (expanded.value) Res.string.external_cd_expanded else Res.string.external_cd_collapsed,
+            )
             // Header row
             Row(
                 modifier = Modifier
@@ -80,9 +104,9 @@ fun ExerciseQuickHistoryCard(
                         }
                     )
                     .semantics {
-                        contentDescription = "Recent Sessions, ${if (expanded.value) "expanded" else "collapsed"}"
+                        contentDescription = headerCd
                         if (canExpand) {
-                            stateDescription = if (expanded.value) "Expanded" else "Collapsed"
+                            stateDescription = headerStateDesc
                             toggleableState = ToggleableState(expanded.value)
                         }
                     }
@@ -91,7 +115,7 @@ fun ExerciseQuickHistoryCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = "RECENT SESSIONS",
+                    text = stringResource(Res.string.recent_sessions_header),
                     style = labelAllCaps,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -100,7 +124,9 @@ fun ExerciseQuickHistoryCard(
                     Icon(
                         imageVector = if (expanded.value) Icons.Default.KeyboardArrowUp
                         else Icons.Default.KeyboardArrowDown,
-                        contentDescription = if (expanded.value) "Collapse" else "Expand",
+                        contentDescription = stringResource(
+                            if (expanded.value) Res.string.cd_collapse else Res.string.cd_expand,
+                        ),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -114,19 +140,19 @@ fun ExerciseQuickHistoryCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text(
-                    text = "Date",
+                    text = stringResource(Res.string.recent_sessions_col_date),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f),
                 )
                 Text(
-                    text = "Weight",
+                    text = stringResource(Res.string.recent_sessions_col_weight),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f),
                 )
                 Text(
-                    text = "Reps",
+                    text = stringResource(Res.string.label_reps),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f),
@@ -134,7 +160,7 @@ fun ExerciseQuickHistoryCard(
                 // Duration column only shown if any visible session has duration
                 if (visibleSessions.any { it.duration > 0 }) {
                     Text(
-                        text = "Time",
+                        text = stringResource(Res.string.recent_sessions_col_time),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.weight(0.8f),
@@ -176,22 +202,27 @@ private fun SessionRow(
     // Issue #1182: Echo shows the achieved load (measured peak), not the configured seed.
     // The exact rendered string lives in AchievedLoadPresentation so it stays testable.
     val loadText = AchievedLoadPresentation.sessionLoadText(session, weightUnit, formatWeight)
+    val dateText = KmpUtils.formatTimestamp(session.timestamp, "MMM d")
+    val repCountValue = if (session.workingReps > 0) session.workingReps else session.totalReps
+    val repsText = stringResource(Res.string.recovery_reps_count, repCountValue)
+    val durationText = if (session.duration > 0) {
+        stringResource(Res.string.recent_sessions_duration_suffix, DurationFormatter.formatDuration(session.duration))
+    } else {
+        ""
+    }
+    val rowCd = stringResource(Res.string.recent_sessions_row_cd, dateText, loadText, repsText, durationText)
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 2.dp)
             .semantics {
-                val date = KmpUtils.formatTimestamp(session.timestamp, "MMM d")
-                val weight = loadText
-                val reps = "${if (session.workingReps > 0) session.workingReps else session.totalReps} reps"
-                val duration = if (session.duration > 0) ", duration ${DurationFormatter.formatDuration(session.duration)}" else ""
-                contentDescription = "$date, $weight, $reps$duration"
+                contentDescription = rowCd
             },
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = KmpUtils.formatTimestamp(session.timestamp, "MMM d"),
+            text = dateText,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.weight(1f),
@@ -202,7 +233,7 @@ private fun SessionRow(
             modifier = Modifier.weight(1f),
         )
         Text(
-            text = "${if (session.workingReps > 0) session.workingReps else session.totalReps} reps",
+            text = repsText,
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.weight(1f),
         )

@@ -1,5 +1,9 @@
+import base64
+import importlib.util
 import itertools
+import json
 import os
+import plistlib
 import re
 import shlex
 import shutil
@@ -8,6 +12,7 @@ import sys
 import tempfile
 import textwrap
 import unittest
+import uuid
 from pathlib import Path
 
 
@@ -529,7 +534,7 @@ class ReleaseWorkflowContracts(unittest.TestCase):
         )
         self.assertEqual(on_block.count(sealed_paths), 2)
 
-    def test_ci_ios_simulator_tests_are_non_blocking_and_skip_prs(self) -> None:
+    def test_ci_ios_simulator_tests_are_blocking_and_run_on_prs(self) -> None:
         text = workflow("ci-tests.yml")
         self.assertNotIn("verifyCommonMainPhoenixDatabaseMigration", text)
         job = re.search(
@@ -537,18 +542,141 @@ class ReleaseWorkflowContracts(unittest.TestCase):
         )
         self.assertIsNotNone(job)
         body = job.group("body")
-        self.assertIn("continue-on-error: true", body)
+        self.assertNotIn("continue-on-error", body)
         self.assertIn(":shared:iosSimulatorArm64Test", body)
         self.assertIn("runs-on: macos-latest", body)
         self.assertIn("-Xmx4g", body)
         self.assertIn("uses: mikepenz/action-junit-report@", body)
-        self.assertIn("fail_on_failure: false", body)
-        self.assertNotIn("fail_on_failure: true", body)
-        self.assertIn(
-            "if: github.event_name == 'workflow_dispatch' || "
-            "(github.event_name == 'push' && github.ref == 'refs/heads/main')",
-            body,
+        self.assertIn("fail_on_failure: true", body)
+        self.assertNotIn("fail_on_failure: false", body)
+        self.assertNotIn("github.event_name == 'workflow_dispatch'", body)
+        self.assertIn(":shared:iosSimulatorArm64Test", workflow("release-tests.yml"))
+
+        android_it = self.job(text, "android-instrumentation-tests")
+        self.assertIn(":androidApp:connectedDebugAndroidTest", android_it)
+
+    def test_ios_release_workflows_validate_supabase_config_and_archived_plist(self) -> None:
+        script_path = ROOT / ".github" / "scripts" / "ios_supabase_config.py"
+        self.assertTrue(script_path.is_file(), "ios_supabase_config.py helper is missing")
+        spec = importlib.util.spec_from_file_location("ios_supabase_config", script_path)
+        assert spec is not None and spec.loader is not None
+        helper = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(helper)
+
+        for name in (
+            "ios-release-ipa.yml",
+            "ios-testflight.yml",
+            "ios-testflight-internal.yml",
+        ):
+            with self.subTest(workflow=name):
+                text = workflow(name)
+                write_idx = text.index("ios_supabase_config.py write-xcconfig")
+                archive_idx = text.index("- name: Archive app")
+                verify_idx = text.index("ios_supabase_config.py verify-plist")
+                export_idx = text.index("- name: Export .ipa")
+                self.assertLess(write_idx, archive_idx)
+                self.assertLess(archive_idx, verify_idx)
+                self.assertLess(verify_idx, export_idx)
+                self.assertIn(
+                    "PhoenixApp.xcarchive/Products/Applications/PhoenixApp.app/Info.plist",
+                    text[verify_idx:export_idx],
+                )
+                self.assertNotIn("sed 's|//|/$()/|g'", text)
+
+        anon_payload = (
+            base64.urlsafe_b64encode(json.dumps({"role": "anon"}).encode())
+            .decode()
+            .rstrip("=")
         )
+        service_payload = (
+            base64.urlsafe_b64encode(json.dumps({"role": "service_role"}).encode())
+            .decode()
+            .rstrip("=")
+        )
+        list_payload = (
+            base64.urlsafe_b64encode(json.dumps([1, 2, 3]).encode())
+            .decode()
+            .rstrip("=")
+        )
+        valid_anon_jwt = f"eyJhbGciOiJIUzI1NiJ9.{anon_payload}.sig"
+        invalid_service_jwt = f"eyJhbGciOiJIUzI1NiJ9.{service_payload}.sig"
+        invalid_list_jwt = f"eyJhbGciOiJIUzI1NiJ9.{list_payload}.sig"
+        valid_env = {
+            "SUPABASE_URL": "https://fixture.supabase.co",
+            "SUPABASE_ANON_KEY": valid_anon_jwt,
+        }
+
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            xcconfig = root / "Supabase.xcconfig"
+            helper.write_supabase_xcconfig(xcconfig, env=valid_env)
+            written = xcconfig.read_text(encoding="utf-8")
+            self.assertIn("SUPABASE_URL = https:/$()/fixture.supabase.co", written)
+            self.assertIn(f"SUPABASE_ANON_KEY = {valid_anon_jwt}", written)
+
+            publishable_env = {
+                "SUPABASE_URL": "https://fixture.supabase.co",
+                "SUPABASE_ANON_KEY": "sb_publishable_fixture123",
+            }
+            helper.write_supabase_xcconfig(xcconfig, env=publishable_env)
+            self.assertIn("sb_publishable_fixture123", xcconfig.read_text(encoding="utf-8"))
+
+            plist = root / "Info.plist"
+            plist.write_bytes(plistlib.dumps(valid_env))
+            helper.verify_archived_info_plist(plist, env=valid_env)
+
+            for bad_env in (
+                {"SUPABASE_URL": "", "SUPABASE_ANON_KEY": valid_anon_jwt},
+                {"SUPABASE_URL": "https://fixture.supabase.co", "SUPABASE_ANON_KEY": ""},
+                {"SUPABASE_URL": "http://fixture.supabase.co", "SUPABASE_ANON_KEY": valid_anon_jwt},
+                {"SUPABASE_URL": "https://$(HOST)", "SUPABASE_ANON_KEY": valid_anon_jwt},
+                {"SUPABASE_URL": "https://fixture.supabase.co", "SUPABASE_ANON_KEY": "sb_secret_" + uuid.uuid4().hex},
+                {"SUPABASE_URL": "https://fixture.supabase.co", "SUPABASE_ANON_KEY": invalid_service_jwt},
+                {"SUPABASE_URL": "https://fixture.supabase.co", "SUPABASE_ANON_KEY": invalid_list_jwt},
+                {"SUPABASE_URL": "https://fixture.supabase.co", "SUPABASE_ANON_KEY": "placeholder"},
+                {"SUPABASE_URL": "https://fixture.supabase.co", "SUPABASE_ANON_KEY": "$(SUPABASE_ANON_KEY)"},
+            ):
+                with self.subTest(bad_env=bad_env):
+                    with self.assertRaises(ValueError):
+                        helper.write_supabase_xcconfig(root / "bad.xcconfig", env=bad_env)
+
+            for bad_plist in (
+                {},
+                {"SUPABASE_URL": "https:", "SUPABASE_ANON_KEY": valid_anon_jwt},
+                {"SUPABASE_URL": "$(SUPABASE_URL)", "SUPABASE_ANON_KEY": valid_anon_jwt},
+                {"SUPABASE_URL": "https://fixture.supabase.co", "SUPABASE_ANON_KEY": ""},
+            ):
+                with self.subTest(bad_plist=bad_plist):
+                    plist.write_bytes(plistlib.dumps(bad_plist))
+                    with self.assertRaises(ValueError):
+                        helper.verify_archived_info_plist(plist, env=valid_env)
+
+            # Verify CLI entrypoint fails closed with exit code 1 when env is missing/invalid.
+            saved_url = os.environ.pop("SUPABASE_URL", None)
+            saved_key = os.environ.pop("SUPABASE_ANON_KEY", None)
+            try:
+                self.assertEqual(helper.main(["write-xcconfig", "--output", str(xcconfig)]), 1)
+                os.environ["SUPABASE_URL"] = valid_env["SUPABASE_URL"]
+                os.environ["SUPABASE_ANON_KEY"] = invalid_list_jwt
+                import contextlib
+                import io
+                stderr_buf = io.StringIO()
+                with contextlib.redirect_stderr(stderr_buf):
+                    self.assertEqual(helper.main(["write-xcconfig", "--output", str(xcconfig)]), 1)
+                self.assertIn("ERROR:", stderr_buf.getvalue())
+                os.environ["SUPABASE_ANON_KEY"] = valid_env["SUPABASE_ANON_KEY"]
+                plist.write_bytes(plistlib.dumps(valid_env))
+                self.assertEqual(helper.main(["write-xcconfig", "--output", str(xcconfig)]), 0)
+                self.assertEqual(helper.main(["verify-plist", "--plist", str(plist)]), 0)
+            finally:
+                if saved_url is not None:
+                    os.environ["SUPABASE_URL"] = saved_url
+                else:
+                    os.environ.pop("SUPABASE_URL", None)
+                if saved_key is not None:
+                    os.environ["SUPABASE_ANON_KEY"] = saved_key
+                else:
+                    os.environ.pop("SUPABASE_ANON_KEY", None)
 
 
 if __name__ == "__main__":

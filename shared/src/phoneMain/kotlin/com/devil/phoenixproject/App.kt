@@ -61,6 +61,7 @@ import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import com.devil.phoenixproject.util.CrashLog
 import com.devil.phoenixproject.util.CrashReportAnswer
 import com.devil.phoenixproject.util.deleteDatabaseExportArchive
+import com.devil.phoenixproject.util.rethrowIfCancellation
 import com.devil.phoenixproject.data.media.ExerciseMediaReconciler
 import com.devil.phoenixproject.data.media.ExerciseMediaSessionRegistry
 import com.devil.phoenixproject.util.shareDatabaseFiles
@@ -480,6 +481,7 @@ fun AppContent(
                     mediaStore = KoinPlatform.getKoin().get(),
                 ).reconcile(ExerciseMediaSessionRegistry.shared)
             } catch (e: Exception) {
+                e.rethrowIfCancellation()
                 // Startup must never fail or block on media cleanup.
             }
         }

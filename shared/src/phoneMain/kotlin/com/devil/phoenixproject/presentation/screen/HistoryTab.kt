@@ -74,6 +74,7 @@ import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.effectiveHeaviestKgPerCable
 import com.devil.phoenixproject.domain.model.toSetSummary
+import com.devil.phoenixproject.domain.usecase.EchoAchievedLoadResolver
 import com.devil.phoenixproject.presentation.util.AchievedLoadPresentation
 import com.devil.phoenixproject.presentation.util.formatRackItemLine
 import com.devil.phoenixproject.presentation.components.BiomechanicsHistorySummary
@@ -96,6 +97,7 @@ import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
 import com.devil.phoenixproject.ui.theme.ExpressiveMotion
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.KmpUtils
+import com.devil.phoenixproject.util.rethrowIfCancellation
 import kotlin.time.Instant
 import kotlinx.coroutines.launch
 import kotlinx.datetime.DateTimeUnit
@@ -108,23 +110,8 @@ import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
+import projectphoenix.shared.generated.resources.*
 import projectphoenix.shared.generated.resources.Res
-import projectphoenix.shared.generated.resources.action_change
-import projectphoenix.shared.generated.resources.action_clear_label
-import projectphoenix.shared.generated.resources.action_delete
-import projectphoenix.shared.generated.resources.action_tag
-import projectphoenix.shared.generated.resources.cd_delete_routine
-import projectphoenix.shared.generated.resources.cd_delete_workout
-import projectphoenix.shared.generated.resources.delete_all_sets
-import projectphoenix.shared.generated.resources.delete_routine_session_message
-import projectphoenix.shared.generated.resources.delete_routine_session_title
-import projectphoenix.shared.generated.resources.delete_workout_message
-import projectphoenix.shared.generated.resources.delete_workout_title
-import projectphoenix.shared.generated.resources.detailed_metrics_not_captured
-import projectphoenix.shared.generated.resources.empty_no_history_all
-import projectphoenix.shared.generated.resources.empty_no_history_period
-import projectphoenix.shared.generated.resources.empty_no_history_title
-import projectphoenix.shared.generated.resources.equipment_rack_title
 
 private val historyRackJson = Json { ignoreUnknownKeys = true }
 
@@ -292,7 +279,7 @@ fun HistoryTab(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun WorkoutHistoryCard(
+internal fun WorkoutHistoryCard(
     session: WorkoutSession,
     weightUnit: WeightUnit,
     formatWeight: (Float, WeightUnit) -> String,
@@ -326,7 +313,8 @@ private fun WorkoutHistoryCard(
     )
 
     // Get exercise name from session (no DB lookup needed!)
-    val exerciseName = session.exerciseName ?: if (session.isJustLift) "Just Lift" else "Unknown Exercise"
+    val exerciseName = session.exerciseName
+        ?: stringResource(if (session.isJustLift) Res.string.just_lift else Res.string.history_unknown_exercise)
 
     // #972: label repair is offered for every Just Lift session, labeled or not —
     // a mislabeled segment must be correctable after the fact. Routine-driven
@@ -343,21 +331,21 @@ private fun WorkoutHistoryCard(
         Column(
             modifier = Modifier.fillMaxWidth(),
         ) {
-            // Header: "Single Exercise" with chevron
+            // Header: stringResource(Res.string.nav_single_exercise) with chevron
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    "Single Exercise",
+                    stringResource(Res.string.nav_single_exercise),
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary,
                 )
                 Icon(
                     imageVector = Icons.Default.KeyboardArrowDown,
-                    contentDescription = if (isExpanded) "Collapse" else "Expand",
+                    contentDescription = stringResource(if (isExpanded) Res.string.cd_collapse else Res.string.cd_expand),
                     modifier = Modifier.rotate(chevronRotation),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -425,7 +413,7 @@ private fun WorkoutHistoryCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text(
-                    "Total Reps",
+                    stringResource(Res.string.insights_total_reps),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -442,7 +430,7 @@ private fun WorkoutHistoryCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text(
-                    "Total Sets",
+                    stringResource(Res.string.history_total_sets),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -465,13 +453,13 @@ private fun WorkoutHistoryCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text(
-                    "Measured Peak",
+                    stringResource(Res.string.history_measured_peak),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Text(
-                    if (session.mode.contains("Echo", ignoreCase = true)) {
-                        "Adaptive"
+                    if (EchoAchievedLoadResolver.isEcho(session)) {
+                        AchievedLoadPresentation.sessionLoadText(session, weightUnit, formatWeight)
                     } else {
                         formatWeight(session.effectiveHeaviestKgPerCable(), weightUnit)
                     },
@@ -486,7 +474,7 @@ private fun WorkoutHistoryCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text(
-                    "Workout Mode",
+                    stringResource(Res.string.exercise_edit_workout_mode),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -716,6 +704,7 @@ private fun CompletedSetsSection(
         try {
             completedSets = completedSetRepository.getCompletedSets(session.id)
         } catch (e: Exception) {
+            e.rethrowIfCancellation()
             co.touchlab.kermit.Logger.e("HistoryTab") { "Failed to load completed sets for session ${session.id}: ${e.message}" }
             completedSets = emptyList()
         }
@@ -725,7 +714,7 @@ private fun CompletedSetsSection(
         Spacer(modifier = Modifier.height(Spacing.medium))
 
         Text(
-            "Set Breakdown",
+            stringResource(Res.string.history_set_breakdown),
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary,
@@ -744,7 +733,7 @@ private fun CompletedSetsSection(
                 // Set number and type
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "Set ${set.setNumber + 1}",
+                        stringResource(Res.string.set_ready_set_numbered, set.setNumber + 1),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurface,
@@ -760,7 +749,7 @@ private fun CompletedSetsSection(
                     if (set.isPr) {
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            "PR",
+                            stringResource(Res.string.history_pr_badge),
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.error,
@@ -784,7 +773,7 @@ private fun CompletedSetsSection(
                     set.loggedRpe?.let { rpe ->
                         Spacer(modifier = Modifier.width(Spacing.small))
                         Text(
-                            "RPE $rpe",
+                            stringResource(Res.string.rpe_value_label, rpe),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -813,6 +802,7 @@ private fun RepDetailsSection(
         try {
             repMetrics = repMetricRepository.getRepMetrics(sessionId)
         } catch (e: Exception) {
+            e.rethrowIfCancellation()
             co.touchlab.kermit.Logger.e("HistoryTab") { "Failed to load rep metrics for session $sessionId: ${e.message}" }
             repMetrics = emptyList()
         }
@@ -822,7 +812,7 @@ private fun RepDetailsSection(
         Spacer(modifier = Modifier.height(Spacing.medium))
 
         Text(
-            "Rep Details",
+            stringResource(Res.string.history_rep_details),
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary,
@@ -850,7 +840,7 @@ private data class ExerciseGroup(
     val exerciseName: String,
     val totalReps: Int,
     val totalSets: Int,
-    val highestWeightPerCableKg: Float,
+    val highestWeightPerCableKg: Float?,
     val mode: String,
 )
 
@@ -859,7 +849,7 @@ private data class ExerciseGroup(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun GroupedRoutineCard(
+internal fun GroupedRoutineCard(
     groupedItem: com.devil.phoenixproject.presentation.manager.GroupedRoutineHistoryItem,
     weightUnit: WeightUnit,
     formatWeight: (Float, WeightUnit) -> String,
@@ -897,17 +887,23 @@ private fun GroupedRoutineCard(
     )
 
     // Group sessions by exerciseId and use exerciseName directly (no DB lookup needed!)
-    val exercisesWithNames = remember(groupedItem.sessions) {
+    val justLiftLabel = stringResource(Res.string.just_lift)
+    val unknownExerciseLabel = stringResource(Res.string.history_unknown_exercise)
+    val exercisesWithNames = remember(groupedItem.sessions, justLiftLabel, unknownExerciseLabel) {
         groupedItem.sessions.groupBy { it.exerciseId ?: "just_lift" }
             .map { (exerciseId, sessions) ->
                 val totalReps = sessions.sumOf { it.totalReps }
                 val totalSets = sessions.size
-                val highestWeightPerCableKg = sessions.maxOfOrNull { it.effectiveHeaviestKgPerCable() } ?: 0f
+                val highestWeightPerCableKg = if (sessions.any { EchoAchievedLoadResolver.isEcho(it) }) {
+                    sessions.mapNotNull { EchoAchievedLoadResolver.primaryLoadKg(it) }.maxOrNull()
+                } else {
+                    sessions.maxOfOrNull { it.effectiveHeaviestKgPerCable() } ?: 0f
+                }
                 val mode = sessions.firstOrNull()?.mode ?: "Unknown"
                 // Use exerciseName from the session (stored when workout was saved).
                 // #972: an all-Just-Lift group reads as "Just Lift", not "Unknown Exercise".
                 val exerciseName = sessions.firstOrNull()?.exerciseName
-                    ?: if (sessions.all { it.isJustLift }) "Just Lift" else "Unknown Exercise"
+                    ?: if (sessions.all { it.isJustLift }) justLiftLabel else unknownExerciseLabel
 
                 ExerciseGroup(
                     exerciseId = exerciseId,
@@ -929,21 +925,21 @@ private fun GroupedRoutineCard(
         Column(
             modifier = Modifier.fillMaxWidth(),
         ) {
-            // Header: "Daily Routine" with chevron
+            // Header: stringResource(Res.string.history_daily_routine) with chevron
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    "Daily Routine",
+                    stringResource(Res.string.history_daily_routine),
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary,
                 )
                 Icon(
                     imageVector = Icons.Default.KeyboardArrowDown,
-                    contentDescription = if (isExpanded) "Collapse" else "Expand",
+                    contentDescription = stringResource(if (isExpanded) Res.string.cd_collapse else Res.string.cd_expand),
                     modifier = Modifier.rotate(chevronRotation),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1000,7 +996,7 @@ private fun GroupedRoutineCard(
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Text(
-                        "Total Reps",
+                        stringResource(Res.string.insights_total_reps),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -1017,7 +1013,7 @@ private fun GroupedRoutineCard(
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Text(
-                        "Total Sets",
+                        stringResource(Res.string.history_total_sets),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -1037,16 +1033,13 @@ private fun GroupedRoutineCard(
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Text(
-                        "Measured Peak",
+                        stringResource(Res.string.history_measured_peak),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
-                        if (exerciseGroup.mode.contains("Echo", ignoreCase = true)) {
-                            "Adaptive"
-                        } else {
-                            formatWeight(exerciseGroup.highestWeightPerCableKg, weightUnit)
-                        },
+                        exerciseGroup.highestWeightPerCableKg?.let { formatWeight(it, weightUnit) }
+                            ?: AchievedLoadPresentation.LOAD_UNAVAILABLE,
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
@@ -1058,7 +1051,7 @@ private fun GroupedRoutineCard(
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Text(
-                        "Workout Mode",
+                        stringResource(Res.string.exercise_edit_workout_mode),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -1092,7 +1085,7 @@ private fun GroupedRoutineCard(
                     Spacer(modifier = Modifier.height(Spacing.medium))
 
                     Text(
-                        "Detailed Set Metrics",
+                        stringResource(Res.string.history_detailed_set_metrics),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
@@ -1115,7 +1108,9 @@ private fun GroupedRoutineCard(
                         ) {
                             Text(
                                 session.exerciseName
-                                    ?: if (session.isJustLift) "Just Lift" else "Unknown Exercise",
+                                    ?: stringResource(
+                                        if (session.isJustLift) Res.string.just_lift else Res.string.history_unknown_exercise,
+                                    ),
                                 modifier = Modifier.weight(1f),
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold,
@@ -1242,13 +1237,13 @@ private fun GroupedRoutineCard(
                         .lastOrNull()
 
                     if (polarSession != null) {
-                        val polarExerciseName = polarSession.exerciseName ?: "Just Lift"
+                        val polarExerciseName = polarSession.exerciseName ?: stringResource(Res.string.just_lift)
                         Spacer(modifier = Modifier.height(Spacing.medium))
                         Text(
                             text = if (polarSession.hrr60Bpm != null || polarSession.hrr300Bpm != null) {
-                                "Latest set with recovery data: $polarExerciseName"
+                                stringResource(Res.string.history_latest_recovery_device, polarExerciseName)
                             } else {
-                                "Most recent set with sensor data: $polarExerciseName"
+                                stringResource(Res.string.history_most_recent_sensor_data, polarExerciseName)
                             },
                             style = MaterialTheme.typography.labelMedium,
                         )
@@ -1462,6 +1457,7 @@ private fun BiomechanicsSection(session: WorkoutSession) {
             try {
                 repBiomechanics = biomechanicsRepository.getRepBiomechanics(session.id)
             } catch (e: Exception) {
+                e.rethrowIfCancellation()
                 co.touchlab.kermit.Logger.e("HistoryTab") { "Failed to load biomechanics for session ${session.id}: ${e.message}" }
                 repBiomechanics = emptyList()
             } finally {

@@ -6,6 +6,7 @@ import com.devil.phoenixproject.presentation.tv.TvSessionController
 import com.devil.phoenixproject.presentation.tv.createTvMainViewModel
 import com.devil.phoenixproject.presentation.tv.TvAccountHooks
 import com.devil.phoenixproject.presentation.tv.TvActivityAdmission
+import com.devil.phoenixproject.presentation.tv.offlineSyncTriggerManager
 import com.devil.phoenixproject.util.ConnectivityChecker
 import com.devil.phoenixproject.util.Constants
 import com.devil.phoenixproject.util.UnitConverter
@@ -222,8 +223,7 @@ class TvAppBridge internal constructor(
                         admission = activityAdmission,
                     ) else null
                     TvosAppDependencies(
-                        main = mainFactory(koin, scope, account?.syncTrigger
-                            ?: SyncTriggerManager(koin.get<com.devil.phoenixproject.data.sync.SyncManager>(), { false })),
+                        main = mainFactory(koin, scope, account?.syncTrigger ?: offlineSyncTriggerManager()),
                         eula = koin.get(),
                         exercises = startup.exercises,
                         account = account,
@@ -594,15 +594,6 @@ class TvAppBridge internal constructor(
         val offer = main.workoutSaveFailureOffer.value ?: return
         if (main.retryWorkoutSave(offer.sessionId)) actionError = null
         else fail("The save could not be retried. Keep this session open and try again.")
-    }
-
-    fun tagJustLiftSet() {
-        val main = deps?.main ?: return fail("Phoenix core is unavailable.")
-        val summary = main.workoutState.value as? WorkoutState.SetSummary ?: return fail("A completed Just Lift set is required.")
-        val exercise = cachedExercises.firstOrNull { it.id == main.workoutParameters.value.selectedExerciseId }
-            ?: return fail("The selected exercise is unavailable in Phoenix's library.")
-        val sessionId = summary.sessionId ?: return fail("Phoenix has not committed a session id yet.")
-        scope.launch { main.tagJustLiftSessionExercise(sessionId, exercise, isAmrap = false); actionError = null }
     }
 
     fun endSession() {

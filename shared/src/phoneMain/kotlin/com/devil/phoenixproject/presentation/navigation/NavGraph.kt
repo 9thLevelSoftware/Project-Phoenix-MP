@@ -452,7 +452,6 @@ fun NavGraph(
             popExitTransition = { NavTransitions.tabFadeExit() },
         ) {
             val globalSettings by viewModel.globalSettings.collectAsState()
-            val connectionError by viewModel.connectionError.collectAsState()
             val backupStats by viewModel.backupStats.collectAsState()
             // Refresh backup stats when Settings screen is displayed
             LaunchedEffect(Unit) { viewModel.refreshBackupStats() }
@@ -477,8 +476,6 @@ fun NavGraph(
                 onNavigateToIntegrations = {
                     navController.navigate(NavigationRoutes.Integrations.route)
                 },
-                connectionError = connectionError,
-                onClearConnectionError = viewModel::clearConnectionError,
                 onSetTitle = viewModel::updateTopBarTitle,
                 onTestSounds = viewModel::testSounds,
                 bleCompatibilityMode = globalSettings.bleCompatibilityMode,
@@ -885,9 +882,7 @@ fun NavGraph(
                 )
             },
         ) {
-            LinkAccountScreen(
-                onNavigateBack = { navController.popBackStack() },
-            )
+            LinkAccountScreen()
         }
 
         // Integrations screen - third-party app connections and CSV import/export

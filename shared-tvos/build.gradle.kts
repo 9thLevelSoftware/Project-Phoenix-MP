@@ -33,18 +33,36 @@ kotlin {
             dependencies {
                 implementation(kotlin("test"))
                 implementation(libs.kotlinx.coroutines.test)
+                implementation(libs.turbine)
+                implementation(libs.multiplatform.settings.test)
+                implementation(libs.ktor.client.mock)
             }
-            // Execute the authoritative command/limit tests on the tvOS runtime too,
-            // without pulling phone UI tests or duplicating their implementations.
+            // Execute the authoritative command/limit, TV controller, domain, workout-engine,
+            // and sync tests on the tvOS runtime too, without pulling phone UI or source-grep tests.
             kotlin.srcDir("../shared/src/commonTest/kotlin")
             kotlin.include(
                 "com/devil/phoenixproject/util/CommandLimitsTest.kt",
                 "com/devil/phoenixproject/util/WorkoutCommandValidatorTest.kt",
-                "com/devil/phoenixproject/data/sync/PortalWirePlatformTest.kt",
                 "com/devil/phoenixproject/data/ble/CompositionGattFake.kt",
                 "com/devil/phoenixproject/data/repository/KableGattCompositionTest.kt",
-                "com/devil/phoenixproject/presentation/tv/TvTelemetryWatchdogTest.kt",
+                "com/devil/phoenixproject/data/sync/**",
+                "com/devil/phoenixproject/presentation/tv/**",
+                "com/devil/phoenixproject/presentation/manager/**",
+                "com/devil/phoenixproject/domain/usecase/**",
+                "com/devil/phoenixproject/domain/model/**",
+                "com/devil/phoenixproject/testutil/**",
                 "com/devil/phoenixproject/tvnative/**",
+            )
+            kotlin.exclude(
+                "com/devil/phoenixproject/testutil/SourceFileReader.kt",
+                "com/devil/phoenixproject/presentation/manager/DWSMLaunchOriginTest.kt",
+                "com/devil/phoenixproject/presentation/manager/Issue673DropSetProductFlowTest.kt",
+                "com/devil/phoenixproject/presentation/manager/VbtEnabledRuntimeTest.kt",
+                "com/devil/phoenixproject/presentation/manager/WorkoutMachineTeardownTest.kt",
+                "com/devil/phoenixproject/domain/model/EssentialsExercisesTest.kt",
+                "com/devil/phoenixproject/data/sync/BackendHandoffContractTest.kt",
+                "com/devil/phoenixproject/data/sync/PortalApiClientProfilePreferenceLimitsTest.kt",
+                "com/devil/phoenixproject/data/sync/ProfilePreferenceSyncPlannerTest.kt",
             )
         }
         val commonMain by getting {
@@ -69,11 +87,20 @@ kotlin {
             }
         }
 
+        val tvosArm64Test by getting
         val tvosSimulatorArm64Test by getting {
             // Re-run the original phone Phantom contracts against the same native
             // fixture source, so TV's opt-in replay cannot silently change defaults.
             kotlin.srcDir("../shared/src/iosSimulatorArm64Test/kotlin")
-            dependencies { implementation(libs.turbine) }
+        }
+        val tvosTest by creating {
+            dependsOn(commonTest)
+            tvosArm64Test.dependsOn(this)
+            tvosSimulatorArm64Test.dependsOn(this)
+            kotlin.srcDir("../shared/src/tvosTest/kotlin")
+            dependencies {
+                implementation(libs.sqldelight.native.driver)
+            }
         }
         val tvosArm64Main by getting
         val tvosSimulatorArm64Main by getting {

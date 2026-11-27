@@ -211,6 +211,8 @@ def cloud_config(env, *, required):
             pieces = key.split(".")
             require(len(pieces) == 3, "Expected public anon JWT or publishable key")
             payload = json.loads(base64.urlsafe_b64decode(pieces[1] + "=" * (-len(pieces[1]) % 4)))
+            if not isinstance(payload, dict):
+                raise ValueError("Supabase JWT payload must be a JSON object")
             require(payload.get("role") == "anon", "Only public anon keys may be embedded in an app")
         except (ValueError, KeyError, TypeError):
             raise ValueError("SUPABASE_ANON_KEY must be a public anon JWT or publishable key") from None

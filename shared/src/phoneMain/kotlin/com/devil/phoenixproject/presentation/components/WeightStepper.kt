@@ -238,7 +238,10 @@ fun WeightStepper(
                             unit = WeightUnit.KG,
                         ),
                     )
-                    WeightUnit.LB -> "Total: ${formatWeight(weight * 2f, weightUnit)} (both cables)"
+                    WeightUnit.LB -> stringResource(
+                        Res.string.weight_total_both_cables,
+                        formatWeight(weight * 2f, weightUnit),
+                    )
                 }
                 Text(
                     text = totalText,

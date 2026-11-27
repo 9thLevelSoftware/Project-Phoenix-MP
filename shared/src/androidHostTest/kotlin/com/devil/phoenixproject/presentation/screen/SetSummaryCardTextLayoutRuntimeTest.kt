@@ -651,7 +651,7 @@ class SetSummaryCardTextLayoutRuntimeTest {
             val scale = mutableFloatStateOf(1.3f)
             setContentFor(widthDp, scale, "Old School") { SetSummaryCardFor(it, tutSummary) }
             rule.waitForIdle()
-            rule.onNodeWithText("Log RPE").performScrollTo().performClick()
+            rule.onNodeWithText("RPE erfassen").performScrollTo().performClick()
             rule.waitForIdle()
             rule.onNodeWithText("Abbrechen").assertExists()
             rule.onNodeWithText("Bestätigen").assertExists()

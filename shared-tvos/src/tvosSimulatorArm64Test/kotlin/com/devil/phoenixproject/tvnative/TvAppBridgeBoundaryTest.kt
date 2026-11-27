@@ -458,6 +458,49 @@ class TvAppBridgeBoundaryTest {
         }
     }
 
+    @Test
+    fun offlineOrFixtureBridgeStartupNeverResolvesKeychainSyncManager() = runTest {
+        withBridge { f ->
+            var keychainResolved = false
+            var syncManagerResolved = false
+            f.koin.koin.loadModules(
+                listOf(
+                    module {
+                        single<Settings>(SecureSettingsQualifier) {
+                            keychainResolved = true
+                            error("SecureSettingsQualifier must not be resolved when cloudConfigured is false")
+                        }
+                        single<com.devil.phoenixproject.data.sync.SyncManager> {
+                            syncManagerResolved = true
+                            error("SyncManager must not be resolved when cloudConfigured is false")
+                        }
+                    },
+                ),
+            )
+            f.startReady()
+            f.bridge.onForeground()
+            runCurrent()
+            assertFalse(f.bridge.snapshot().cloudConfigured)
+            assertFalse(keychainResolved, "Offline bridge startup must never resolve Keychain settings")
+            assertFalse(syncManagerResolved, "Offline bridge startup must never resolve SyncManager")
+            assertTrue(f.uncaught.isEmpty())
+        }
+    }
+
+    @Test
+    fun unavailableBackupManagerFailsLoudlyOnShareAndOpenFolder() = runTest {
+        val manager = TvosUnavailableDataBackupManager()
+        assertFailsWith<UnsupportedOperationException> { manager.shareBackup() }
+        assertFailsWith<UnsupportedOperationException> { manager.openBackupFolder() }
+        assertFailsWith<UnsupportedOperationException> { manager.exportAllData() }
+        assertFailsWith<UnsupportedOperationException> { manager.exportToJson() }
+        assertTrue(manager.importFromJson("{}").exceptionOrNull() is UnsupportedOperationException)
+        assertTrue(manager.exportToFile().exceptionOrNull() is UnsupportedOperationException)
+        assertTrue(manager.importFromFile("/tmp/b.json").exceptionOrNull() is UnsupportedOperationException)
+        assertTrue(manager.exportSession("s1").exceptionOrNull() is UnsupportedOperationException)
+        assertTrue(manager.exportRoutine("r1").exceptionOrNull() is UnsupportedOperationException)
+    }
+
     private suspend fun TestScope.withBridge(block: suspend TestScope.(BridgeFixture) -> Unit) {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         val fixture = BridgeFixture(this)

@@ -18,6 +18,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.RoutineGroup
+import org.jetbrains.compose.resources.stringResource
+import projectphoenix.shared.generated.resources.*
+import projectphoenix.shared.generated.resources.Res
 
 /**
  * Collapsible header for a routine group section.
@@ -70,7 +73,7 @@ fun RoutineGroupHeader(
             // Chevron
             Icon(
                 imageVector = Icons.Default.KeyboardArrowDown,
-                contentDescription = if (isExpanded) "Collapse" else "Expand",
+                contentDescription = stringResource(if (isExpanded) Res.string.cd_collapse else Res.string.cd_expand),
                 modifier = Modifier
                     .size(24.dp)
                     .rotate(chevronRotation),
@@ -104,7 +107,7 @@ fun RoutineGroupHeader(
                 ) {
                     Icon(
                         Icons.Default.MoreVert,
-                        contentDescription = "Group options",
+                        contentDescription = stringResource(Res.string.cd_group_options),
                         modifier = Modifier.size(20.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -114,7 +117,7 @@ fun RoutineGroupHeader(
                     onDismissRequest = { showOverflow = false },
                 ) {
                     DropdownMenuItem(
-                        text = { Text("Rename") },
+                        text = { Text(stringResource(Res.string.custom_equipment_rename)) },
                         onClick = {
                             showOverflow = false
                             onRename()
@@ -124,7 +127,7 @@ fun RoutineGroupHeader(
                         },
                     )
                     DropdownMenuItem(
-                        text = { Text("Delete Group") },
+                        text = { Text(stringResource(Res.string.delete_group_title)) },
                         onClick = {
                             showOverflow = false
                             onDelete()

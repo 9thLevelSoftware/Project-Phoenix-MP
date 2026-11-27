@@ -2,8 +2,10 @@ package com.devil.phoenixproject.util
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import co.touchlab.kermit.Logger
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -32,6 +34,7 @@ actual class BackupLocationPicker {
 
     @Composable
     actual fun LaunchDirectoryPicker(onDirectoryPicked: (BackupDestination.Custom?) -> Unit) {
+        val currentOnDirectoryPicked by rememberUpdatedState(onDirectoryPicked)
         val scope = rememberCoroutineScope()
 
         val delegate = remember {
@@ -41,16 +44,16 @@ actual class BackupLocationPicker {
                         if (url != null) {
                             url.withSecurityScopedAccess {
                                 val result = createBookmarkedDestination(url)
-                                onDirectoryPicked(result)
+                                currentOnDirectoryPicked(result)
                             }
                         } else {
-                            onDirectoryPicked(null)
+                            currentOnDirectoryPicked(null)
                         }
                     }
                 },
                 onCancelled = {
                     scope.launch(Dispatchers.Main) {
-                        onDirectoryPicked(null)
+                        currentOnDirectoryPicked(null)
                     }
                 },
                 log = log,

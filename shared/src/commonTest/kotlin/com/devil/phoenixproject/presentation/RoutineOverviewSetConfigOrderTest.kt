@@ -20,15 +20,31 @@ class RoutineOverviewSetConfigOrderTest {
     fun routineOverview_standardMode_rendersTargetRepsBeforeWeight() {
         val src = readOverviewSource()
         val standardBlock = extractStandardModeBlock(src)
+        val stringsXml = readProjectFile("src/commonMain/composeResources/values/strings.xml")
+        assertNotNull(stringsXml, "Could not locate values/strings.xml")
 
-        val repsIdx = standardBlock.indexOf("label = \"Target Reps\"")
+        val repsIdx = listOf(
+            standardBlock.indexOf("label = \"Target Reps\""),
+            standardBlock.indexOf("label = stringResource(Res.string.rest_target_reps)"),
+        ).filter { it >= 0 }.minOrNull() ?: -1
         val amrapIdx = standardBlock.indexOf("stringResource(Res.string.target_reps)")
-        val weightIdx = standardBlock.indexOf("label = \"Weight per cable\"")
+        val weightIdx = listOf(
+            standardBlock.indexOf("label = \"Weight per cable\""),
+            standardBlock.indexOf("label = stringResource(Res.string.rest_weight_per_cable)"),
+        ).filter { it >= 0 }.minOrNull() ?: -1
 
         assertTrue(weightIdx >= 0, "Standard-mode SET CONFIGURATION must render Weight per cable.")
         assertTrue(
+            stringsXml.contains("""<string name="rest_weight_per_cable">Weight per cable</string>"""),
+            "values/strings.xml must keep rest_weight_per_cable = 'Weight per cable'.",
+        )
+        assertTrue(
             repsIdx >= 0 || amrapIdx >= 0,
             "Standard-mode SET CONFIGURATION must render Target Reps or the AMRAP target-reps row.",
+        )
+        assertTrue(
+            stringsXml.contains("""<string name="rest_target_reps">Target Reps</string>"""),
+            "values/strings.xml must keep rest_target_reps = 'Target Reps'.",
         )
 
         val firstRepsIdx = listOf(repsIdx, amrapIdx).filter { it >= 0 }.minOrNull()

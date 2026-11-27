@@ -35,6 +35,9 @@ import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.stringResource
+import projectphoenix.shared.generated.resources.*
+import projectphoenix.shared.generated.resources.Res
 
 private val REVEAL_WIDTH = 56.dp
 private val THRESHOLD_RATIO = 0.4f // Drag 40% of reveal width to trigger
@@ -86,7 +89,9 @@ fun SwipeableExerciseRow(
         }
     }
 
-    val favoriteActionLabel = if (exercise.isFavorite) "Remove from favorites" else "Add to favorites"
+    val favoriteActionLabel = stringResource(
+        if (exercise.isFavorite) Res.string.cd_remove_from_favorites else Res.string.cd_add_to_favorites,
+    )
     val accessibilityActions = buildList {
         add(
             CustomAccessibilityAction(favoriteActionLabel) {
@@ -137,11 +142,7 @@ fun SwipeableExerciseRow(
                     } else {
                         Icons.Outlined.Star
                     },
-                    contentDescription = if (exercise.isFavorite) {
-                        "Remove from favorites"
-                    } else {
-                        "Add to favorites"
-                    },
+                    contentDescription = favoriteActionLabel,
                     tint = if (exercise.isFavorite) {
                         MaterialTheme.colorScheme.primary
                     } else {

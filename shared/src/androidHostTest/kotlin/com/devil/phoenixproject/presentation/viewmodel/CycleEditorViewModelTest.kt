@@ -12,8 +12,13 @@ import com.devil.phoenixproject.testutil.FakeTrainingCycleRepository
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.devil.phoenixproject.testutil.TestCoroutineRule
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
@@ -267,5 +272,129 @@ class CycleEditorViewModelTest {
 
         // Then: originalProfileId should be null (it's a new cycle)
         assertEquals(null, viewModel.uiState.value.originalProfileId)
+    }
+
+    @Test
+    fun `addWorkoutDay and changeRoutine keep exerciseNames synchronized`() = runTest {
+        viewModel.initialize(cycleId = "new", templateItems = createRestDayTemplateItems(0))
+        advanceUntilIdle()
+
+        val pushRoutine = Routine(
+            id = "routine-push",
+            name = "Push",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "rex-1",
+                    exercise = Exercise(id = "bench", name = "Bench Press", muscleGroup = "Chest", muscleGroups = "Chest", equipment = "BAR"),
+                    orderIndex = 0,
+                    programMode = ProgramMode.OldSchool,
+                    weightPerCableKg = 20f,
+                ),
+                RoutineExercise(
+                    id = "rex-2",
+                    exercise = Exercise(id = "fly", name = "Cable Fly", muscleGroup = "Chest", muscleGroups = "Chest", equipment = "HANDLES"),
+                    orderIndex = 1,
+                    programMode = ProgramMode.OldSchool,
+                    weightPerCableKg = 10f,
+                ),
+            ),
+        )
+        val pullRoutine = Routine(
+            id = "routine-pull",
+            name = "Pull",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "rex-3",
+                    exercise = Exercise(id = "row", name = "Seated Row", muscleGroup = "Back", muscleGroups = "Back", equipment = "HANDLES"),
+                    orderIndex = 0,
+                    programMode = ProgramMode.OldSchool,
+                    weightPerCableKg = 25f,
+                ),
+            ),
+        )
+
+        viewModel.addWorkoutDay(pushRoutine)
+        val added = viewModel.uiState.value.items.single() as CycleItem.Workout
+        assertEquals(listOf("Bench Press", "Cable Fly"), added.exerciseNames)
+
+        viewModel.changeRoutine(0, pullRoutine)
+        val updated = viewModel.uiState.value.items.single() as CycleItem.Workout
+        assertEquals("routine-pull", updated.routineId)
+        assertEquals(listOf("Seated Row"), updated.exerciseNames)
+    }
+
+    @Test
+    fun `concurrent saveCycle calls during getCycleById suspension execute updateCycle once`() = runTest {
+        val saveGetGate = CompletableDeferred<Unit>()
+        var blockGetCycleById = false
+        var updateCalls = 0
+        val existingCycle = TrainingCycle(
+            id = "cycle-race-1",
+            name = "Existing",
+            description = null,
+            days = listOf(
+                CycleDay(
+                    id = "day-1",
+                    cycleId = "cycle-race-1",
+                    dayNumber = 1,
+                    name = "Rest",
+                    routineId = null,
+                    isRestDay = true,
+                ),
+            ),
+            createdAt = 1000L,
+            isActive = false,
+            profileId = "default",
+        )
+        repository.addCycle(existingCycle)
+        val gatedRepo = object : com.devil.phoenixproject.data.repository.TrainingCycleRepository by repository {
+            override suspend fun getCycleById(cycleId: String): TrainingCycle? {
+                if (blockGetCycleById) saveGetGate.await()
+                return repository.getCycleById(cycleId)
+            }
+
+            override suspend fun updateCycle(cycle: TrainingCycle) {
+                updateCalls++
+                repository.updateCycle(cycle)
+            }
+        }
+        val vm = CycleEditorViewModel(gatedRepo, userProfileRepository)
+        vm.initialize(cycleId = "cycle-race-1")
+        advanceUntilIdle()
+
+        blockGetCycleById = true
+        val first = async { vm.saveCycle() }
+        testScheduler.runCurrent()
+        assertTrue(vm.uiState.value.isSaving)
+
+        val second = async { vm.saveCycle() }
+        testScheduler.runCurrent()
+        assertNull(second.await())
+
+        saveGetGate.complete(Unit)
+        assertEquals("cycle-race-1", first.await())
+        assertEquals(1, updateCalls)
+        assertFalse(vm.uiState.value.isSaving)
+    }
+
+    @Test
+    fun `saveCycle rethrows CancellationException and clears isSaving`() = runTest {
+        val cancellingRepo = object : com.devil.phoenixproject.data.repository.TrainingCycleRepository by repository {
+            override suspend fun saveCycle(cycle: TrainingCycle) {
+                throw CancellationException("cancelled")
+            }
+        }
+        val vm = CycleEditorViewModel(cancellingRepo, userProfileRepository)
+        vm.initialize(cycleId = "new", templateItems = createRestDayTemplateItems(1))
+        advanceUntilIdle()
+
+        var caughtCancellation = false
+        try {
+            vm.saveCycle()
+        } catch (_: CancellationException) {
+            caughtCancellation = true
+        }
+        assertTrue(caughtCancellation)
+        assertFalse(vm.uiState.value.isSaving)
     }
 }

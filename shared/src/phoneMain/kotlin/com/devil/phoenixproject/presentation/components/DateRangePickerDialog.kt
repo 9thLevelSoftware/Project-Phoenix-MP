@@ -12,6 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.util.KmpUtils
+import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 import projectphoenix.shared.generated.resources.*
 import projectphoenix.shared.generated.resources.Res
@@ -19,12 +20,12 @@ import projectphoenix.shared.generated.resources.Res
 /**
  * Date range options for export filtering
  */
-private enum class DateRangeOption(val label: String, val daysBack: Int?) {
-    ALL_TIME("All Time", null),
-    LAST_7_DAYS("Last 7 Days", 7),
-    LAST_30_DAYS("Last 30 Days", 30),
-    LAST_90_DAYS("Last 90 Days", 90),
-    THIS_YEAR("This Year", 365),
+private enum class DateRangeOption(val labelRes: StringResource, val daysBack: Int?) {
+    ALL_TIME(Res.string.date_range_all_time, null),
+    LAST_7_DAYS(Res.string.date_range_last_7_days, 7),
+    LAST_30_DAYS(Res.string.date_range_last_30_days, 30),
+    LAST_90_DAYS(Res.string.date_range_last_90_days, 90),
+    THIS_YEAR(Res.string.date_range_this_year, 365),
 }
 
 /**
@@ -72,7 +73,7 @@ fun DateRangePickerDialog(
                     tint = MaterialTheme.colorScheme.primary,
                 )
                 Text(
-                    "Select Date Range",
+                    stringResource(Res.string.date_range_select_title),
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                 )
@@ -83,7 +84,7 @@ fun DateRangePickerDialog(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Text(
-                    "Choose a time period to export:",
+                    stringResource(Res.string.date_range_choose_period),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -116,7 +117,7 @@ fun DateRangePickerDialog(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            "Workouts to export:",
+                            stringResource(Res.string.date_range_workouts_to_export),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
                         )
@@ -137,7 +138,7 @@ fun DateRangePickerDialog(
                 shape = MaterialTheme.shapes.medium,
             ) {
                 Text(
-                    "Export",
+                    stringResource(Res.string.action_export),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                 )
@@ -177,7 +178,7 @@ private fun DateRangeOptionRow(option: DateRangeOption, isSelected: Boolean, onC
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Text(
-                text = option.label,
+                text = stringResource(option.labelRes),
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
                 color = if (isSelected) {

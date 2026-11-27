@@ -41,8 +41,7 @@ fun DailyRoutinesScreen(
 ) {
     val routines by viewModel.routines.collectAsState()
     val routineGroups by viewModel.routineGroups.collectAsState()
-
-    val connectionError by viewModel.connectionError.collectAsState()
+    val weightUnit by viewModel.weightUnit.collectAsState()
 
     // Profile data for move/copy to profile feature (#330)
     val profileRepository: UserProfileRepository = koinInject()
@@ -61,8 +60,9 @@ fun DailyRoutinesScreen(
     var pickRoutineCsv by remember { mutableStateOf(false) }
 
     // Set global title
-    LaunchedEffect(Unit) {
-        viewModel.updateTopBarTitle("Daily Routines")
+    val dailyRoutinesTitle = stringResource(Res.string.nav_daily_routines)
+    LaunchedEffect(dailyRoutinesTitle) {
+        viewModel.updateTopBarTitle(dailyRoutinesTitle)
     }
 
     val backgroundGradient = screenBackgroundBrush()
@@ -77,6 +77,7 @@ fun DailyRoutinesScreen(
             // renders nothing until a snapshot exists, never blocks the list, and the
             // sheet opens only on explicit request.
             RoutineRecoveryHost(
+                weightUnit = weightUnit,
                 modifier = Modifier
                     .align(Alignment.End)
                     .padding(top = 8.dp, end = 20.dp),
@@ -174,14 +175,6 @@ fun DailyRoutinesScreen(
             )
 
             null -> Unit
-        }
-
-        // Connection error dialog
-        connectionError?.let { error ->
-            com.devil.phoenixproject.presentation.components.ConnectionErrorDialog(
-                message = error,
-                onDismiss = { viewModel.clearConnectionError() },
-            )
         }
 
         // Daily routines resume into the overview, the active workout, or set-ready.

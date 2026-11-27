@@ -256,7 +256,7 @@ private fun ExerciseSelectionContent(
             .padding(horizontal = Spacing.medium, vertical = Spacing.medium),
     ) {
         Text(
-            text = "Strength Assessment",
+            text = stringResource(Res.string.strength_assessment_cta_title),
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onBackground,
@@ -265,7 +265,7 @@ private fun ExerciseSelectionContent(
         Spacer(modifier = Modifier.height(Spacing.extraSmall))
 
         Text(
-            text = "Select an exercise to test your 1RM",
+            text = stringResource(Res.string.assessment_select_exercise_subtitle),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -385,17 +385,17 @@ private fun InstructionContent(step: AssessmentStep.Instruction, onStartAssessme
                     verticalArrangement = Arrangement.spacedBy(Spacing.small),
                 ) {
                     Text(
-                        text = "Assessment Protocol",
+                        text = stringResource(Res.string.assessment_protocol_title),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
 
                     val instructions = listOf(
-                        "You will perform 3-5 sets at progressively heavier weights.",
-                        "Perform 3 reps per set with maximum intent on the concentric (lifting) phase.",
-                        "The system will track your velocity to estimate your one-rep max.",
-                        "Start light (~40% of estimated max) and increase weight each set.",
+                        stringResource(Res.string.assessment_instruction_1),
+                        stringResource(Res.string.assessment_instruction_2),
+                        stringResource(Res.string.assessment_instruction_3),
+                        stringResource(Res.string.assessment_instruction_4),
                     )
 
                     instructions.forEachIndexed { index, instruction ->
@@ -429,7 +429,7 @@ private fun InstructionContent(step: AssessmentStep.Instruction, onStartAssessme
             shape = MaterialTheme.shapes.medium,
         ) {
             Text(
-                "Begin Assessment",
+                stringResource(Res.string.assessment_begin),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
             )
@@ -474,7 +474,7 @@ private fun ProgressiveLoadingContent(
     ) {
         // Step indicator
         Text(
-            text = "Set ${step.currentSetNumber} of up to 5",
+            text = stringResource(Res.string.assessment_set_progress, step.currentSetNumber),
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onBackground,
@@ -497,7 +497,7 @@ private fun ProgressiveLoadingContent(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(
-                    text = "Suggested Weight (Total)",
+                    text = stringResource(Res.string.assessment_suggested_weight_total),
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
@@ -515,7 +515,7 @@ private fun ProgressiveLoadingContent(
         // Completed sets list
         if (step.recordedSets.isNotEmpty()) {
             Text(
-                text = "Completed Sets",
+                text = stringResource(Res.string.assessment_completed_sets),
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground,
@@ -547,7 +547,7 @@ private fun ProgressiveLoadingContent(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            text = "Set ${set.setNumber}",
+                            text = stringResource(Res.string.set_ready_set_numbered, set.setNumber),
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.width(60.dp),
@@ -558,7 +558,10 @@ private fun ProgressiveLoadingContent(
                             modifier = Modifier.weight(1f),
                         )
                         Text(
-                            text = "${KmpUtils.formatFloat(set.meanVelocityMs, 2)} m/s",
+                            text = stringResource(
+                                Res.string.assessment_velocity_ms,
+                                KmpUtils.formatFloat(set.meanVelocityMs, 2),
+                            ),
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Bold,
                             color = velocityColor,
@@ -580,7 +583,7 @@ private fun ProgressiveLoadingContent(
                 ),
             ) {
                 Text(
-                    text = "Velocity threshold reached - assessment complete",
+                    text = stringResource(Res.string.assessment_velocity_threshold_stop),
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onErrorContainer,
@@ -657,14 +660,17 @@ private fun BleVelocityCaptureSection(
             if (!isCapturing) {
                 // Pre-set instructions
                 Text(
-                    text = "Set the machine to ${formatAssessmentWeight(suggestedWeight, weightUnit)}",
+                    text = stringResource(
+                        Res.string.assessment_set_machine_to,
+                        formatAssessmentWeight(suggestedWeight, weightUnit),
+                    ),
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Spacer(modifier = Modifier.height(Spacing.extraSmall))
                 Text(
-                    text = "Perform 3 reps with maximum concentric intent.\nTap Start Set, then begin lifting.",
+                    text = stringResource(Res.string.assessment_capture_instructions),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -678,7 +684,7 @@ private fun BleVelocityCaptureSection(
                     shape = MaterialTheme.shapes.medium,
                 ) {
                     Text(
-                        "Start Set",
+                        stringResource(Res.string.assessment_start_set),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                     )
@@ -686,7 +692,7 @@ private fun BleVelocityCaptureSection(
             } else {
                 // Capturing: show live velocity
                 Text(
-                    text = "Capturing velocity...",
+                    text = stringResource(Res.string.assessment_capturing_velocity),
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.Bold,
@@ -697,14 +703,14 @@ private fun BleVelocityCaptureSection(
                 // Live velocity display
                 val displayVelocity = liveVelocityMs?.let { KmpUtils.formatFloat(it, 2) } ?: "--"
                 Text(
-                    text = "$displayVelocity m/s",
+                    text = stringResource(Res.string.assessment_velocity_ms, displayVelocity),
                     style = MaterialTheme.typography.displaySmall,
                     fontWeight = FontWeight.Black,
                     color = MaterialTheme.colorScheme.primary,
                 )
 
                 Text(
-                    text = "Mean concentric velocity",
+                    text = stringResource(Res.string.assessment_mean_concentric_velocity),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -731,7 +737,7 @@ private fun BleVelocityCaptureSection(
                     ),
                 ) {
                     Text(
-                        "End Set",
+                        stringResource(Res.string.assessment_end_set),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                     )
@@ -753,9 +759,9 @@ private fun ManualInputSection(
     onVelocityChange: (String) -> Unit,
     onRecordSet: (Float, Float) -> Unit,
 ) {
-    val unitSuffix = if (weightUnit == WeightUnit.LB) "lbs" else "kg"
+    val unitSuffix = stringResource(if (weightUnit == WeightUnit.LB) Res.string.label_lbs else Res.string.label_kg)
     Text(
-        text = "Log This Set",
+        text = stringResource(Res.string.assessment_log_this_set),
         style = MaterialTheme.typography.titleSmall,
         fontWeight = FontWeight.Bold,
         color = MaterialTheme.colorScheme.onBackground,
@@ -804,7 +810,7 @@ private fun ManualInputSection(
         shape = MaterialTheme.shapes.medium,
     ) {
         Text(
-            "Log Set",
+            stringResource(Res.string.assessment_log_set),
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
         )
@@ -828,7 +834,7 @@ private fun ResultsContent(
                 ?: step.overrideValueKg,
         )
     }
-    val unitSuffix = if (weightUnit == WeightUnit.LB) "lbs" else "kg"
+    val unitSuffix = stringResource(if (weightUnit == WeightUnit.LB) Res.string.label_lbs else Res.string.label_kg)
 
     Column(
         modifier = Modifier
@@ -837,7 +843,7 @@ private fun ResultsContent(
             .padding(Spacing.medium),
     ) {
         Text(
-            text = "Assessment Complete",
+            text = stringResource(Res.string.assessment_complete_title),
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onBackground,
@@ -860,7 +866,7 @@ private fun ResultsContent(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(
-                    text = "Estimated 1RM",
+                    text = stringResource(Res.string.assessment_estimated_1rm),
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
@@ -876,11 +882,13 @@ private fun ResultsContent(
         Spacer(modifier = Modifier.height(Spacing.medium))
 
         // Confidence indicator
-        val confidenceText = when {
-            step.r2 > 0.9f -> "High confidence"
-            step.r2 > 0.7f -> "Moderate confidence"
-            else -> "Low confidence - consider retesting"
-        }
+        val confidenceText = stringResource(
+            when {
+                step.r2 > 0.9f -> Res.string.assessment_confidence_high
+                step.r2 > 0.7f -> Res.string.assessment_confidence_moderate
+                else -> Res.string.assessment_confidence_low
+            },
+        )
         val confidenceColor = when {
             step.r2 > 0.9f -> AccessibilityTheme.colors.success
             step.r2 > 0.7f -> AccessibilityTheme.colors.warning
@@ -902,12 +910,16 @@ private fun ResultsContent(
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Text(
-                    text = "Regression Quality:",
+                    text = stringResource(Res.string.assessment_regression_quality),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    text = "$confidenceText (R² = ${KmpUtils.formatFloat(step.r2, 2)})",
+                    text = stringResource(
+                        Res.string.assessment_confidence_r2,
+                        confidenceText,
+                        KmpUtils.formatFloat(step.r2, 2),
+                    ),
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Bold,
                     color = confidenceColor,
@@ -919,7 +931,7 @@ private fun ResultsContent(
 
         // Load-velocity data points
         Text(
-            text = "Load-Velocity Profile",
+            text = stringResource(Res.string.assessment_load_velocity_profile),
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onBackground,
@@ -948,7 +960,10 @@ private fun ResultsContent(
                         fontWeight = FontWeight.Bold,
                     )
                     Text(
-                        text = "${point.meanVelocityMs} m/s",
+                        text = stringResource(
+                            Res.string.assessment_velocity_ms,
+                            point.meanVelocityMs.toString(),
+                        ),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -960,7 +975,7 @@ private fun ResultsContent(
 
         // Override section
         Text(
-            text = "Override 1RM",
+            text = stringResource(Res.string.assessment_override_1rm),
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onBackground,
@@ -995,7 +1010,7 @@ private fun ResultsContent(
             shape = MaterialTheme.shapes.medium,
         ) {
             Text(
-                "Accept & Save",
+                stringResource(Res.string.assessment_accept_and_save),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
             )
@@ -1032,7 +1047,7 @@ private fun SavingContent() {
                 color = MaterialTheme.colorScheme.primary,
             )
             Text(
-                text = "Saving assessment...",
+                text = stringResource(Res.string.assessment_saving),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onBackground,
             )
@@ -1077,7 +1092,7 @@ private fun CompleteContent(step: AssessmentStep.Complete, weightUnit: WeightUni
             )
 
             Text(
-                text = "1RM Updated!",
+                text = stringResource(Res.string.assessment_1rm_updated),
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground,
@@ -1109,7 +1124,7 @@ private fun CompleteContent(step: AssessmentStep.Complete, weightUnit: WeightUni
                 shape = MaterialTheme.shapes.medium,
             ) {
                 Text(
-                    "Done",
+                    stringResource(Res.string.assessment_done),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                 )
@@ -1123,8 +1138,9 @@ private fun formatDisplayNumber(kg: Float, weightUnit: WeightUnit): String {
     return KmpUtils.formatFloat(display, 1)
 }
 
+@Composable
 private fun formatAssessmentWeight(kg: Float, weightUnit: WeightUnit): String {
-    val suffix = if (weightUnit == WeightUnit.LB) "lbs" else "kg"
+    val suffix = stringResource(if (weightUnit == WeightUnit.LB) Res.string.label_lbs else Res.string.label_kg)
     return "${formatDisplayNumber(kg, weightUnit)} $suffix"
 }
 

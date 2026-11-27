@@ -64,3 +64,38 @@ jobs:
       - name: Run unit tests
         if: ${{ !inputs.skip }}
         run: ./gradlew -Pskip.supabase.check=true :shared:testAndroidHostTest :androidApp:testDebugUnitTest --continue
+
+  ios-simulator-tests:
+    name: iOS Simulator Tests
+    if: ${{ !inputs.skip }}
+    runs-on: macos-latest
+    timeout-minutes: 60
+    env:
+      # macos-latest runners have 7 GB RAM; keep the Gradle heap well under it.
+      GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -XX:+UseParallelGC -XX:MaxMetaspaceSize=1g"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Set up Java 17
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+
+      - name: Cache Kotlin/Native toolchain
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.konan
+          key: ${{ runner.os }}-${{ runner.arch }}-konan-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', 'gradle/libs.versions.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-konan-
+
+      - name: Run iOS simulator tests
+        run: ./gradlew :shared:iosSimulatorArm64Test --continue -Pskip.supabase.check=true

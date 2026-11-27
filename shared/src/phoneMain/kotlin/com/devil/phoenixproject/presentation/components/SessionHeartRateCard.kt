@@ -46,10 +46,67 @@ import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.Spacing
+import com.devil.phoenixproject.util.rethrowIfCancellation
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import org.jetbrains.compose.resources.stringResource
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.hrm_card_analytics_header
+import projectphoenix.shared.generated.resources.hrm_card_avg_hr
+import projectphoenix.shared.generated.resources.hrm_card_avg_rr_beat
+import projectphoenix.shared.generated.resources.hrm_card_cancel_cooldown
+import projectphoenix.shared.generated.resources.hrm_card_cooldown_active_title
+import projectphoenix.shared.generated.resources.hrm_card_cooldown_header
+import projectphoenix.shared.generated.resources.hrm_card_coronal_asymmetry
+import projectphoenix.shared.generated.resources.hrm_card_current_hr
+import projectphoenix.shared.generated.resources.hrm_card_hrr_300_desc
+import projectphoenix.shared.generated.resources.hrm_card_hrr_300_label
+import projectphoenix.shared.generated.resources.hrm_card_hrr_60_desc
+import projectphoenix.shared.generated.resources.hrm_card_hrr_60_label
+import projectphoenix.shared.generated.resources.hrm_card_hrr_unavailable
+import projectphoenix.shared.generated.resources.hrm_card_hrv_rmssd
+import projectphoenix.shared.generated.resources.hrm_card_max_hip_hinge
+import projectphoenix.shared.generated.resources.hrm_card_max_lateral_tilt
+import projectphoenix.shared.generated.resources.hrm_card_min_hr
+import projectphoenix.shared.generated.resources.hrm_card_peak_hr
+import projectphoenix.shared.generated.resources.hrm_card_pitch_unit
+import projectphoenix.shared.generated.resources.hrm_card_restart_cooldown
+import projectphoenix.shared.generated.resources.hrm_card_roll_unit
+import projectphoenix.shared.generated.resources.hrm_card_rr_variation
+import projectphoenix.shared.generated.resources.hrm_card_sagittal_bend
+import projectphoenix.shared.generated.resources.hrm_card_sensor_cd
+import projectphoenix.shared.generated.resources.hrm_card_start_cooldown
+import projectphoenix.shared.generated.resources.hrm_card_starting_hr
+import projectphoenix.shared.generated.resources.hrm_card_status_logged
+import projectphoenix.shared.generated.resources.hrm_card_summary_title
+import projectphoenix.shared.generated.resources.hrm_card_track_prompt
+import projectphoenix.shared.generated.resources.hrm_chart_deg_ref
+import projectphoenix.shared.generated.resources.hrm_chart_duration_ms
+import projectphoenix.shared.generated.resources.hrm_chart_ecg_header
+import projectphoenix.shared.generated.resources.hrm_chart_ecg_samples
+import projectphoenix.shared.generated.resources.hrm_chart_ecg_time
+import projectphoenix.shared.generated.resources.hrm_chart_reps_pts
+import projectphoenix.shared.generated.resources.hrm_chart_timeline_header
+import projectphoenix.shared.generated.resources.hrm_chart_torso_header
+import projectphoenix.shared.generated.resources.hrm_hrv_unavailable
+import projectphoenix.shared.generated.resources.hrm_legend_cable_pos
+import projectphoenix.shared.generated.resources.hrm_legend_hinge_pitch
+import projectphoenix.shared.generated.resources.hrm_legend_hrv
+import projectphoenix.shared.generated.resources.hrm_legend_tilt_roll
+import projectphoenix.shared.generated.resources.hrm_phase_cooldown
+import projectphoenix.shared.generated.resources.hrm_phase_rest
+import projectphoenix.shared.generated.resources.hrm_phase_warmup
+import projectphoenix.shared.generated.resources.hrm_phase_working
+import projectphoenix.shared.generated.resources.hrm_scrub_cable_pct
+import projectphoenix.shared.generated.resources.hrm_scrub_hinge
+import projectphoenix.shared.generated.resources.hrm_scrub_hr
+import projectphoenix.shared.generated.resources.hrm_scrub_rmssd
+import projectphoenix.shared.generated.resources.hrm_scrub_tilt
+import projectphoenix.shared.generated.resources.hrm_status_connected
+import projectphoenix.shared.generated.resources.hrm_unit_bpm
+import projectphoenix.shared.generated.resources.hrm_unit_ms
 
 /**
  * Enhanced Session Heart Rate Analytics Card.
@@ -156,16 +213,19 @@ fun SessionHeartRateCard(
             try {
                 beatSamples = workoutRepository.getPolarBeatSamplesBySession(resolvedSessionId)
             } catch (e: Exception) {
+                e.rethrowIfCancellation()
                 Logger.w { "Failed to load PolarBeatSamples: ${e.message}" }
             }
             try {
                 ecgSegments = workoutRepository.getPolarEcgSegmentsBySession(resolvedSessionId)
             } catch (e: Exception) {
+                e.rethrowIfCancellation()
                 Logger.w { "Failed to load PolarEcgSegments: ${e.message}" }
             }
             try {
                 metricSamples = workoutRepository.getMetricSamplesBySession(resolvedSessionId)
             } catch (e: Exception) {
+                e.rethrowIfCancellation()
                 Logger.w { "Failed to load MetricSamples: ${e.message}" }
             }
         }
@@ -216,20 +276,26 @@ fun SessionHeartRateCard(
                 ) {
                     SectionHeaderIconBadge(
                         imageVector = Icons.Default.Favorite,
-                        contentDescription = "Heart Rate Sensor",
+                        contentDescription = stringResource(Res.string.hrm_card_sensor_cd),
                         containerColor = colorScheme.errorContainer,
                         contentColor = colorScheme.onErrorContainer,
                     )
                     Column {
                         Text(
-                            text = "HEART RATE ANALYTICS",
+                            text = stringResource(Res.string.hrm_card_analytics_header),
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
                             color = colorScheme.primary,
                             letterSpacing = 1.sp,
                         )
                         Text(
-                            text = if (isCooldownActive) "Recovery Cooldown Active" else "Cardiac & Biomechanics Summary",
+                            text = stringResource(
+                                if (isCooldownActive) {
+                                    Res.string.hrm_card_cooldown_active_title
+                                } else {
+                                    Res.string.hrm_card_summary_title
+                                },
+                            ),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold,
                             color = colorScheme.onSurface,
@@ -247,7 +313,9 @@ fun SessionHeartRateCard(
                     },
                 ) {
                     Text(
-                        text = if (isConnected) "Connected" else "Logged",
+                        text = stringResource(
+                            if (isConnected) Res.string.hrm_status_connected else Res.string.hrm_card_status_logged,
+                        ),
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Medium,
                         color = if (isConnected) {
@@ -262,6 +330,7 @@ fun SessionHeartRateCard(
             }
 
             // Section 1: Heart Rate Stats
+            val bpmUnit = stringResource(Res.string.hrm_unit_bpm)
             if (summary?.avgHeartRateBpm != null || summary?.maxHeartRateBpm != null || summary?.minHeartRateBpm != null) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -269,9 +338,9 @@ fun SessionHeartRateCard(
                 ) {
                     summary.avgHeartRateBpm?.let { avg ->
                         MetricTile(
-                            label = "Average HR",
+                            label = stringResource(Res.string.hrm_card_avg_hr),
                             value = "$avg",
-                            unit = "bpm",
+                            unit = bpmUnit,
                             icon = Icons.Default.Favorite,
                             tint = colorScheme.error,
                             modifier = Modifier.weight(1f),
@@ -279,9 +348,9 @@ fun SessionHeartRateCard(
                     }
                     summary.maxHeartRateBpm?.let { max ->
                         MetricTile(
-                            label = "Peak HR",
+                            label = stringResource(Res.string.hrm_card_peak_hr),
                             value = "$max",
-                            unit = "bpm",
+                            unit = bpmUnit,
                             icon = Icons.Default.TrendingUp,
                             tint = accessColors.warning,
                             modifier = Modifier.weight(1f),
@@ -289,9 +358,9 @@ fun SessionHeartRateCard(
                     }
                     summary.minHeartRateBpm?.let { min ->
                         MetricTile(
-                            label = "Min HR",
+                            label = stringResource(Res.string.hrm_card_min_hr),
                             value = "$min",
-                            unit = "bpm",
+                            unit = bpmUnit,
                             icon = Icons.Default.TrendingDown,
                             tint = accessColors.info,
                             modifier = Modifier.weight(1f),
@@ -303,6 +372,7 @@ fun SessionHeartRateCard(
             // Section 2: HRV & Recovery Metrics — HRV only when enough valid RR
             // samples produced an RMSSD; otherwise explicitly unavailable (SD1:
             // HRV is never promised).
+            val msUnit = stringResource(Res.string.hrm_unit_ms)
             if (summary != null) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -310,10 +380,10 @@ fun SessionHeartRateCard(
                 ) {
                     summary.rmssdMs?.let { rmssd ->
                         MetricTile(
-                            label = "HRV (RMSSD)",
+                            label = stringResource(Res.string.hrm_card_hrv_rmssd),
                             value = "${rmssd.roundToInt()}",
-                            unit = "ms",
-                            subtext = "Successive R-R variation",
+                            unit = msUnit,
+                            subtext = stringResource(Res.string.hrm_card_rr_variation),
                             icon = Icons.Default.Speed,
                             tint = accessColors.success,
                             modifier = Modifier.weight(1f),
@@ -326,7 +396,7 @@ fun SessionHeartRateCard(
                             border = BorderStroke(1.dp, colorScheme.outlineVariant.copy(alpha = 0.3f)),
                         ) {
                             Text(
-                                text = "HRV unavailable",
+                                text = stringResource(Res.string.hrm_hrv_unavailable),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(10.dp),
@@ -335,9 +405,9 @@ fun SessionHeartRateCard(
                     }
                     summary.avgRrIntervalMs?.let { rr ->
                         MetricTile(
-                            label = "Avg RR Beat",
+                            label = stringResource(Res.string.hrm_card_avg_rr_beat),
                             value = "${rr.roundToInt()}",
-                            unit = "ms",
+                            unit = msUnit,
                             icon = Icons.Default.Timer,
                             tint = colorScheme.secondary,
                             modifier = Modifier.weight(1f),
@@ -354,10 +424,10 @@ fun SessionHeartRateCard(
                 ) {
                     summary.maxTorsoPitchDeg?.let { pitch ->
                         MetricTile(
-                            label = "Max Hip Hinge",
+                            label = stringResource(Res.string.hrm_card_max_hip_hinge),
                             value = "${pitch.roundToInt()}°",
-                            unit = "pitch",
-                            subtext = "Sagittal forward bend",
+                            unit = stringResource(Res.string.hrm_card_pitch_unit),
+                            subtext = stringResource(Res.string.hrm_card_sagittal_bend),
                             icon = Icons.Default.Accessibility,
                             tint = accessColors.warning,
                             modifier = Modifier.weight(1f),
@@ -365,10 +435,10 @@ fun SessionHeartRateCard(
                     }
                     summary.maxTorsoRollDeg?.let { roll ->
                         MetricTile(
-                            label = "Max Lateral Tilt",
+                            label = stringResource(Res.string.hrm_card_max_lateral_tilt),
                             value = "${roll.roundToInt()}°",
-                            unit = "roll",
-                            subtext = "Coronal asymmetry",
+                            unit = stringResource(Res.string.hrm_card_roll_unit),
+                            subtext = stringResource(Res.string.hrm_card_coronal_asymmetry),
                             icon = Icons.Default.CompareArrows,
                             tint = accessColors.info,
                             modifier = Modifier.weight(1f),
@@ -418,7 +488,7 @@ fun SessionHeartRateCard(
                                     modifier = Modifier.size(18.dp),
                                 )
                                 Text(
-                                    text = "5-MIN POST-WORKOUT COOLDOWN",
+                                    text = stringResource(Res.string.hrm_card_cooldown_header),
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.primary,
@@ -457,12 +527,18 @@ fun SessionHeartRateCard(
                             ) {
                                 Column {
                                     Text(
-                                        text = "Starting HR: ${cooldownStartHr ?: "—"} bpm",
+                                        text = stringResource(
+                                            Res.string.hrm_card_starting_hr,
+                                            cooldownStartHr?.toString() ?: "—",
+                                        ),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                     Text(
-                                        text = "Current HR: ${currentHr ?: "—"} bpm",
+                                        text = stringResource(
+                                            Res.string.hrm_card_current_hr,
+                                            currentHr?.toString() ?: "—",
+                                        ),
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.primary,
@@ -477,7 +553,7 @@ fun SessionHeartRateCard(
                                         border = BorderStroke(1.dp, tint.copy(alpha = 0.4f)),
                                     ) {
                                         Text(
-                                            text = "-$drop bpm",
+                                            text = "-$drop $bpmUnit",
                                             style = MaterialTheme.typography.titleMedium,
                                             fontWeight = FontWeight.Bold,
                                             color = tint,
@@ -510,7 +586,7 @@ fun SessionHeartRateCard(
                                 ) {
                                     Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(16.dp))
                                     Spacer(Modifier.width(4.dp))
-                                    Text("Cancel Cooldown")
+                                    Text(stringResource(Res.string.hrm_card_cancel_cooldown))
                                 }
                             }
                         } else {
@@ -528,17 +604,17 @@ fun SessionHeartRateCard(
                                     ) {
                                         hrr60?.let { drop60 ->
                                             RecoveryChip(
-                                                label = "1-Min Recovery (HRR-60)",
+                                                label = stringResource(Res.string.hrm_card_hrr_60_label),
                                                 drop = drop60,
-                                                rating = "Change after 60 seconds",
+                                                rating = stringResource(Res.string.hrm_card_hrr_60_desc),
                                                 modifier = Modifier.fillMaxWidth(),
                                             )
                                         }
                                         hrr300?.let { drop300 ->
                                             RecoveryChip(
-                                                label = "5-Min Recovery (HRR-300)",
+                                                label = stringResource(Res.string.hrm_card_hrr_300_label),
                                                 drop = drop300,
-                                                rating = "Change after 300 seconds",
+                                                rating = stringResource(Res.string.hrm_card_hrr_300_desc),
                                                 modifier = Modifier.fillMaxWidth(),
                                             )
                                         }
@@ -550,17 +626,17 @@ fun SessionHeartRateCard(
                                     ) {
                                         hrr60?.let { drop60 ->
                                             RecoveryChip(
-                                                label = "1-Min Recovery (HRR-60)",
+                                                label = stringResource(Res.string.hrm_card_hrr_60_label),
                                                 drop = drop60,
-                                                rating = "Change after 60 seconds",
+                                                rating = stringResource(Res.string.hrm_card_hrr_60_desc),
                                                 modifier = Modifier.weight(1f),
                                             )
                                         }
                                         hrr300?.let { drop300 ->
                                             RecoveryChip(
-                                                label = "5-Min Recovery (HRR-300)",
+                                                label = stringResource(Res.string.hrm_card_hrr_300_label),
                                                 drop = drop300,
-                                                rating = "Change after 300 seconds",
+                                                rating = stringResource(Res.string.hrm_card_hrr_300_desc),
                                                 modifier = Modifier.weight(1f),
                                             )
                                         }
@@ -586,7 +662,7 @@ fun SessionHeartRateCard(
                                             )
                                             Spacer(Modifier.width(4.dp))
                                             Text(
-                                                "Restart Cooldown",
+                                                stringResource(Res.string.hrm_card_restart_cooldown),
                                                 style = MaterialTheme.typography.labelSmall,
                                                 fontWeight = FontWeight.SemiBold,
                                             )
@@ -600,7 +676,7 @@ fun SessionHeartRateCard(
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Text(
-                                        text = "Track heart-rate change after your workout.",
+                                        text = stringResource(Res.string.hrm_card_track_prompt),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.weight(1f).padding(end = 8.dp),
@@ -623,7 +699,7 @@ fun SessionHeartRateCard(
                                         )
                                         Spacer(Modifier.width(4.dp))
                                         Text(
-                                            "Start Cooldown",
+                                            stringResource(Res.string.hrm_card_start_cooldown),
                                             style = MaterialTheme.typography.labelMedium,
                                             fontWeight = FontWeight.Bold,
                                             maxLines = 2,
@@ -634,7 +710,7 @@ fun SessionHeartRateCard(
                                 // SD1: HRR is computed from recovery HR, independently of
                                 // RR intervals. Missing HRR is never blamed on RR data.
                                 Text(
-                                    text = "Heart-rate recovery unavailable · insufficient recovery data",
+                                    text = stringResource(Res.string.hrm_card_hrr_unavailable),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -756,7 +832,7 @@ private fun RecoveryChip(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Text(
-                    text = "-$drop bpm",
+                    text = "-$drop ${stringResource(Res.string.hrm_unit_bpm)}",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = tint,
@@ -843,7 +919,7 @@ private fun ContinuousHeartRateTimelineChart(
                         modifier = Modifier.size(16.dp),
                     )
                     Text(
-                        text = "CONTINUOUS HR & RECOVERY TIMELINE",
+                        text = stringResource(Res.string.hrm_chart_timeline_header),
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
                         color = colorScheme.primary,
@@ -852,7 +928,11 @@ private fun ContinuousHeartRateTimelineChart(
                 }
 
                 Text(
-                    text = "${(durationMs / 60000)}m ${(durationMs % 60000) / 1000}s",
+                    text = stringResource(
+                        Res.string.hrm_chart_duration_ms,
+                        durationMs / 60000,
+                        (durationMs % 60000) / 1000,
+                    ),
                     style = MaterialTheme.typography.labelSmall,
                     color = colorScheme.onSurfaceVariant,
                     fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
@@ -866,11 +946,11 @@ private fun ContinuousHeartRateTimelineChart(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                PhaseLegendDot(color = warmupColor, label = "Warmup")
-                PhaseLegendDot(color = workingColor, label = "Working")
-                PhaseLegendDot(color = restColor, label = "Rest")
-                PhaseLegendDot(color = cooldownColor, label = "Cooldown")
-                PhaseLegendDot(color = hrvColor, label = "HRV", isLine = true)
+                PhaseLegendDot(color = warmupColor, label = stringResource(Res.string.hrm_phase_warmup))
+                PhaseLegendDot(color = workingColor, label = stringResource(Res.string.hrm_phase_working))
+                PhaseLegendDot(color = restColor, label = stringResource(Res.string.hrm_phase_rest))
+                PhaseLegendDot(color = cooldownColor, label = stringResource(Res.string.hrm_phase_cooldown))
+                PhaseLegendDot(color = hrvColor, label = stringResource(Res.string.hrm_legend_hrv), isLine = true)
             }
 
             // Scrub Info Bar
@@ -894,7 +974,7 @@ private fun ContinuousHeartRateTimelineChart(
                             color = colorScheme.onSurface,
                         )
                         Text(
-                            text = "HR: ${selectedSample.hrBpm} bpm",
+                            text = stringResource(Res.string.hrm_scrub_hr, selectedSample.hrBpm),
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
                             color = hrColor,
@@ -902,7 +982,7 @@ private fun ContinuousHeartRateTimelineChart(
                         )
                         selectedSample.rmssdMs?.let { rmssd ->
                             Text(
-                                text = "RMSSD: ${rmssd.roundToInt()} ms",
+                                text = stringResource(Res.string.hrm_scrub_rmssd, rmssd.roundToInt()),
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = hrvColor,
@@ -1164,7 +1244,7 @@ private fun TorsoBiomechanicsVsCableChart(
                         modifier = Modifier.size(16.dp),
                     )
                     Text(
-                        text = "3D TORSO BIOMECHANICS & CABLE POSITION",
+                        text = stringResource(Res.string.hrm_chart_torso_header),
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
                         color = colorScheme.primary,
@@ -1173,7 +1253,7 @@ private fun TorsoBiomechanicsVsCableChart(
                 }
 
                 Text(
-                    text = "$sampleCount reps/pts",
+                    text = stringResource(Res.string.hrm_chart_reps_pts, sampleCount),
                     style = MaterialTheme.typography.labelSmall,
                     color = colorScheme.onSurfaceVariant,
                     fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
@@ -1187,11 +1267,11 @@ private fun TorsoBiomechanicsVsCableChart(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                PhaseLegendDot(color = pitchColor, label = "Hinge (Pitch°)")
-                PhaseLegendDot(color = rollColor, label = "Tilt (Roll°)")
-                PhaseLegendDot(color = cableColor, label = "Cable Pos", isLine = true)
+                PhaseLegendDot(color = pitchColor, label = stringResource(Res.string.hrm_legend_hinge_pitch))
+                PhaseLegendDot(color = rollColor, label = stringResource(Res.string.hrm_legend_tilt_roll))
+                PhaseLegendDot(color = cableColor, label = stringResource(Res.string.hrm_legend_cable_pos), isLine = true)
                 Text(
-                    text = "0° ref | ${minAngle.roundToInt()}°..${maxAngle.roundToInt()}°",
+                    text = stringResource(Res.string.hrm_chart_deg_ref, minAngle.roundToInt(), maxAngle.roundToInt()),
                     style = MaterialTheme.typography.labelSmall,
                     color = colorScheme.onSurfaceVariant,
                     fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
@@ -1216,14 +1296,20 @@ private fun TorsoBiomechanicsVsCableChart(
                         verticalArrangement = Arrangement.spacedBy(2.dp),
                     ) {
                         Text(
-                            text = "Hinge: ${selectedSample.torsoPitchDeg?.let { "${(it * 10).roundToInt() / 10.0}°" } ?: "—"}",
+                            text = stringResource(
+                                Res.string.hrm_scrub_hinge,
+                                selectedSample.torsoPitchDeg?.let { "${(it * 10).roundToInt() / 10.0}°" } ?: "—",
+                            ),
                             style = MaterialTheme.typography.labelSmall,
                             fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                             fontWeight = FontWeight.Bold,
                             color = pitchColor,
                         )
                         Text(
-                            text = "Tilt: ${selectedSample.torsoRollDeg?.let { "${(it * 10).roundToInt() / 10.0}°" } ?: "—"}",
+                            text = stringResource(
+                                Res.string.hrm_scrub_tilt,
+                                selectedSample.torsoRollDeg?.let { "${(it * 10).roundToInt() / 10.0}°" } ?: "—",
+                            ),
                             style = MaterialTheme.typography.labelSmall,
                             fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                             fontWeight = FontWeight.Bold,
@@ -1232,7 +1318,7 @@ private fun TorsoBiomechanicsVsCableChart(
                         cablePos?.let { pos ->
                             val romPercent = ((pos - minPos) / posRange * 100f).roundToInt().coerceIn(0, 100)
                             Text(
-                                text = "Cable: ${romPercent}%",
+                                text = stringResource(Res.string.hrm_scrub_cable_pct, romPercent),
                                 style = MaterialTheme.typography.labelSmall,
                                 fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                                 fontWeight = FontWeight.Bold,
@@ -1489,7 +1575,7 @@ private fun SavedEcgWaveformScrubber(
                         modifier = Modifier.size(16.dp),
                     )
                     Text(
-                        text = "SAVED 130 HZ ECG WAVEFORM SCRUBBER",
+                        text = stringResource(Res.string.hrm_chart_ecg_header),
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
                         color = colorScheme.primary,
@@ -1522,14 +1608,19 @@ private fun SavedEcgWaveformScrubber(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = "Time: ${startSec}s - ${endSec}s / ${totalSec}s",
+                    text = stringResource(
+                        Res.string.hrm_chart_ecg_time,
+                        startSec.toString(),
+                        endSec.toString(),
+                        totalSec.toString(),
+                    ),
                     style = MaterialTheme.typography.labelSmall,
                     color = colorScheme.onSurfaceVariant,
                     fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                     modifier = Modifier.weight(1f).padding(end = 8.dp),
                 )
                 Text(
-                    text = "$totalSamples samples @ 130 Hz",
+                    text = stringResource(Res.string.hrm_chart_ecg_samples, totalSamples),
                     style = MaterialTheme.typography.labelSmall,
                     color = colorScheme.onSurfaceVariant,
                     fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,

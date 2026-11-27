@@ -1,7 +1,5 @@
 package com.devil.phoenixproject.presentation.viewmodel
 
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
@@ -25,9 +23,13 @@ import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.model.toWorkoutMode
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineScalingBaselineUseCase
 import com.devil.phoenixproject.domain.usecase.RoutineScalingBaseline
+import com.devil.phoenixproject.util.rethrowIfCancellation
 import kotlin.math.roundToInt
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -68,7 +70,21 @@ class ExerciseConfigViewModel constructor(
     private val velocityOneRepMaxRepository: VelocityOneRepMaxRepository? = null,
     private val baselineRepository: ProfileExerciseBaselineRepository,
     private val completedSetRepository: CompletedSetRepository,
-) : ViewModel() {
+) {
+
+    private val job = SupervisorJob()
+    private val scope by lazy {
+        val mainDispatcher = try {
+            Dispatchers.Main.immediate
+        } catch (_: IllegalStateException) {
+            Dispatchers.Default
+        } catch (_: UnsupportedOperationException) {
+            Dispatchers.Default
+        } catch (_: NotImplementedError) {
+            Dispatchers.Default
+        }
+        CoroutineScope(mainDispatcher + job)
+    }
 
     private val scalingBaselineResolver: ResolveRoutineScalingBaselineUseCase? =
         if (personalRecordRepository != null && velocityOneRepMaxRepository != null) {
@@ -359,10 +375,11 @@ class ExerciseConfigViewModel constructor(
             return
         }
         val profileId = activeProfileId
-        viewModelScope.launch {
+        scope.launch {
             val weightPR = try {
                 repository.getBestWeightPRForWorkoutMode(exerciseId, workoutMode, profileId)
             } catch (e: Exception) {
+                e.rethrowIfCancellation()
                 logWarning("Failed to load PR for exercise=$exerciseId, mode=$workoutMode, profile=$profileId: ${e.message}")
                 null
             }
@@ -375,6 +392,7 @@ class ExerciseConfigViewModel constructor(
             val volumePR = try {
                 repository.getBestVolumePRForWorkoutMode(exerciseId, workoutMode, profileId)
             } catch (e: Exception) {
+                e.rethrowIfCancellation()
                 logWarning("Failed to load volume PR for exercise=$exerciseId, mode=$workoutMode, profile=$profileId: ${e.message}")
                 null
             }
@@ -432,10 +450,11 @@ class ExerciseConfigViewModel constructor(
                 effectiveScalingBasis() == basis
 
         if (basis != ScalingBasis.ESTIMATED_1RM) {
-            viewModelScope.launch {
+            scope.launch {
                 val estimatedBaselineAvailable = try {
                     resolveEstimatedBaseline(exerciseId, programMode, profileId, resolver) != null
                 } catch (e: Exception) {
+                    e.rethrowIfCancellation()
                     logWarning("Failed to check estimated 1RM availability for exercise=$exerciseId, mode=${mode.displayName}, profile=$profileId: ${e.message}")
                     false
                 }
@@ -445,7 +464,7 @@ class ExerciseConfigViewModel constructor(
             }
         }
 
-        viewModelScope.launch {
+        scope.launch {
             try {
                 val baseline = if (basis == ScalingBasis.ESTIMATED_1RM) {
                     resolveEstimatedBaseline(exerciseId, programMode, profileId, resolver)
@@ -478,6 +497,7 @@ class ExerciseConfigViewModel constructor(
                     resyncSetWeightsIfBaselineReady()
                 }
             } catch (e: Exception) {
+                e.rethrowIfCancellation()
                 logWarning("Failed to resolve routine scaling baseline for exercise=$exerciseId, mode=${mode.displayName}, profile=$profileId: ${e.message}")
                 if (requestStillMatchesCurrentContext()) {
                     _routineScalingBaseline.value = null
@@ -497,7 +517,7 @@ class ExerciseConfigViewModel constructor(
     ): RoutineScalingBaseline? {
         val context = EstimatedBaselineContext(exerciseId, mode, profileId)
         val cached = estimatedBaselineResolution?.takeIf { it.context == context }
-        val resolution = cached?.resolution ?: viewModelScope.async(start = CoroutineStart.LAZY) {
+        val resolution = cached?.resolution ?: scope.async(start = CoroutineStart.LAZY) {
             resolver(
                 exerciseId = exerciseId,
                 mode = mode,
@@ -1076,8 +1096,8 @@ class ExerciseConfigViewModel constructor(
         _initialized.value = false // Reset for next use
     }
 
-    override fun onCleared() {
-        super.onCleared()
+    fun clear() {
+        job.cancel()
     }
 
     private fun logDebug(message: String) {

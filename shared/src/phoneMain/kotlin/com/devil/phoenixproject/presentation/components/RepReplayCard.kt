@@ -12,6 +12,9 @@ import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.KmpUtils
 import kotlin.math.max
+import org.jetbrains.compose.resources.stringResource
+import projectphoenix.shared.generated.resources.*
+import projectphoenix.shared.generated.resources.Res
 
 /**
  * Card displaying a single rep's metrics and force sparkline.
@@ -83,7 +86,7 @@ fun RepReplayCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    "Rep ${repData.repNumber}",
+                    stringResource(Res.string.biomech_rep_number, repData.repNumber),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -95,7 +98,7 @@ fun RepReplayCard(
                         shape = MaterialTheme.shapes.extraSmall,
                     ) {
                         Text(
-                            "warmup",
+                            stringResource(Res.string.rep_replay_warmup_badge),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onTertiaryContainer,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
@@ -122,20 +125,20 @@ fun RepReplayCard(
             ) {
                 // Peak Force
                 MetricColumn(
-                    label = "Peak Force",
+                    label = stringResource(Res.string.summary_peak_force),
                     value = formatWeight(peakForce, weightUnit),
                 )
 
                 // Concentric duration
                 MetricColumn(
-                    label = "Concentric",
-                    value = "${KmpUtils.formatFloat(concentricSeconds, 1)}s",
+                    label = stringResource(Res.string.phase_concentric),
+                    value = stringResource(Res.string.rep_replay_seconds_short, KmpUtils.formatFloat(concentricSeconds, 1)),
                 )
 
                 // Eccentric duration
                 MetricColumn(
-                    label = "Eccentric",
-                    value = "${KmpUtils.formatFloat(eccentricSeconds, 1)}s",
+                    label = stringResource(Res.string.phase_eccentric),
+                    value = stringResource(Res.string.rep_replay_seconds_short, KmpUtils.formatFloat(eccentricSeconds, 1)),
                 )
             }
         }

@@ -17,6 +17,19 @@ import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.presentation.util.SmartInsightsWeightText
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.util.KmpUtils
+import org.jetbrains.compose.resources.stringResource
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.readiness_acwr_value
+import projectphoenix.shared.generated.resources.readiness_acute_7d
+import projectphoenix.shared.generated.resources.readiness_chronic_avg
+import projectphoenix.shared.generated.resources.readiness_insufficient_data
+import projectphoenix.shared.generated.resources.readiness_rec_green
+import projectphoenix.shared.generated.resources.readiness_rec_red
+import projectphoenix.shared.generated.resources.readiness_rec_yellow
+import projectphoenix.shared.generated.resources.readiness_status_green
+import projectphoenix.shared.generated.resources.readiness_status_red
+import projectphoenix.shared.generated.resources.readiness_status_yellow
+import projectphoenix.shared.generated.resources.smart_insights_readiness_title
 
 /**
  * Traffic-light readiness card showing ACWR-based training readiness.
@@ -47,7 +60,7 @@ fun ReadinessBriefingCard(
                 .padding(16.dp),
         ) {
             Text(
-                "Training Readiness",
+                stringResource(Res.string.smart_insights_readiness_title),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
@@ -76,7 +89,7 @@ private fun InsufficientDataContent() {
         )
         Spacer(modifier = Modifier.width(8.dp))
         Text(
-            "Train for 28+ days to unlock readiness insights",
+            stringResource(Res.string.readiness_insufficient_data),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -93,17 +106,21 @@ private fun ReadyContent(result: ReadinessResult.Ready, weightUnit: WeightUnit) 
         ReadinessStatus.RED -> readinessColors.statusRed
     }
 
-    val statusLabel = when (result.status) {
-        ReadinessStatus.GREEN -> "Ready to Train"
-        ReadinessStatus.YELLOW -> "Train with Caution"
-        ReadinessStatus.RED -> "Consider Recovery"
-    }
+    val statusLabel = stringResource(
+        when (result.status) {
+            ReadinessStatus.GREEN -> Res.string.readiness_status_green
+            ReadinessStatus.YELLOW -> Res.string.readiness_status_yellow
+            ReadinessStatus.RED -> Res.string.readiness_status_red
+        },
+    )
 
-    val recommendation = when (result.status) {
-        ReadinessStatus.GREEN -> "Your training load is well balanced. Push for progress today."
-        ReadinessStatus.YELLOW -> "Your recent volume is slightly off balance. Consider a moderate session."
-        ReadinessStatus.RED -> "Your acute load is high relative to your baseline. A lighter session or rest day is recommended."
-    }
+    val recommendation = stringResource(
+        when (result.status) {
+            ReadinessStatus.GREEN -> Res.string.readiness_rec_green
+            ReadinessStatus.YELLOW -> Res.string.readiness_rec_yellow
+            ReadinessStatus.RED -> Res.string.readiness_rec_red
+        },
+    )
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -151,7 +168,7 @@ private fun ReadyContent(result: ReadinessResult.Ready, weightUnit: WeightUnit) 
 
             // ACWR ratio
             Text(
-                text = "ACWR: ${KmpUtils.formatFloat(result.acwr, 2)}",
+                text = stringResource(Res.string.readiness_acwr_value, KmpUtils.formatFloat(result.acwr, 2)),
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface,
@@ -167,12 +184,12 @@ private fun ReadyContent(result: ReadinessResult.Ready, weightUnit: WeightUnit) 
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         VolumeColumn(
-            label = "Acute (7d)",
+            label = stringResource(Res.string.readiness_acute_7d),
             valueText = SmartInsightsWeightText.volumeWithUnit(result.acuteVolumeKg, weightUnit, unitLabel),
             modifier = Modifier.weight(1f),
         )
         VolumeColumn(
-            label = "Chronic (avg/wk)",
+            label = stringResource(Res.string.readiness_chronic_avg),
             valueText = SmartInsightsWeightText.volumeWithUnit(result.chronicWeeklyAvgKg, weightUnit, unitLabel),
             modifier = Modifier.weight(1f),
         )

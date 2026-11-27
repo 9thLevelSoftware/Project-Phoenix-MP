@@ -187,6 +187,10 @@ class MainViewModelTest {
             .getDeclaredField("wallClockMillisProvider")
             .apply { isAccessible = true }
             .set(viewModel.workoutSessionManager.activeSessionEngine, deterministicElapsedRealtime)
+        viewModel.workoutSessionManager.activeSessionEngine.javaClass
+            .getDeclaredField("biomechanicsDispatcher")
+            .apply { isAccessible = true }
+            .set(viewModel.workoutSessionManager.activeSessionEngine, testCoroutineRule.dispatcher)
     }
 
     @After
@@ -1213,7 +1217,7 @@ class MainViewModelTest {
     // ========== Issue #627: isStoppingWorkout flag lifecycle ==========
 
     @Test
-    fun `isStoppingWorkout is false before stop, true immediately on stopWorkout, persists after teardown, resets on next startWorkout`() = runTest(testCoroutineRule.dispatcher) {
+    fun `isStoppingWorkout is false before stop and true on stopWorkout and persists after teardown and resets on next startWorkout`() = runTest(testCoroutineRule.dispatcher) {
         fakeBleRepository.simulateConnect("Vee_Test", "AA:BB:CC:DD:EE:FF")
         advanceUntilIdle()
         // Precondition: flag starts false

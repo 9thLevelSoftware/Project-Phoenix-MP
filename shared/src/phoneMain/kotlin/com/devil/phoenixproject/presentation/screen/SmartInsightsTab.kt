@@ -65,6 +65,7 @@ import com.devil.phoenixproject.presentation.util.SmartInsightsWeightText
 import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.Spacing
+import com.devil.phoenixproject.util.rethrowIfCancellation
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -200,7 +201,8 @@ private fun SmartInsightsContent(
             exerciseLastPerformed = fetchedLastPerformed
             weightHistory = fetchedWeightHistory
             insightsAnchorNowMs = snapshotNowMs
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            e.rethrowIfCancellation()
             // DB or IO failure — surface error state instead of infinite spinner (lens-state-patterns-3)
             hasError = true
         } finally {

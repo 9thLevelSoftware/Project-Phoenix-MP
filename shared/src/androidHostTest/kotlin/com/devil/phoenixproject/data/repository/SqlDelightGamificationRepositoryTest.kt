@@ -82,7 +82,7 @@ class SqlDelightGamificationRepositoryTest {
         val yesterday = LocalDate.fromEpochDays(today.toEpochDays() - 1)
         val dayBefore = LocalDate.fromEpochDays(today.toEpochDays() - 2)
         fun atLocal(date: LocalDate, hour: Int, minute: Int) =
-            LocalDateTime(date.year, date.monthNumber, date.dayOfMonth, hour, minute)
+            LocalDateTime(date.year, date.month, date.day, hour, minute)
                 .toInstant(zone)
                 .toEpochMilliseconds()
 
@@ -188,7 +188,7 @@ class SqlDelightGamificationRepositoryTest {
     }
 
     @Test
-    fun `peak power badges compare RepMetric watts, never raw MetricSample units`() = runTest {
+    fun `peak power badges compare RepMetric watts instead of raw MetricSample units`() = runTest {
         insertWorkoutSession(id = "session", totalReps = 10, weightPerCableKg = 50.0)
         insertRepMetric(sessionId = "session", peakPowerWatts = 600.0)
         insertMetricSample(sessionId = "session", power = 90_000.0) // kg x mm/s, not watts

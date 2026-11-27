@@ -118,7 +118,7 @@ fun ModeConfirmationScreen(
             // Header with title
             item(key = "title") {
                 Text(
-                    text = "Confirm Modes",
+                    text = stringResource(Res.string.mode_confirm_title),
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onBackground,
@@ -145,7 +145,7 @@ fun ModeConfirmationScreen(
                     )
                     Spacer(modifier = Modifier.height(Spacing.small))
                     Text(
-                        text = "Review and adjust workout modes for each exercise:",
+                        text = stringResource(Res.string.mode_confirm_subtitle),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -177,7 +177,7 @@ fun ModeConfirmationScreen(
 
                             if (day.isRestDay || day.routine == null) {
                                 Text(
-                                    text = "Rest Day",
+                                    text = stringResource(Res.string.mode_confirm_rest_day),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                                 )
@@ -290,7 +290,7 @@ fun ModeConfirmationScreen(
                         shape = MaterialTheme.shapes.medium,
                     ) {
                         Text(
-                            "Create Cycle",
+                            stringResource(Res.string.cd_create_cycle),
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
                             maxLines = 2,
@@ -357,7 +357,10 @@ private fun ConfigurableExerciseCard(
 
                 // Sets x Reps info
                 val setsRepsText = if (exercise.isPercentageBased) {
-                    "${exercise.percentageSets?.size ?: exercise.sets} sets (5/3/1)"
+                    stringResource(
+                        Res.string.mode_confirm_sets_531,
+                        exercise.percentageSets?.size ?: exercise.sets,
+                    )
                 } else {
                     "${exercise.sets} x ${exercise.reps ?: "AMRAP"}"
                 }

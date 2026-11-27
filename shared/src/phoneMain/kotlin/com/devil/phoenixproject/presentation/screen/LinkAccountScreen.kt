@@ -20,7 +20,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import com.devil.phoenixproject.presentation.components.DestructiveConfirmDialog
 import com.devil.phoenixproject.presentation.components.LoadingIndicator
@@ -34,6 +33,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -168,9 +168,8 @@ private fun OwnershipConflictDialog(
     )
 }
 
-@Suppress("UNUSED_PARAMETER")
 @Composable
-fun LinkAccountScreen(onNavigateBack: () -> Unit) {
+fun LinkAccountScreen() {
     // Get ViewModel from Koin - rememberKoinInject ensures stable instance across recompositions
     val viewModel: LinkAccountViewModel = koinInject()
 
@@ -338,10 +337,17 @@ private fun LinkedAccountContent(
 
         if (user.isPremium) {
             Spacer(modifier = Modifier.height(8.dp))
-            AssistChip(
-                onClick = {},
-                label = { Text(stringResource(Res.string.label_premium)) },
-            )
+            Surface(
+                shape = MaterialTheme.shapes.small,
+                color = MaterialTheme.colorScheme.secondaryContainer,
+            ) {
+                Text(
+                    text = stringResource(Res.string.label_premium),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(16.dp))

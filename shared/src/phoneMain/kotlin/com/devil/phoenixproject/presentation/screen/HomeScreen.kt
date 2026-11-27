@@ -55,7 +55,6 @@ import com.devil.phoenixproject.presentation.manager.HistoryItem
 import com.devil.phoenixproject.presentation.manager.SingleSessionHistoryItem
 import com.devil.phoenixproject.presentation.util.AchievedLoadPresentation
 import com.devil.phoenixproject.presentation.components.AnimatedActionButton
-import com.devil.phoenixproject.presentation.components.ConnectionErrorDialog
 import com.devil.phoenixproject.presentation.components.IconAnimation
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
@@ -113,7 +112,6 @@ private const val HOME_CONTENT_MAX_WIDTH = 720
 
 @Composable
 fun HomeScreen(navController: NavController, viewModel: MainViewModel) {
-    val connectionError by viewModel.connectionError.collectAsState()
     val routines by viewModel.routines.collectAsState()
     val workoutStreak by viewModel.workoutStreak.collectAsState()
     val recentSessions by viewModel.allWorkoutSessions.collectAsState()
@@ -245,13 +243,6 @@ fun HomeScreen(navController: NavController, viewModel: MainViewModel) {
                     )
                 }
             }
-        }
-
-        connectionError?.let { error ->
-            ConnectionErrorDialog(
-                message = error,
-                onDismiss = { viewModel.clearConnectionError() },
-            )
         }
 
         // Home resumes the cycle day into the active workout or set-ready screen.

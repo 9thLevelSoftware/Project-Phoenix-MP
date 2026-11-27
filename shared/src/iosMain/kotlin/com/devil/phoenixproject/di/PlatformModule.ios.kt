@@ -106,7 +106,7 @@ actual val platformModule: Module = module {
     single<CsvImporter> { IosCsvImporter(get()) }
     single<BackupDestinationResolver> { IosBackupDestinationResolver(get()) }
     single<DataBackupManager> { IosDataBackupManager(get(), get(), get(), get(), get(), get(), get()) }
-    single { ConnectivityChecker() }
+    single(createdAtStart = true) { ConnectivityChecker() }
     single<SafeWordListenerFactory> { IosSafeWordListenerFactory() }
     single { HealthIntegration() }
     single<HealthWorkoutWriter> { get<HealthIntegration>() }

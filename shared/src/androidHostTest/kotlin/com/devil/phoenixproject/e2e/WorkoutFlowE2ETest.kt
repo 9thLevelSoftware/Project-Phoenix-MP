@@ -159,7 +159,7 @@ class WorkoutFlowE2ETest {
     // ========== Connection Flow Tests ==========
 
     @Test
-    fun `complete connection flow - scan, connect, verify`() = runTest {
+    fun `complete connection flow - scan connect verify`() = runTest {
         workoutRobot(viewModel, fakeBleRepository) {
             // Initially disconnected
             verifyDisconnected()

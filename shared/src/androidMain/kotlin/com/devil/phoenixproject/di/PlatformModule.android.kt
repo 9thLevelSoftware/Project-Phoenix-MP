@@ -147,6 +147,7 @@ actual val platformModule: Module = module {
  * @throws SecurityException if EncryptedSharedPreferences cannot be created.
  *         This indicates the device cannot securely store authentication tokens.
  */
+@Suppress("DEPRECATION")
 private fun createEncryptedPreferences(context: Context, name: String): SharedPreferences = try {
     val masterKeyAlias = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
     EncryptedSharedPreferences.create(

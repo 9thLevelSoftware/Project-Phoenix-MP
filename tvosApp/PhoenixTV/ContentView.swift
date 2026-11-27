@@ -503,6 +503,7 @@ private struct JustLiftScreen: View {
                     errorText("Trainer stop did not confirm. Retry recovery before ending your session.")
                     Button("Retry safe stop recovery") { model.bridge.retrySafeStopRecovery(); model.refresh() }
                         .buttonStyle(.borderedProminent).tint(.red)
+                        .accessibilityIdentifier("workout.retry-recovery")
                 }
                 if let error = displayError(actionError: state?.actionError, excluding: [shownWorkoutError]) {
                     errorText(error)
@@ -640,10 +641,6 @@ private struct JustLiftScreen: View {
         VStack(alignment: .leading, spacing: 18) {
             Text(state?.completionFailed == true ? "SET NOT SAVED" : "SET COULD NOT START").font(.caption.weight(.bold)).tracking(2).foregroundStyle(.orange)
             errorText(state?.workoutMessage ?? "Phoenix could not start this set. Check your trainer connection and try again.")
-            if state?.teardownState == "recovery_required" {
-                Button("Retry safe stop recovery") { model.bridge.retrySafeStopRecovery(); model.refresh() }
-                    .buttonStyle(.borderedProminent).tint(.red)
-            }
             if state?.sessionOpen == true {
                 Button("End Session") { model.bridge.endSession(); model.refresh() }
                     .buttonStyle(.bordered).accessibilityIdentifier("justlift.error-end")
@@ -817,8 +814,11 @@ private struct RoutineOverviewScreen: View {
                     .buttonStyle(.borderedProminent).tint(phoenixOrange).accessibilityIdentifier("routine.continue")
             case "error":
                 errorText(state?.workoutMessage ?? "Phoenix reported a workout error.")
-                Button("Retry safe stop recovery") { model.bridge.retrySafeStopRecovery(); model.refresh() }
-                    .buttonStyle(.borderedProminent).tint(.red)
+                if state?.teardownState != "recovery_required" {
+                    Button("Retry safe stop recovery") { model.bridge.retrySafeStopRecovery(); model.refresh() }
+                        .buttonStyle(.borderedProminent).tint(.red)
+                        .accessibilityIdentifier("workout.retry-recovery")
+                }
             default:
                 Text("Preparing next step…").font(.title3)
             }
@@ -836,6 +836,7 @@ private struct RoutineOverviewScreen: View {
                 errorText("Trainer stop did not confirm. Retry recovery before ending your session.")
                 Button("Retry safe stop recovery") { model.bridge.retrySafeStopRecovery(); model.refresh() }
                     .buttonStyle(.borderedProminent).tint(.red)
+                    .accessibilityIdentifier("workout.retry-recovery")
             }
             if let error = displayError(actionError: state?.actionError, excluding: [shownWorkoutError]) {
                 errorText(error)

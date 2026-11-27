@@ -7,15 +7,20 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.convert
 import kotlinx.cinterop.usePinned
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import platform.AuthenticationServices.ASWebAuthenticationPresentationContextProvidingProtocol
 import platform.AuthenticationServices.ASWebAuthenticationSession
 import platform.Foundation.NSError
+import platform.Foundation.NSThread
 import platform.Foundation.NSURL
 import platform.Security.SecRandomCopyBytes
 import platform.Security.kSecRandomDefault
 import platform.UIKit.UIWindow
 import platform.darwin.NSObject
+import platform.darwin.dispatch_async
+import platform.darwin.dispatch_get_main_queue
 
 /**
  * Domain string for NSErrors emitted by ASWebAuthenticationSession. Kotlin/
@@ -39,6 +44,41 @@ internal actual fun generateSecureRandomBytes(size: Int): ByteArray {
     return bytes
 }
 
+internal interface WebAuthSessionHandle {
+    fun start(): Boolean
+    fun cancel()
+}
+
+private fun runOnMainQueue(block: () -> Unit) {
+    if (NSThread.isMainThread) {
+        block()
+    } else {
+        dispatch_async(dispatch_get_main_queue(), block)
+    }
+}
+
+@OptIn(BetaInteropApi::class)
+private fun createPlatformWebAuthSession(
+    url: NSURL,
+    callbackScheme: String,
+    provider: PresentationContextProvider,
+    completionHandler: (NSURL?, NSError?) -> Unit,
+): WebAuthSessionHandle {
+    val webSession = ASWebAuthenticationSession(
+        uRL = url,
+        callbackURLScheme = callbackScheme,
+        completionHandler = completionHandler,
+    )
+    webSession.presentationContextProvider = provider
+    // Share Safari cookies so already-signed-in Google/Apple users
+    // don't have to type credentials every time.
+    webSession.prefersEphemeralWebBrowserSession = false
+    return object : WebAuthSessionHandle {
+        override fun start(): Boolean = webSession.start()
+        override fun cancel() = webSession.cancel()
+    }
+}
+
 /**
  * iOS OAuth launcher using Apple's [ASWebAuthenticationSession].
  *
@@ -49,24 +89,40 @@ internal actual fun generateSecureRandomBytes(size: Int): ByteArray {
  * URL Types so the system can route the redirect back to this session.
  */
 actual class OAuthLauncher {
-    private var session: ASWebAuthenticationSession? = null
+    private var session: WebAuthSessionHandle? = null
     private var presentationProvider: PresentationContextProvider? = null
 
-    @OptIn(BetaInteropApi::class)
-    actual suspend fun launch(authorizeUrl: String, callbackScheme: String): Result<String> = suspendCancellableCoroutine { cont ->
-        val url = NSURL.URLWithString(authorizeUrl)
-        if (url == null) {
-            cont.resume(Result.failure(IllegalArgumentException("Invalid authorize URL: $authorizeUrl")))
-            return@suspendCancellableCoroutine
+    actual suspend fun launch(authorizeUrl: String, callbackScheme: String): Result<String> =
+        launchWithSessionFactory(authorizeUrl, callbackScheme) { url, scheme, provider, completion ->
+            createPlatformWebAuthSession(url, scheme, provider, completion)
         }
 
-        val provider = PresentationContextProvider()
-        val webSession = ASWebAuthenticationSession(
-            uRL = url,
-            callbackURLScheme = callbackScheme,
-            completionHandler = { callbackURL: NSURL?, error: NSError? ->
-                session = null
-                presentationProvider = null
+    internal suspend fun launchWithSessionFactory(
+        authorizeUrl: String,
+        callbackScheme: String,
+        sessionFactory: (
+            NSURL,
+            String,
+            ASWebAuthenticationPresentationContextProvidingProtocol,
+            (NSURL?, NSError?) -> Unit,
+        ) -> WebAuthSessionHandle,
+    ): Result<String> = withContext(Dispatchers.Main.immediate) {
+        suspendCancellableCoroutine { cont ->
+            val url = NSURL.URLWithString(authorizeUrl)
+            if (url == null) {
+                cont.resume(Result.failure(IllegalArgumentException("Invalid authorize URL: $authorizeUrl")))
+                return@suspendCancellableCoroutine
+            }
+
+            val provider = PresentationContextProvider()
+            lateinit var webSession: WebAuthSessionHandle
+            webSession = sessionFactory(url, callbackScheme, provider) { callbackURL: NSURL?, error: NSError? ->
+                runOnMainQueue {
+                    if (session === webSession) {
+                        session = null
+                        presentationProvider = null
+                    }
+                }
                 val result: Result<String> = when {
                     callbackURL != null -> {
                         val urlString = callbackURL.absoluteString
@@ -98,27 +154,29 @@ actual class OAuthLauncher {
                     else -> Result.failure(Exception("Unknown OAuth error"))
                 }
                 if (cont.isActive) cont.resume(result)
-            },
-        )
-        webSession.presentationContextProvider = provider
-        // Share Safari cookies so already-signed-in Google/Apple users
-        // don't have to type credentials every time.
-        webSession.prefersEphemeralWebBrowserSession = false
+            }
 
-        session = webSession
-        presentationProvider = provider
+            session = webSession
+            presentationProvider = provider
 
-        cont.invokeOnCancellation {
-            webSession.cancel()
-            session = null
-            presentationProvider = null
-        }
+            cont.invokeOnCancellation {
+                runOnMainQueue {
+                    webSession.cancel()
+                    if (session === webSession) {
+                        session = null
+                        presentationProvider = null
+                    }
+                }
+            }
 
-        val started = webSession.start()
-        if (!started) {
-            session = null
-            presentationProvider = null
-            cont.resume(Result.failure(Exception("ASWebAuthenticationSession failed to start")))
+            val started = webSession.start()
+            if (!started) {
+                session = null
+                presentationProvider = null
+                if (cont.isActive) {
+                    cont.resume(Result.failure(Exception("ASWebAuthenticationSession failed to start")))
+                }
+            }
         }
     }
 }

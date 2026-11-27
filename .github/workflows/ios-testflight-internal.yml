@@ -49,17 +49,8 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
-          mkdir -p iosApp/PhoenixApp/Config
-          # xcconfig treats `//` as an inline comment, so URLs like `https://foo`
-          # must be written as `https:/$()/foo` (empty xcconfig substitution) or
-          # the value gets truncated to `https:` at parse time. Apply to both
-          # fields defensively.
-          url_escaped=$(printf '%s' "$SUPABASE_URL" | sed 's|//|/$()/|g')
-          key_escaped=$(printf '%s' "$SUPABASE_ANON_KEY" | sed 's|//|/$()/|g')
-          {
-            echo "SUPABASE_URL = $url_escaped"
-            echo "SUPABASE_ANON_KEY = $key_escaped"
-          } > iosApp/PhoenixApp/Config/Supabase.xcconfig
+          python3 .github/scripts/ios_supabase_config.py write-xcconfig \
+            --output iosApp/PhoenixApp/Config/Supabase.xcconfig
 
       - name: Validate release app icons
         run: |
@@ -182,6 +173,14 @@ jobs:
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="Apple Distribution" \
             PROVISIONING_PROFILE_SPECIFIER="${{ secrets.PROVISIONING_PROFILE_NAME }}"
+
+      - name: Verify archived Supabase configuration
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          python3 .github/scripts/ios_supabase_config.py verify-plist \
+            --plist "$RUNNER_TEMP/PhoenixApp.xcarchive/Products/Applications/PhoenixApp.app/Info.plist"
 
       - name: Export .ipa
         run: |

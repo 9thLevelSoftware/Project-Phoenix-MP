@@ -1,9 +1,12 @@
 package com.devil.phoenixproject.util
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import co.touchlab.kermit.Logger
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -41,6 +44,7 @@ actual class FilePicker {
 
     @Composable
     private fun LaunchImportPicker(contentType: UTType, onFilePicked: (String?) -> Unit) {
+        val currentOnFilePicked by rememberUpdatedState(onFilePicked)
         val scope = rememberCoroutineScope()
 
         val delegate = remember {
@@ -50,15 +54,15 @@ actual class FilePicker {
                         if (url != null) {
                             // asCopy already copied the file into the app sandbox.
                             val tempPath = copyToTempDirectory(url)
-                            onFilePicked(tempPath)
+                            currentOnFilePicked(tempPath)
                         } else {
-                            onFilePicked(null)
+                            currentOnFilePicked(null)
                         }
                     }
                 },
                 onCancelled = {
                     scope.launch(Dispatchers.Main) {
-                        onFilePicked(null)
+                        currentOnFilePicked(null)
                     }
                 },
                 log = log,
@@ -75,23 +79,23 @@ actual class FilePicker {
 
     @Composable
     actual fun LaunchFileSaver(fileName: String, content: String, onSaved: (String?) -> Unit) {
+        val currentOnSaved by rememberUpdatedState(onSaved)
         val scope = rememberCoroutineScope()
+        val tempHolder = remember { ExportTempFileHolder() }
 
         // Create delegate that handles picker callbacks
         val delegate = remember {
             DocumentPickerDelegate(
                 onDocumentPicked = { url ->
                     scope.launch(Dispatchers.Main) {
-                        if (url != null) {
-                            onSaved(url.path)
-                        } else {
-                            onSaved(null)
-                        }
+                        tempHolder.cleanup()
+                        currentOnSaved(url?.path)
                     }
                 },
                 onCancelled = {
                     scope.launch(Dispatchers.Main) {
-                        onSaved(null)
+                        tempHolder.cleanup()
+                        currentOnSaved(null)
                     }
                 },
                 log = log,
@@ -99,16 +103,26 @@ actual class FilePicker {
             )
         }
 
+        DisposableEffect(Unit) {
+            onDispose {
+                tempHolder.cleanup()
+            }
+        }
+
         LaunchedEffect(fileName, content) {
+            tempHolder.cleanup()
             // First, save content to a temp file
             val tempFilePath = saveToTempFile(fileName, content)
             if (tempFilePath == null) {
-                onSaved(null)
+                currentOnSaved(null)
                 return@LaunchedEffect
             }
+            tempHolder.replaceWith(tempFilePath)
 
             dispatch_async(dispatch_get_main_queue()) {
-                presentExportPicker(tempFilePath, delegate)
+                if (tempHolder.activeTempPath == tempFilePath) {
+                    presentExportPicker(tempFilePath, delegate)
+                }
             }
         }
     }
@@ -182,6 +196,34 @@ actual class FilePicker {
     } catch (e: Exception) {
         log.e { "Failed to save temp file: ${e.message}" }
         null
+    }
+}
+
+/**
+ * Tracks the single export temp file staged for [FilePicker.LaunchFileSaver] and deletes it
+ * on completion, cancellation, replacement, or disposal.
+ */
+@OptIn(ExperimentalForeignApi::class)
+internal class ExportTempFileHolder(
+    private val deleteFile: (String) -> Unit = { path ->
+        runCatching { NSFileManager.defaultManager.removeItemAtPath(path, null) }
+    },
+) {
+    var activeTempPath: String? = null
+        private set
+
+    fun replaceWith(path: String?) {
+        val previous = activeTempPath
+        if (previous != null && previous != path) {
+            deleteFile(previous)
+        }
+        activeTempPath = path
+    }
+
+    fun cleanup() {
+        val current = activeTempPath ?: return
+        activeTempPath = null
+        deleteFile(current)
     }
 }
 
